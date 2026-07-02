@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "awr2944-dca-lab"
+version = "0.1.0"
+description = "Research toolkit for AWR2944EVM + DCA1000EVM raw ADC radar capture workflows."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "numpy>=2.0",
+  "scipy>=1.14",
+  "pydantic>=2.8",
+  "typer>=0.12",
+  "rich>=13.8",
+  "pyyaml>=6.0",
+  "matplotlib>=3.9",
+]
+
+[project.optional-dependencies]
+storage = ["xarray>=2024.7", "zarr>=2.18", "h5py>=3.11"]
+dashboard = ["plotly>=5.23", "streamlit>=1.37", "dash>=2.17"]
+tables = ["polars>=1.4"]
+hardware = ["pyserial>=3.5", "psutil>=6.0"]
+speed = ["numba>=0.60"]
+dev = ["pytest>=8.3", "hypothesis>=6.111", "ruff>=0.6", "mypy>=1.11"]
+
+[project.scripts]
+awr = "awr2944_dca.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/awr2944_dca"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

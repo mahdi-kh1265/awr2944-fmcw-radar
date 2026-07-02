@@ -1,0 +1,12 @@
+base_config: ../configs/walking_person.yaml
+
+sweep:
+  chirps_per_frame: [64, 128, 256]
+  num_frames: [50]
+  packet_delay_us: [10, 25, 50]
+
+score:
+  prefer:
+    - lower_packet_loss
+    - higher_velocity_resolution
+    - smaller_file_size

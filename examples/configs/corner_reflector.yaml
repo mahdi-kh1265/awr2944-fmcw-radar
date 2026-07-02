@@ -1,0 +1,47 @@
+experiment:
+  name: corner_reflector_2m
+  operator: Mahdi
+  description: Corner reflector calibration at 2 m and 0 deg azimuth.
+
+rig:
+  name: awr2944-dca1000
+  radar: AWR2944EVM
+  capture_card: DCA1000EVM
+
+calibration_target:
+  type: corner_reflector
+  range_m: 2.0
+  azimuth_deg: 0.0
+  elevation_deg: 0.0
+
+hardware:
+  tx_enabled: [0, 1, 2, 3]
+  rx_enabled: [0, 1, 2, 3]
+  antenna_mode: tdm_mimo
+
+adc:
+  samples_per_chirp: 256
+  bits: 16
+  is_complex: false           # AWR2944 default: real ADC
+  iq_order: IQ
+  num_lvds_lanes: 2           # AWR2944 default: 2 LVDS lanes
+  layout: awr2944_real_interleaved_2lane_unvalidated
+
+profile:
+  start_freq_ghz: 77.0
+  slope_mhz_per_us: 60.0
+  sample_rate_ksps: 10000.0
+  idle_time_us: 10.0
+  ramp_end_time_us: 60.0
+
+frame:
+  chirps_per_frame: 128
+  num_frames: 50
+  frame_period_ms: 50.0
+
+capture:
+  output_root: experiments
+  packet_delay_us: 25
+  save_raw_packets: true
+  raw_files: []
+  adc_file: raw/adc_data.bin
