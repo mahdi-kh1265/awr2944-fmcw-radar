@@ -400,8 +400,8 @@ def process(
 
 @app.command("compare-layouts")
 def compare_layouts(
-    bin_file: Path = typer.Argument(..., help="Path to adc_data.bin"),
-    config: Path = typer.Option(..., "--config", "-c", help="Path to YAML config"),
+    target: Path = typer.Argument(..., help="Path to adc_data.bin or experiment folder"),
+    config: Path | None = typer.Option(None, "--config", "-c", help="Path to YAML config (required if target is a bin file)"),
 ) -> None:
     """Compare the two AWR2944 candidate layouts against a raw capture."""
     import warnings
@@ -409,13 +409,33 @@ def compare_layouts(
     from awr2944_dca.config.schema import RadarConfig
     from awr2944_dca.formats.adc_parser import parse_adc_bin, validate_file_size
 
+    if target.is_dir():
+        bin_file = target / "raw" / "adc_data.bin"
+        config_file = target / "capture.yaml"
+        if not bin_file.exists():
+            console.print(f"[red]Could not find bin file:[/red] {bin_file}")
+            raise typer.Exit(code=1)
+        if not config_file.exists():
+            console.print(f"[red]Could not find config file:[/red] {config_file}")
+            raise typer.Exit(code=1)
+    else:
+        bin_file = target
+        if not config:
+            console.print("[red]--config is required when target is a file[/red]")
+            raise typer.Exit(code=1)
+        config_file = config
+
     try:
-        cfg = RadarConfig.from_yaml(config)
+        cfg = RadarConfig.from_yaml(config_file)
     except Exception as e:
         console.print(f"[red]Config error:[/red] {e}")
         raise typer.Exit(code=1)
 
     console.print(f"[bold]Comparing layouts for {bin_file}[/bold]")
+    console.print(
+        "[yellow]IMPORTANT: Input file MUST be the headerless `adc_data.bin`. "
+        "`adc_data_Raw_*.bin` requires packet reorder and zero-fill first.[/yellow]\n"
+    )
     
     layouts = [
         ("awr2944_real_2lane_interleaved_candidate", 0),
