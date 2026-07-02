@@ -391,3 +391,92 @@ def process(
             title="Done",
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# awr compare-layouts
+# ---------------------------------------------------------------------------
+
+
+@app.command("compare-layouts")
+def compare_layouts(
+    bin_file: Path = typer.Argument(..., help="Path to adc_data.bin"),
+    config: Path = typer.Option(..., "--config", "-c", help="Path to YAML config"),
+) -> None:
+    """Compare the two AWR2944 candidate layouts against a raw capture."""
+    import warnings
+
+    from awr2944_dca.config.schema import RadarConfig
+    from awr2944_dca.formats.adc_parser import parse_adc_bin, validate_file_size
+
+    try:
+        cfg = RadarConfig.from_yaml(config)
+    except Exception as e:
+        console.print(f"[red]Config error:[/red] {e}")
+        raise typer.Exit(code=1)
+
+    console.print(f"[bold]Comparing layouts for {bin_file}[/bold]")
+    
+    layouts = [
+        ("awr2944_real_2lane_interleaved_candidate", 0),
+        ("awr2944_real_2lane_noninterleaved_candidate", 1),
+    ]
+
+    for layout_name, ch_interleave in layouts:
+        cfg.adc.layout = layout_name
+        cfg.adc.channel_interleave = ch_interleave
+        
+        console.print(f"\n[cyan]=== {layout_name} ===[/cyan]")
+        console.print(f"channel_interleave: {ch_interleave}")
+
+        # Validate file size
+        size_result = validate_file_size(bin_file, cfg)
+        if size_result.ok:
+            console.print(f"Size validation: [green]OK[/green] ({size_result.message})")
+        else:
+            console.print(f"Size validation: [red]FAIL[/red] ({size_result.message})")
+
+        # Parse
+        try:
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                cube = parse_adc_bin(bin_file, cfg, strict_size=False)
+
+            for w in caught:
+                console.print(f"[yellow]WARNING: {w.message}[/yellow]")
+
+            console.print(f"Cube shape: {cube.shape}")
+            console.print(f"Dtype: {cube.dtype}")
+
+            # Per-RX stats
+            stats_table = Table(title="[bold]Per-RX Stats[/bold]", show_lines=True)
+            stats_table.add_column("RX", justify="right")
+            stats_table.add_column("Mean")
+            stats_table.add_column("StdDev")
+            stats_table.add_column("Min")
+            stats_table.add_column("Max")
+            
+            for rx in range(cube.shape[2]):
+                rx_data = cube[:, :, rx, :]
+                stats_table.add_row(
+                    str(rx),
+                    f"{np.mean(rx_data):.2f}",
+                    f"{np.std(rx_data):.2f}",
+                    f"{np.min(rx_data):.2f}",
+                    f"{np.max(rx_data):.2f}",
+                )
+            console.print(stats_table)
+
+            # First 16 samples for frame 0, chirp 0
+            samples_table = Table(title="[bold]First 16 Samples (Frame 0, Chirp 0)[/bold]", show_lines=True)
+            samples_table.add_column("RX", justify="right", style="cyan")
+            samples_table.add_column("Values")
+            
+            for rx in range(cube.shape[2]):
+                vals = cube[0, 0, rx, :16]
+                vals_str = ", ".join(f"{v:g}" for v in vals)
+                samples_table.add_row(str(rx), vals_str)
+            console.print(samples_table)
+
+        except Exception as e:
+            console.print(f"[red]Parse error:[/red] {e}")

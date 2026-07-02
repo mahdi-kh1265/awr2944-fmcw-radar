@@ -19,7 +19,8 @@ adc:
   is_complex: false           # AWR2944 default: real ADC
   iq_order: IQ
   num_lvds_lanes: 2           # AWR2944 default: 2 LVDS lanes
-  layout: awr2944_real_interleaved_2lane_unvalidated
+  channel_interleave: 1       # TI default for 2-lane: non-interleaved
+  layout: awr2944_real_2lane_noninterleaved_candidate
 
 profile:
   start_freq_ghz: 77.0

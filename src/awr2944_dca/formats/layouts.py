@@ -40,6 +40,8 @@ class BinaryLayout(ABC):
     # Status flags — see module docstring for definitions
     swra581b_reference: ClassVar[bool] = False
     lab_validated: ClassVar[bool] = False
+    requires_real_capture_validation: ClassVar[bool] = False
+    source: ClassVar[str] = ""
 
     def warn_if_unvalidated(self) -> None:
         """Emit a warning if this layout has not been validated on real hardware."""
@@ -276,34 +278,26 @@ class Xwr16xxComplex2Lane(BinaryLayout):
 # ---------------------------------------------------------------------------
 
 
-class Awr2944RealInterleaved2Lane(BinaryLayout):
+class Awr2944Real2LaneInterleavedCandidate(BinaryLayout):
     """AWR2944 DCA1000: 2 LVDS lanes, real ADC, 4 RX.
-
-    UNVALIDATED — Based on best-guess from SWRA581B patterns for 2-lane
-    devices (xWR16xx) adapted for real-only ADC mode.
-
-    Expected binary format (our working hypothesis):
+    
+    Candidate A: Interleaved (ch_interleave = 0)
+    
+    Expected binary format:
     With 2 LVDS lanes and 4 RX in real mode, data is interleaved across
     lanes with 2 RX per lane per sample clock:
         [L1_RX0, L2_RX2, L1_RX1, L2_RX3, L1_RX0, L2_RX2, ...]
-
-    This must be validated against real captures.  See docs/DATA_FORMATS.md
-    for the full validation checklist.
-
-    Validation status:
-        - documented_from_ti: Partially — SWRA581B covers older devices,
-          not AWR2944 specifically.
-        - lab_validated: False — no real AWR2944 captures tested yet.
     """
-
-    name = "awr2944_real_interleaved_2lane_unvalidated"
+    
+    name = "awr2944_real_2lane_interleaved_candidate"
     description = (
-        "AWR2944 DCA1000 2-lane real ADC layout (UNVALIDATED). "
-        "2 LVDS lanes, 4 RX, real samples interleaved. "
-        "Based on SWRA581B 2-lane patterns adapted for real-only mode."
+        "AWR2944 2-lane real ADC (Candidate A: Interleaved). "
+        "RX channels cycle per sample clock."
     )
-    swra581b_reference = False  # Not directly from SWRA581B
+    swra581b_reference = False
     lab_validated = False
+    requires_real_capture_validation = True
+    source = "TI install audit; AWR2944-specific parser not found locally"
 
     def reshape_samples(
         self,
@@ -316,20 +310,8 @@ class Awr2944RealInterleaved2Lane(BinaryLayout):
         samples_per_chirp = config.adc.samples_per_chirp
         chirps_per_frame = config.frame.chirps_per_frame
         num_frames = config.frame.num_frames
-        num_lanes = config.adc.num_lvds_lanes
 
-        # Working hypothesis for 2-lane real ADC with 4 RX:
-        # Data is interleaved across lanes.  With 2 lanes carrying 4 RX,
-        # each lane carries 2 RX channels.
-        #
-        # Interleave pattern (Fortran-order reshape to [num_lanes*rx_per_lane, ...]):
-        # We reshape to [num_rx, total_samples_per_rx] then to the cube.
-        #
-        # For real ADC: each sample is one int16 value (no I/Q pair).
-        rx_per_lane = num_rx // num_lanes
-
-        # Reshape: de-interleave lanes
-        # The raw stream has samples interleaved across num_rx channels
+        # Reshape: de-interleave lanes using Fortran order (column-major)
         lane_data = raw.reshape(num_rx, -1, order="F")
 
         # Convert to float32 (real-valued cube)
@@ -345,13 +327,12 @@ class Awr2944RealInterleaved2Lane(BinaryLayout):
         return cube
 
     def expected_file_size(self, config: RadarConfig) -> int:
-        # Real ADC: 1 int16 per sample per RX
         return (
             config.adc.samples_per_chirp
             * config.hardware.num_rx
             * config.frame.chirps_per_frame
             * config.frame.num_frames
-            * 2  # 2 bytes per real int16 sample
+            * 2
         )
 
     def pack_cube(
@@ -359,16 +340,72 @@ class Awr2944RealInterleaved2Lane(BinaryLayout):
         cube: np.ndarray,
         config: RadarConfig,
     ) -> np.ndarray:
-        # cube: [frames, chirps, rx, samples] float32
-        # → [rx, frames, chirps, samples]
         data = cube.transpose(2, 0, 1, 3)
         num_rx = config.hardware.num_rx
-
-        # Flatten to [rx, total_samples]
         data = data.reshape(num_rx, -1)
-
-        # Interleave RX channels using Fortran order
         flat = data.reshape(-1, order="F").astype(np.int16)
+        return flat
+
+
+class Awr2944Real2LaneNoninterleavedCandidate(BinaryLayout):
+    """AWR2944 DCA1000: 2 LVDS lanes, real ADC, 4 RX.
+    
+    Candidate B: Non-Interleaved (ch_interleave = 1)
+    
+    Expected binary format:
+    All samples for RX0, then all samples for RX1, etc.
+        [RX0_s0, RX0_s1, ..., RX0_sN, RX1_s0, RX1_s1, ...]
+    
+    This matches TI's rawDataReader.m assumption for known 2-lane devices.
+    """
+    
+    name = "awr2944_real_2lane_noninterleaved_candidate"
+    description = (
+        "AWR2944 2-lane real ADC (Candidate B: Non-Interleaved). "
+        "All samples per RX arrive contiguously per chirp."
+    )
+    swra581b_reference = False
+    lab_validated = False
+    requires_real_capture_validation = True
+    source = "TI install audit; AWR2944-specific parser not found locally"
+
+    def reshape_samples(
+        self,
+        raw: np.ndarray,
+        config: RadarConfig,
+    ) -> np.ndarray:
+        self.warn_if_unvalidated()
+
+        num_rx = config.hardware.num_rx
+        samples_per_chirp = config.adc.samples_per_chirp
+        chirps_per_frame = config.frame.chirps_per_frame
+        num_frames = config.frame.num_frames
+
+        # Reshape directly to [frame, chirp, rx, sample] using C order
+        real_data = raw.reshape(
+            num_frames, chirps_per_frame, num_rx, samples_per_chirp, order="C"
+        )
+        cube = real_data.astype(np.float32)
+        return cube
+
+    def expected_file_size(self, config: RadarConfig) -> int:
+        return (
+            config.adc.samples_per_chirp
+            * config.hardware.num_rx
+            * config.frame.chirps_per_frame
+            * config.frame.num_frames
+            * 2
+        )
+
+    def pack_cube(
+        self,
+        cube: np.ndarray,
+        config: RadarConfig,
+    ) -> np.ndarray:
+        # Cube is already [frame, chirp, rx, sample]
+        # Non-interleaved writes RX sequentially within each chirp.
+        # So we just flatten the whole cube in C order!
+        flat = cube.reshape(-1, order="C").astype(np.int16)
         return flat
 
 
@@ -384,7 +421,8 @@ def _register_defaults() -> None:
     for layout_cls in [
         Xwr14xxComplex4Lane,
         Xwr16xxComplex2Lane,
-        Awr2944RealInterleaved2Lane,
+        Awr2944Real2LaneInterleavedCandidate,
+        Awr2944Real2LaneNoninterleavedCandidate,
     ]:
         layout = layout_cls()
         _LAYOUT_REGISTRY[layout.name] = layout

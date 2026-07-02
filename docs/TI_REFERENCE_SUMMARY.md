@@ -85,3 +85,16 @@ Implement layout abstraction and validate empirically.
 AWR2944 default capture mode appears to be **real ADC** (not complex) based on
 the ADC configuration in mmWave Studio.  Treat the default as real ADC unless
 the provided TI docs prove otherwise for our exact capture path.
+
+## TI Install Audit Findings (July 2026)
+
+An audit of the local mmWave Studio 3.0.0.14 install revealed:
+- **No AWR2944-specific parsing logic exists locally** (our install predates it).
+- `rawDataReader.m` only supports complex data, not real data.
+- The compiled `Packet_Reorder_Zerofill.exe` handles packet reassembly, but its source is not readable.
+- **LVDS lane count** determines the physical transport formatting (AWR2944 uses 2 lanes).
+- **`chInterleave`** (`channelInterleave` in `rlDevDataFmtCfg_t`) determines the logical RX ordering in the reassembled `adc_data.bin` stream.
+  - `chInterleave=0` (interleaved): RX channels cycle per sample clock.
+  - `chInterleave=1` (non-interleaved): All samples for RX0, then all for RX1, etc.
+- TI's `rawDataReader.m` enforces `chInterleave=1` for known 2-lane devices.
+- Final validation requires checking the actual mmWave Studio DataConfig generated during the first capture, especially `rlDevDataFmtCfg_t.chInterleave` and `adcFmt`.

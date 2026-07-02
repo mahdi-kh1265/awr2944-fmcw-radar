@@ -9,10 +9,12 @@ import pytest
 
 from awr2944_dca.config.schema import RadarConfig
 from awr2944_dca.formats.layouts import (
-    Awr2944RealInterleaved2Lane,
+    Awr2944Real2LaneInterleavedCandidate,
+    Awr2944Real2LaneNoninterleavedCandidate,
+    BinaryLayout,
     Xwr14xxComplex4Lane,
+    Xwr16xxComplex2Lane,
     get_layout,
-    list_layouts,
 )
 
 
@@ -20,14 +22,16 @@ class TestLayoutRegistry:
     """Test layout registration and lookup."""
 
     def test_list_layouts(self) -> None:
+        from awr2944_dca.formats.layouts import list_layouts
         names = list_layouts()
-        assert "awr2944_real_interleaved_2lane_unvalidated" in names
+        assert "awr2944_real_2lane_interleaved_candidate" in names
+        assert "awr2944_real_2lane_noninterleaved_candidate" in names
         assert "xwr14xx_complex_4lane" in names
         assert "xwr16xx_complex_2lane" in names
 
     def test_get_layout(self) -> None:
-        layout = get_layout("awr2944_real_interleaved_2lane_unvalidated")
-        assert layout.name == "awr2944_real_interleaved_2lane_unvalidated"
+        layout = get_layout("awr2944_real_2lane_interleaved_candidate")
+        assert layout.name == "awr2944_real_2lane_interleaved_candidate"
         assert layout.lab_validated is False
 
     def test_unknown_layout_raises(self) -> None:
@@ -39,9 +43,10 @@ class TestLayoutFlags:
     """Test layout status flags."""
 
     def test_awr2944_not_validated(self) -> None:
-        layout = Awr2944RealInterleaved2Lane()
+        layout = Awr2944Real2LaneInterleavedCandidate()
         assert layout.lab_validated is False
         assert layout.swra581b_reference is False
+        assert layout.requires_real_capture_validation is True
 
     def test_xwr14xx_is_swra581b_reference(self) -> None:
         layout = Xwr14xxComplex4Lane()
@@ -49,7 +54,7 @@ class TestLayoutFlags:
         assert layout.lab_validated is False  # Not validated on our hardware
 
     def test_unvalidated_layout_warns(self) -> None:
-        layout = Awr2944RealInterleaved2Lane()
+        layout = Awr2944Real2LaneInterleavedCandidate()
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             layout.warn_if_unvalidated()
@@ -61,13 +66,13 @@ class TestAwr2944RealLayout:
     """Test AWR2944 real-ADC 2-lane layout reshape and packing."""
 
     def test_expected_file_size_real(self, small_real_config: RadarConfig) -> None:
-        layout = Awr2944RealInterleaved2Lane()
+        layout = Awr2944Real2LaneInterleavedCandidate()
         # 64 samples × 4 RX × 16 chirps × 4 frames × 2 bytes = 32,768
         expected = 64 * 4 * 16 * 4 * 2
         assert layout.expected_file_size(small_real_config) == expected
 
     def test_reshape_produces_correct_shape(self, small_real_config: RadarConfig) -> None:
-        layout = Awr2944RealInterleaved2Lane()
+        layout = Awr2944Real2LaneInterleavedCandidate()
         cfg = small_real_config
 
         # Create synthetic int16 data of the right size

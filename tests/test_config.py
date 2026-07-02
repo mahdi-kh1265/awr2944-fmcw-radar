@@ -20,7 +20,7 @@ class TestConfigLoading:
         cfg = first_capture_config
         assert cfg.experiment.name == "first_capture"
         assert cfg.adc.is_complex is False
-        assert cfg.adc.layout == "awr2944_real_interleaved_2lane_unvalidated"
+        assert cfg.adc.layout == "awr2944_real_2lane_noninterleaved_candidate"
         assert cfg.adc.num_lvds_lanes == 2
         assert cfg.hardware.antenna_mode == AntennaMode.SINGLE_TX
 

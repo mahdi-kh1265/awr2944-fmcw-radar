@@ -65,16 +65,40 @@ Doppler and angle processing (phase displacement Δφ = 4πΔd/λ).
 
 ## Layout status flags
 
-Each binary layout has two status flags:
+Each binary layout has these status flags:
 
 - **`swra581b_reference`**: Implementation is derived from the SWRA581B app
   note MATLAB snippets and data-format diagrams.  Does NOT mean validated.
 - **`lab_validated`**: Implementation has been tested against real hardware
   captures from our exact AWR2944 + DCA1000 setup and confirmed correct.
+- **`requires_real_capture_validation`**: Flag indicating the layout is a candidate 
+  or unvalidated layout that must be confirmed against a real capture.
+- **`source`**: The source of the layout definition (e.g., "TI install audit").
 
 "Unvalidated" does NOT mean we have no idea how the data is structured.
 It means our Python mapping of the binary stream has not yet been **proven**
 on our exact AWR2944 + DCA1000 setup.
+
+## AWR2944 Candidate Layouts
+
+The AWR2944-specific parser was **not found locally** in mmWave Studio (our install predates it).
+The TI compiled `Packet_Reorder_Zerofill.exe` handles the conversion from `adc_data_Raw_*.bin` to `adc_data.bin`, but its source is not readable.
+
+Through an audit of TI's `rawDataReader.m` and CBUFF drivers, we know:
+- **LVDS lane count** determines physical transport (2 lanes for AWR2944).
+- **`chInterleave`** (`channelInterleave` in `rlDevDataFmtCfg_t`) determines logical RX ordering in the reassembled `adc_data.bin` stream.
+
+TI's `rawDataReader.m` enforces `chInterleave=1` (non-interleaved) for known 2-lane devices (like xWR16xx). We therefore provide two candidates:
+
+1. **`awr2944_real_2lane_interleaved_candidate`** (`ch_interleave = 0`):
+   RX channels cycle per sample clock.
+   `[RX0_s0, RX1_s0, RX2_s0, RX3_s0, RX0_s1, ...]`
+
+2. **`awr2944_real_2lane_noninterleaved_candidate`** (`ch_interleave = 1`):
+   All samples per RX arrive contiguously per chirp.
+   `[RX0_s0, RX0_s1, ..., RX0_sN, RX1_s0, ...]`
+
+**Final validation requires checking the actual mmWave Studio DataConfig generated during the first capture**, especially `rlDevDataFmtCfg_t.chInterleave` and `adcFmt`.
 
 ## Validation checklist for real AWR2944 captures
 

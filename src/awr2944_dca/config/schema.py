@@ -78,7 +78,8 @@ class AdcConfig(BaseModel):
     is_complex: bool = False  # AWR2944 default: real ADC
     iq_order: IQOrder = IQOrder.IQ
     num_lvds_lanes: int = 2  # AWR2944 default: 2 LVDS lanes
-    layout: str = "awr2944_real_interleaved_2lane_unvalidated"
+    channel_interleave: int = 1  # 0: interleaved, 1: non-interleaved
+    layout: str = "awr2944_real_2lane_noninterleaved_candidate"
 
     @property
     def bytes_per_sample_component(self) -> int:

@@ -46,7 +46,8 @@ def small_real_config() -> RadarConfig:
             "bits": 16,
             "is_complex": False,
             "num_lvds_lanes": 2,
-            "layout": "awr2944_real_interleaved_2lane_unvalidated",
+            "channel_interleave": 1,
+            "layout": "awr2944_real_2lane_noninterleaved_candidate",
         },
         "frame": {
             "chirps_per_frame": 16,

@@ -11,7 +11,6 @@ import pytest
 from awr2944_dca.config.schema import RadarConfig
 from awr2944_dca.formats.adc_parser import parse_adc_bin, validate_file_size
 from awr2944_dca.formats.layouts import (
-    Awr2944RealInterleaved2Lane,
     Xwr14xxComplex4Lane,
     get_layout,
 )
