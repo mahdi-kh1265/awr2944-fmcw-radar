@@ -6,45 +6,6 @@ This package adds the reproducible research layer on top of TI mmWave Studio:
 experiment configs, metadata, file-size validation, binary parsing, DSP
 processing, plotting, and exports.
 
-## Quick start
-
-```powershell
-# Install (editable, with dev dependencies)
-pip install -e ".[dev]"
-
-# Check environment
-awr doctor
-
-# Inspect a config
-awr inspect-config examples/configs/first_capture.yaml
-
-# Run tests
-pytest tests/ -v
-```
-
-## Project status
-
-**Milestone 1** — Parser, DSP & CLI foundation.
-
-| Feature | Status |
-|---------|--------|
-| Pydantic config schema | ✓ |
-| File-size validation (layout-aware) | ✓ |
-| Headerless `adc_data.bin` parser | ✓ |
-| Layout abstraction (AWR2944 real / xWR14xx complex / xWR16xx complex) | ✓ |
-| Synthetic cube generator + round-trip tests | ✓ |
-| DC offset removal | ✓ |
-| Range FFT | ✓ |
-| Static clutter removal | ✓ |
-| Doppler FFT | ✓ |
-| Range profile plot (dB, physical axes) | ✓ |
-| Range-Doppler plot (dB, physical axes) | ✓ |
-| CLI: `awr doctor`, `inspect-config`, `parse`, `process` | ✓ |
-| AWR2944 layout validated on real captures | ✗ pending |
-| Angle FFT / beamforming | ✗ M4 |
-| CFAR detection | ✗ M4 |
-| Dashboard / replay / live preview | ✗ M5 |
-
 ## AWR2944 layout status
 
 The AWR2944 binary layout (`awr2944_real_interleaved_2lane_unvalidated`) is
