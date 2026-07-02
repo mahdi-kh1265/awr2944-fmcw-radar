@@ -43,6 +43,28 @@ def test_generate_inventory_script(tmp_path):
     # Assert no hardware actions
     findings = static_scan_for_hardware_actions(out)
     assert len(findings) == 0
+
+def test_connection_probe_safety(tmp_path):
+    from awr2944_dca.ti.probe import generate_connection_probe_script
+    out = tmp_path / "connection_probe.lua"
+    generate_connection_probe_script(out, "run-123", 8, 921600, 1000)
+    script = out.read_text()
+    
+    # Must contain allowed functions
+    assert "ar1.SOPControl(2)" in script
+    assert "ar1.Connect(8, 921600, 1000)" in script
+    assert "ar1.IsConnected()" in script
+    
+    # Must NOT contain unsafe functions
+    forbidden = [
+        "DownloadBSSFw", "DownloadMSSFw", "PowerOn", "RfEnable", "RfInit",
+        "ChanNAdcConfig", "DataPathConfig", "LVDSLaneConfig", "ProfileConfig",
+        "ChirpConfig", "FrameConfig", "CaptureCardConfig", "StartFrame",
+        "StartMatlabPostProc", "SensorStart", "FrameStart"
+    ]
+    for fn in forbidden:
+        assert fn not in script, f"Forbidden function {fn} found in connection probe!"
+
 def test_static_scan_hardware_actions(tmp_path):
     script = tmp_path / "test.lua"
     script.write_text("ar1.Connect()\nar1.PowerOn(1, 1000, 0)\nWriteToLog('hi')\n")

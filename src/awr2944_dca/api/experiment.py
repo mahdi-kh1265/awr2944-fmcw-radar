@@ -167,21 +167,42 @@ class Experiment:
         return generate_probe_script(probe_lua, probe_id=probe_id)
 
     def generate_ti_inventory(self) -> Path:
-        """Generate the offline inventory script, save manifest, and return its path."""
+        """Generate the offline API inventory extraction script."""
         import uuid
         import json
-        
         from awr2944_dca.ti.probe import generate_inventory_script
+        
+        probe_id = str(uuid.uuid4())
         
         log_dir = self.root_dir / "ti" / "probe_logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        inventory_lua = log_dir / "inventory.lua"
         
-        probe_id = str(uuid.uuid4())
-        manifest = {"probe_id": probe_id}
-        (log_dir / "inventory_manifest.json").write_text(json.dumps(manifest, indent=2))
+        manifest = log_dir / "inventory_manifest.json"
+        manifest.write_text(json.dumps({"probe_id": probe_id}), encoding="utf-8")
         
-        return generate_inventory_script(inventory_lua, probe_id=probe_id)
+        script = log_dir / "inventory.lua"
+        generate_inventory_script(script, probe_id)
+        
+        return script
+
+    def generate_ti_connection_probe(self, com_num: int, baud: int = 921600, timeout_ms: int = 1000) -> Path:
+        """Generate the connection-only probe script."""
+        import uuid
+        import json
+        from awr2944_dca.ti.probe import generate_connection_probe_script
+        
+        run_id = str(uuid.uuid4())
+        
+        log_dir = self.root_dir / "ti" / "probe_logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        
+        manifest = log_dir / "connection_manifest.json"
+        manifest.write_text(json.dumps({"run_id": run_id}), encoding="utf-8")
+        
+        script = log_dir / "connection_probe.lua"
+        generate_connection_probe_script(script, run_id, com_num, baud, timeout_ms)
+        
+        return script
 
     def compare_layouts(self) -> None:
         """Placeholder for API-driven layout compare."""

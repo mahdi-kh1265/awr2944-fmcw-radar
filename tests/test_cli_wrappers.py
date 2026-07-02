@@ -88,6 +88,36 @@ def test_cli_lua_command(tmp_path):
     assert "dofile([[" in result.stdout
     assert str(script_path.resolve()) in result.stdout.replace("\n", "")
 
+def test_cli_workflow_map(tmp_path, monkeypatch):
+    exp = Experiment.init(name="test_workflow", preset="first-capture", root=tmp_path)
+    monkeypatch.chdir(exp.root_dir)
+    
+    # Mock extract_workflow to not rely on C:/ti existing
+    def mock_extract(ti_dir, source):
+        from awr2944_dca.ti.workflow_map import WorkflowStep
+        return [WorkflowStep("SOPControl", "connection-only", "state_changing", [], False)]
+        
+    monkeypatch.setattr("awr2944_dca.ti.workflow_map.extract_workflow", mock_extract)
+    
+    # We still need to bypass the ti_dir.exists() check in cli.py
+    # But since we can't easily mock Path without breaking Typer, let's just 
+    # mock Path.exists
+    original_exists = Path.exists
+    def mock_exists(self):
+        if str(self) == "C:\\ti" or str(self) == "C:/ti":
+            return True
+        return original_exists(self)
+        
+    monkeypatch.setattr(Path, "exists", mock_exists)
+    
+    result = runner.invoke(app, ["ti", "workflow-map"])
+    assert result.exit_code == 0
+    assert "SUCCESS" in result.stdout
+    
+    log_dir = exp.root_dir / "ti" / "probe_logs"
+    assert (log_dir / "first_capture_workflow_map.json").exists()
+    assert (log_dir / "first_capture_workflow_map.md").exists()
+
 def test_cli_summary_formatting(tmp_path, monkeypatch):
     exp = Experiment.init(name="test_summary", preset="first-capture", root=tmp_path)
     monkeypatch.chdir(exp.root_dir)

@@ -41,6 +41,8 @@ app = typer.Typer(
     help="AWR2944 + DCA1000 radar research toolkit.",
     no_args_is_help=True,
 )
+ports_app = typer.Typer(help="Hardware COM port discovery and management")
+app.add_typer(ports_app, name="ports")
 console = Console()
 
 
@@ -1400,6 +1402,124 @@ def ti_inventory_status() -> None:
     console.print(f"Extracted {len(g_keys)} keys from _G.")
     
 
+@ti_app.command("inventory-list")
+def ti_inventory_list(
+    filter: str = typer.Option(None, "--filter", help="Case-insensitive filter for API names"),
+) -> None:
+    """List extracted API inventory keys."""
+    import json
+    from awr2944_dca.api.experiment import Experiment
+
+    try:
+        exp = Experiment.open(".")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+
+    result_file = exp.root_dir / "ti" / "probe_logs" / "inventory_result.json"
+    if not result_file.exists():
+        console.print("[yellow]NOT RUN[/yellow] - inventory_result.json not found.")
+        return
+
+    try:
+        data = json.loads(result_file.read_text(encoding="utf-8"))
+    except Exception as e:
+        console.print(f"[red]ERROR[/red] parsing inventory_result.json: {e}")
+        raise typer.Exit(1)
+        
+    ar1_keys = data.get("ar1_keys", {})
+    
+    table = Table(title="ar1 API Keys", show_lines=True)
+    table.add_column("Name", style="cyan")
+    table.add_column("Type")
+    table.add_column("Value Summary", max_width=60)
+    
+    count = 0
+    for k, v in ar1_keys.items():
+        if filter and filter.lower() not in k.lower():
+            continue
+            
+        type_str = v.get("type", "unknown")
+        val_str = v.get("value", "")
+        table.add_row(k, type_str, val_str)
+        count += 1
+        
+    console.print(table)
+    console.print(f"Showing {count} / {len(ar1_keys)} keys.")
+
+@ti_app.command("inventory-classify")
+def ti_inventory_classify() -> None:
+    """Classify extracted API inventory keys using static analysis."""
+    import json
+    from awr2944_dca.api.experiment import Experiment
+    from awr2944_dca.ti.classify import generate_classification, write_outputs, scan_ti_scripts
+
+    try:
+        exp = Experiment.open(".")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+
+    log_dir = exp.root_dir / "ti" / "probe_logs"
+    result_file = log_dir / "inventory_result.json"
+    
+    if not result_file.exists():
+        console.print("[yellow]NOT RUN[/yellow] - inventory_result.json not found.")
+        return
+
+    try:
+        data = json.loads(result_file.read_text(encoding="utf-8"))
+    except Exception as e:
+        console.print(f"[red]ERROR[/red] parsing inventory_result.json: {e}")
+        raise typer.Exit(1)
+        
+    ti_dir = Path("C:/ti")
+    usage_map = {}
+    if ti_dir.exists():
+        console.print(f"Scanning TI installation for Lua scripts in {ti_dir}...")
+        usage_map = scan_ti_scripts(ti_dir)
+        console.print(f"Found usages for {len(usage_map)} ar1 APIs.")
+        
+    console.print("Classifying APIs heuristically...")
+    keys = generate_classification(data, ti_dir)
+    write_outputs(keys, usage_map, log_dir)
+    
+    console.print(f"[green]SUCCESS[/green] - Classification written to {log_dir}")
+
+
+@ti_app.command("workflow-map")
+def ti_workflow_map(
+    source: str = typer.Option("DataCaptureDemo_xWR.lua", "--source", help="Source Lua file to extract from"),
+) -> None:
+    """Extract and map the first-capture workflow from a TI script."""
+    from awr2944_dca.api.experiment import Experiment
+    from awr2944_dca.ti.workflow_map import extract_workflow, write_workflow_map
+
+    try:
+        exp = Experiment.open(".")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+
+    ti_dir = Path("C:/ti")
+    log_dir = exp.root_dir / "ti" / "probe_logs"
+    
+    if not ti_dir.exists():
+        console.print(f"[red]TI installation directory {ti_dir} not found.[/red]")
+        raise typer.Exit(1)
+        
+    console.print(f"Extracting first-capture workflow from {source}...")
+    steps = extract_workflow(ti_dir, source)
+    
+    if not steps:
+        console.print(f"[red]Could not find or extract from {source}[/red]")
+        raise typer.Exit(1)
+        
+    log_dir.mkdir(parents=True, exist_ok=True)
+    write_workflow_map(steps, log_dir)
+    console.print(f"[green]SUCCESS[/green] - Workflow map written to {log_dir}")
+
+
 @ti_app.command("lua-command")
 def ti_lua_command(
     script_path: Path = typer.Argument(..., help="Path to Lua script"),
@@ -1451,3 +1571,155 @@ def ti_run_lua(
 
     console.print("[green]Scan passed. No hardware actions found.[/green]")
     console.print("Headless execution of Lua is partially supported. (See probe command).")
+
+
+@ports_app.command("scan")
+def ports_scan() -> None:
+    """Enumerate Windows COM ports and classify likely TI radar roles."""
+    from awr2944_dca.hardware.ports import scan_ports
+    
+    try:
+        ports = scan_ports()
+    except Exception as e:
+        console.print(f"[red]Error scanning ports: {e}[/red]")
+        raise typer.Exit(1)
+        
+    if not ports:
+        console.print("[yellow]No COM ports found.[/yellow]")
+        return
+        
+    table = Table(title="Discovered COM Ports", show_lines=True)
+    table.add_column("COM")
+    table.add_column("Friendly Name")
+    table.add_column("Role", style="cyan")
+    table.add_column("Confidence")
+    
+    for p in ports:
+        table.add_row(p.com, p.friendly_name, p.likely_role, p.confidence)
+        
+    console.print(table)
+
+
+@ports_app.command("resolve")
+def ports_resolve(
+    role: str = typer.Option(..., "--role", help="Role to resolve (e.g., awr-rs232)"),
+) -> None:
+    """Recommend a COM port for a specific hardware role."""
+    from awr2944_dca.hardware.ports import resolve_port
+    
+    candidates = resolve_port(role)
+    if not candidates:
+        console.print("[red]No COM ports available to resolve.[/red]")
+        raise typer.Exit(1)
+        
+    console.print(f"Candidates for role [cyan]{role}[/cyan]:")
+    
+    table = Table(show_lines=True)
+    table.add_column("Rank")
+    table.add_column("COM")
+    table.add_column("Name")
+    table.add_column("Confidence")
+    
+    for i, c in enumerate(candidates, start=1):
+        table.add_row(str(i), c.com, c.friendly_name, c.confidence)
+        
+    console.print(table)
+    console.print("\n[yellow]To save your choice to the local experiment config, run:[/yellow]")
+    console.print(f"  awr ports save --role {role} --com {candidates[0].com}")
+
+
+@ports_app.command("save")
+def ports_save(
+    role: str = typer.Option(..., "--role", help="Role to save (e.g., awr-rs232)"),
+    com: str = typer.Option(..., "--com", help="COM port name (e.g., COM8)"),
+) -> None:
+    """Save a COM port mapping to local_hardware.yaml in the experiment root."""
+    from awr2944_dca.api.experiment import Experiment
+    from awr2944_dca.hardware.ports import save_local_hardware
+    
+    try:
+        exp = Experiment.open(".")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+        
+    cfg = save_local_hardware(exp.root_dir, role, com)
+    console.print(f"[green]Saved {role} -> {com}[/green] in {cfg.name}")
+    console.print("This file is gitignored as COM ports are machine-specific.")
+
+
+@ti_app.command("connection-probe")
+def ti_connection_probe(
+    com: str = typer.Option(None, "--com", help="COM port (e.g., COM8). If omitted, reads from local_hardware.yaml"),
+    baud: int = typer.Option(921600, "--baud", help="Baud rate"),
+    timeout_ms: int = typer.Option(1000, "--timeout-ms", help="Connect timeout in ms"),
+) -> None:
+    """Generate a safe connection-only Lua script."""
+    from awr2944_dca.api.experiment import Experiment
+    from awr2944_dca.hardware.ports import get_local_hardware_config
+    import re
+    
+    try:
+        exp = Experiment.open(".")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+        
+    if not com:
+        cfg = get_local_hardware_config(exp.root_dir)
+        com = cfg.get("hardware", {}).get("awr_rs232_com")
+        if not com:
+            console.print("[red]No COM port specified and awr_rs232_com not found in local_hardware.yaml.[/red]")
+            console.print("Run [cyan]awr ports resolve --role awr-rs232[/cyan] and save it first.")
+            raise typer.Exit(1)
+            
+    # Extract numeric part
+    m = re.search(r'\d+', com)
+    if not m:
+        console.print(f"[red]Could not parse numeric port from '{com}'.[/red]")
+        raise typer.Exit(1)
+        
+    com_num = int(m.group(0))
+    
+    script = exp.generate_ti_connection_probe(com_num, baud, timeout_ms)
+    console.print(f"[green]Generated {script.name}[/green]")
+    console.print("Run it manually in mmWave Studio Lua Shell:")
+    console.print(f"  [cyan]awr ti lua-command {script} --copy[/cyan]")
+
+
+@ti_app.command("connection-status")
+def ti_connection_status() -> None:
+    """Check the result of the connection-only hardware probe."""
+    from awr2944_dca.api.experiment import Experiment
+    import json
+    
+    try:
+        exp = Experiment.open(".")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+        
+    log_dir = exp.root_dir / "ti" / "probe_logs"
+    manifest_path = log_dir / "connection_manifest.json"
+    result_path = log_dir / "connection_result.json"
+    
+    if not result_path.exists() or not manifest_path.exists():
+        console.print("[yellow]STATUS: NOT RUN[/yellow] (connection result or manifest missing)")
+        return
+        
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    
+    if manifest.get("run_id") != result.get("run_id"):
+        console.print("[yellow]STATUS: STALE RESULT[/yellow] (run_id mismatch, run connection-probe again)")
+        return
+        
+    err = result.get("error")
+    connect_ret = result.get("connect_return")
+    
+    if connect_ret == 0 and not err:
+        console.print(f"[green]STATUS: SUCCESS[/green] (Connected on {result.get('com_display')})")
+    else:
+        console.print("[red]STATUS: ERROR[/red]")
+        if err: console.print(f"  Error: {err}")
+        if connect_ret is not None: console.print(f"  Connect returned: {connect_ret}")
