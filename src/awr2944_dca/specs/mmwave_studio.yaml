@@ -1,0 +1,14 @@
+# TI mmWave Studio Specifications
+# Provenance: TI mmWave Studio User Guide
+
+software_name: mmWave Studio
+description: "TI GUI and automation API for configuring mmWave radar sensors and capturing data."
+
+scripting:
+  language: "Lua"
+  default_port: 2777
+
+expected_paths:
+  windows:
+    - "C:\\ti\\mmwave_studio*"
+    - "C:\\ti\\mmwave_mcuplus_sdk*"

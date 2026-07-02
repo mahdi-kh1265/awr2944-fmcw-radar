@@ -39,10 +39,79 @@ def validate_config(cfg: "RadarConfig") -> list[ValidationResult]:
     """
     results: list[ValidationResult] = []
 
-    # --- ADC mode vs layout consistency ---
-    layout = cfg.adc.layout
-    is_real = not cfg.adc.is_complex
+    # --- Load Specs ---
+    try:
+        from awr2944_dca.config.specs import load_radar_spec, load_capture_card_spec
+        radar_spec = load_radar_spec(cfg.rig.radar)
+        capture_spec = load_capture_card_spec(cfg.rig.capture_card)
+    except FileNotFoundError as e:
+        results.append(ValidationResult(
+            field="rig",
+            severity=Severity.ERROR,
+            message=f"Missing spec for device: {e}",
+        ))
+        return results
 
+    # --- TX/RX Limits from Spec ---
+    if cfg.hardware.num_tx > radar_spec.hardware_limits.max_tx_channels:
+        results.append(ValidationResult(
+            field="hardware.tx_enabled",
+            severity=Severity.ERROR,
+            message=f"TX count={cfg.hardware.num_tx} exceeds maximum ({radar_spec.hardware_limits.max_tx_channels}).",
+        ))
+    if cfg.hardware.num_rx > radar_spec.hardware_limits.max_rx_channels:
+        results.append(ValidationResult(
+            field="hardware.rx_enabled",
+            severity=Severity.ERROR,
+            message=f"RX count={cfg.hardware.num_rx} exceeds maximum ({radar_spec.hardware_limits.max_rx_channels}).",
+        ))
+    if cfg.hardware.num_tx <= radar_spec.hardware_limits.max_tx_channels and cfg.hardware.num_rx <= radar_spec.hardware_limits.max_rx_channels:
+        results.append(ValidationResult(
+            field="hardware.channels",
+            severity=Severity.OK,
+            message=f"TX ({cfg.hardware.num_tx}) and RX ({cfg.hardware.num_rx}) counts within limits.",
+        ))
+
+    # --- Frequency Limits from Spec ---
+    freq = cfg.profile.start_freq_ghz
+    if freq < radar_spec.hardware_limits.min_frequency_ghz or freq > radar_spec.hardware_limits.max_frequency_ghz:
+        results.append(ValidationResult(
+            field="profile.start_freq_ghz",
+            severity=Severity.ERROR,
+            message=f"Frequency {freq} GHz outside supported range [{radar_spec.hardware_limits.min_frequency_ghz}, {radar_spec.hardware_limits.max_frequency_ghz}].",
+        ))
+    else:
+        results.append(ValidationResult(
+            field="profile.start_freq_ghz",
+            severity=Severity.OK,
+            message=f"Frequency {freq} GHz is within supported range.",
+        ))
+
+    # --- ADC Bits from Spec ---
+    if cfg.adc.bits not in radar_spec.hardware_limits.supported_adc_bits:
+        results.append(ValidationResult(
+            field="adc.bits",
+            severity=Severity.ERROR,
+            message=f"ADC bits={cfg.adc.bits} not supported by {radar_spec.device_name} (supports: {radar_spec.hardware_limits.supported_adc_bits}).",
+        ))
+    else:
+        results.append(ValidationResult(
+            field="adc.bits",
+            severity=Severity.OK,
+            message=f"ADC bits={cfg.adc.bits} is supported.",
+        ))
+
+    # --- Layout vs Spec ---
+    layout = cfg.adc.layout
+    if layout not in radar_spec.capture_support.supported_layouts:
+        results.append(ValidationResult(
+            field="adc.layout",
+            severity=Severity.WARNING,
+            message=f"Layout '{layout}' not in known supported list for {radar_spec.device_name}.",
+        ))
+
+    # --- ADC mode vs layout consistency ---
+    is_real = not cfg.adc.is_complex
     if is_real and "complex" in layout:
         results.append(ValidationResult(
             field="adc.is_complex / adc.layout",
@@ -109,33 +178,12 @@ def validate_config(cfg: "RadarConfig") -> list[ValidationResult]:
             message="LVDS lane count and layout are consistent.",
         ))
 
-    # --- ADC bits ---
-    if cfg.adc.bits not in (12, 14, 16):
+    # --- LVDS lanes vs spec ---
+    if cfg.adc.num_lvds_lanes not in radar_spec.capture_support.supported_lvds_lanes:
         results.append(ValidationResult(
-            field="adc.bits",
+            field="adc.num_lvds_lanes",
             severity=Severity.ERROR,
-            message=f"ADC bits={cfg.adc.bits} is not a valid TI ADC resolution (12, 14, 16).",
-        ))
-    else:
-        results.append(ValidationResult(
-            field="adc.bits",
-            severity=Severity.OK,
-            message=f"ADC bits={cfg.adc.bits}.",
-        ))
-
-    # --- RX count ---
-    num_rx = cfg.hardware.num_rx
-    if num_rx < 1 or num_rx > 4:
-        results.append(ValidationResult(
-            field="hardware.rx_enabled",
-            severity=Severity.ERROR,
-            message=f"RX count={num_rx} is out of range [1..4].",
-        ))
-    else:
-        results.append(ValidationResult(
-            field="hardware.rx_enabled",
-            severity=Severity.OK,
-            message=f"RX count={num_rx}.",
+            message=f"LVDS lanes {cfg.adc.num_lvds_lanes} not supported by {radar_spec.device_name} (supports: {radar_spec.capture_support.supported_lvds_lanes}).",
         ))
 
     # --- samples_per_chirp power of 2 ---
@@ -155,24 +203,10 @@ def validate_config(cfg: "RadarConfig") -> list[ValidationResult]:
             message=f"samples_per_chirp={cfg.adc.samples_per_chirp} (power of 2).",
         ))
 
-    # --- chirps_per_frame ---
-    results.append(ValidationResult(
-        field="frame.chirps_per_frame",
-        severity=Severity.OK,
-        message=f"chirps_per_frame={cfg.frame.chirps_per_frame}.",
-    ))
-
-    # --- num_frames ---
-    results.append(ValidationResult(
-        field="frame.num_frames",
-        severity=Severity.OK,
-        message=f"num_frames={cfg.frame.num_frames}.",
-    ))
-
     # --- Expected file size ---
     expected_bytes = (
         cfg.adc.samples_per_chirp
-        * num_rx
+        * cfg.hardware.num_rx
         * cfg.frame.chirps_per_frame
         * cfg.frame.num_frames
         * cfg.adc.bytes_per_sample_per_rx
@@ -193,12 +227,6 @@ def validate_config(cfg: "RadarConfig") -> list[ValidationResult]:
                 f"Layout '{layout}' is a candidate/unvalidated layout. "
                 "Must be confirmed against real hardware capture."
             ),
-        ))
-    else:
-        results.append(ValidationResult(
-            field="adc.layout",
-            severity=Severity.OK,
-            message=f"Layout '{layout}'.",
         ))
 
     # --- TDM-MIMO warning ---

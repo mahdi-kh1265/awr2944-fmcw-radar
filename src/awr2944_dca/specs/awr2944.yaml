@@ -1,0 +1,26 @@
+# AWR2944 Device Specifications
+# Provenance: TI AWR2944 datasheet, mmWave Studio user guides
+
+device_name: AWR2944EVM
+description: "TI 76-81 GHz FMCW Radar Evaluation Module with 4 TX and 4 RX antennas."
+
+hardware_limits:
+  max_tx_channels: 4
+  max_rx_channels: 4
+  min_frequency_ghz: 76.0
+  max_frequency_ghz: 81.0
+  supported_adc_bits: [12, 14, 16]
+
+power_supply:
+  voltage_v: 12.0
+  min_current_a: 2.5
+  note: "Must use a 12V supply capable of at least 2.5A to avoid brownouts during chirping."
+
+capture_support:
+  direct_dca1000_supported: true
+  supported_lvds_lanes: [2]
+  supported_layouts:
+    - awr2944_real_2lane_noninterleaved_candidate
+    - awr2944_real_2lane_interleaved_candidate
+    - awr2944_complex_2lane_noninterleaved_candidate
+    - awr2944_complex_2lane_interleaved_candidate

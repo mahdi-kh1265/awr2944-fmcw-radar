@@ -1,0 +1,24 @@
+# DCA1000EVM Capture Card Specifications
+# Provenance: TI DCA1000EVM CLI Software Developer Guide, Hardware User Guide
+
+device_name: DCA1000EVM
+description: "TI Real-time data capture card for FMCW radars over Ethernet."
+
+network:
+  default_pc_static_ip: 192.168.33.30
+  default_device_ip: 192.168.33.180
+  subnet_mask: 255.255.255.0
+  config_udp_port: 4096
+  data_udp_port: 4098
+
+file_formats:
+  raw_packet_file:
+    description: "Raw UDP payload dumps, e.g. adc_data_Raw_0.bin. Needs reordering and zero-fill."
+    extension: "_Raw_*.bin"
+  postproc_file:
+    description: "Contiguous headerless ADC sample stream, typically adc_data.bin. Output of TI's Packet_Reorder_Zerofill tool."
+    extension: "adc_data.bin"
+
+constraints:
+  supported_data_formats: ["complex", "real"]
+  supported_lvds_lanes: [2, 4]

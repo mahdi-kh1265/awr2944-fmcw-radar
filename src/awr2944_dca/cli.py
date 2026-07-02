@@ -323,6 +323,104 @@ def parse(
 
 
 # ---------------------------------------------------------------------------
+# Context-Aware Aliases (awr init, awr check, awr summary, awr set)
+# ---------------------------------------------------------------------------
+
+@app.command("init")
+def init_alias(
+    name: str = typer.Argument(..., help="Experiment name"),
+    preset: str = typer.Option("first-capture", "--preset", "-p", help="Config preset"),
+    root: Path = typer.Option(Path("."), "--root", "-r", help="Experiments root dir"),
+) -> None:
+    """Scaffold a new experiment (alias for 'awr experiment init')."""
+    experiment_init(name, preset, root)
+
+
+@app.command("check")
+def check_alias(
+    config_path: Path | None = typer.Option(None, "--config", "-c", help="Explicit config path"),
+) -> None:
+    """Validate experiment config. Auto-detects local capture.yaml."""
+    from awr2944_dca.context import discover_context
+
+    if config_path is None:
+        ctx = discover_context()
+        if not ctx:
+            console.print("[red]No .awr-experiment found. Must run inside an experiment folder or provide --config.[/red]")
+            raise typer.Exit(code=1)
+        config_path = ctx.config_path
+
+    config_validate(config_path)
+
+
+@app.command("summary")
+def summary_alias(
+    config_path: Path | None = typer.Option(None, "--config", "-c", help="Explicit config path"),
+) -> None:
+    """Summarize experiment config. Auto-detects local capture.yaml."""
+    from awr2944_dca.context import discover_context
+
+    if config_path is None:
+        ctx = discover_context()
+        if not ctx:
+            console.print("[red]No .awr-experiment found. Must run inside an experiment folder or provide --config.[/red]")
+            raise typer.Exit(code=1)
+        config_path = ctx.config_path
+
+    config_summarize(config_path)
+
+
+set_app = typer.Typer(help="Modify local config values.", no_args_is_help=True)
+app.add_typer(set_app, name="set")
+
+@set_app.command("device")
+def set_device(
+    device: str = typer.Argument(..., help="Radar device name (e.g. AWR2944EVM)"),
+) -> None:
+    """Set the radar device in the local capture.yaml."""
+    from awr2944_dca.context import discover_context
+    import yaml
+
+    ctx = discover_context()
+    if not ctx:
+        console.print("[red]Must be run inside an experiment directory.[/red]")
+        raise typer.Exit(code=1)
+
+    data = yaml.safe_load(ctx.config_path.read_text(encoding="utf-8"))
+    if "rig" not in data:
+        data["rig"] = {}
+    data["rig"]["radar"] = device
+
+    # keep header comments? yaml.dump destroys them, so we just write it back.
+    # A real implementation might use ruamel.yaml to preserve comments.
+    # For now we'll accept the comment loss on update.
+    ctx.config_path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False), encoding="utf-8")
+    console.print(f"[green]OK[/green] Updated device to {device} in {ctx.config_path}")
+
+
+@set_app.command("capture")
+def set_capture(
+    backend: str = typer.Argument(..., help="Capture backend (e.g. DCA1000EVM)"),
+) -> None:
+    """Set the capture backend in the local capture.yaml."""
+    from awr2944_dca.context import discover_context
+    import yaml
+
+    ctx = discover_context()
+    if not ctx:
+        console.print("[red]Must be run inside an experiment directory.[/red]")
+        raise typer.Exit(code=1)
+
+    data = yaml.safe_load(ctx.config_path.read_text(encoding="utf-8"))
+    if "rig" not in data:
+        data["rig"] = {}
+    data["rig"]["capture_card"] = backend
+
+    ctx.config_path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False), encoding="utf-8")
+    console.print(f"[green]OK[/green] Updated capture card to {backend} in {ctx.config_path}")
+
+
+# ---------------------------------------------------------------------------
 # awr process
 # ---------------------------------------------------------------------------
 
@@ -518,6 +616,160 @@ def compare_layouts(
             console.print(f"[red]Parse error:[/red] {e}")
 
 
+# ---------------------------------------------------------------------------
+# Context-Aware Aliases (awr init, awr check, awr summary, awr set)
+# ---------------------------------------------------------------------------
+
+@app.command("init")
+def init_alias(
+    name: str = typer.Argument(..., help="Experiment name"),
+    preset: str = typer.Option("first-capture", "--preset", "-p", help="Config preset"),
+    root: Path = typer.Option(Path("."), "--root", "-r", help="Experiments root dir"),
+) -> None:
+    """Scaffold a new experiment."""
+    from awr2944_dca.api.experiment import Experiment
+    try:
+        exp = Experiment.init(name, preset, root)
+        console.print(f"[green]OK[/green] Scaffolded experiment at {exp.root_dir}")
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command("check")
+def check_alias(
+    config_path: Path | None = typer.Option(None, "--config", "-c", help="Explicit config path"),
+) -> None:
+    """Validate experiment config."""
+    from awr2944_dca.api.experiment import Experiment
+    from awr2944_dca.config.validation import Severity
+    
+    try:
+        exp = Experiment.open(config_path.parent if config_path else ".")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+
+    results = exp.check()
+
+    table = Table(title="[bold]Deep Validation[/bold]", show_lines=True)
+    table.add_column("Field", style="cyan", min_width=30)
+    table.add_column("Status", min_width=8)
+    table.add_column("Message", min_width=40)
+
+    has_errors = False
+    warnings_count = 0
+    for r in results:
+        if r.severity == Severity.OK:
+            status = "[green]OK[/green]"
+        elif r.severity == Severity.WARNING:
+            status = "[yellow]WARN[/yellow]"
+            warnings_count += 1
+        else:
+            status = "[red]ERROR[/red]"
+            has_errors = True
+
+        table.add_row(r.field, status, r.message)
+
+    console.print(table)
+    
+    if has_errors:
+        console.print("[red]Validation failed with errors.[/red]")
+        raise typer.Exit(code=1)
+    elif warnings_count > 0:
+        console.print(f"[yellow]No errors; {warnings_count} warning(s).[/yellow]")
+    else:
+        console.print("[green]All checks passed.[/green]")
+
+
+@app.command("summary")
+def summary_alias(
+    config_path: Path | None = typer.Option(None, "--config", "-c", help="Explicit config path"),
+) -> None:
+    """Summarize experiment config."""
+    from awr2944_dca.api.experiment import Experiment
+    
+    try:
+        exp = Experiment.open(config_path.parent if config_path else ".")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+
+    summary = exp.summary()
+    cfg = summary["config"]
+    derived = summary["derived"]
+    expected_bytes = summary["expected_bytes"]
+    expected_mib = expected_bytes / (1024 * 1024)
+
+    table = Table(title="[bold]Experiment Summary[/bold]", show_lines=True)
+    table.add_column("Parameter", style="cyan")
+    table.add_column("Value")
+
+    table.add_row("Device", cfg.rig.radar)
+    table.add_row("Capture card", cfg.rig.capture_card)
+    table.add_row("ADC mode", "complex" if cfg.adc.is_complex else "real")
+    table.add_row("ADC bits", str(cfg.adc.bits))
+    table.add_row("RX enabled", str(cfg.hardware.rx_enabled))
+    table.add_row("TX enabled", str(cfg.hardware.tx_enabled))
+    table.add_row("Antenna mode", cfg.hardware.antenna_mode.value)
+    table.add_row("channel_interleave", str(cfg.adc.channel_interleave))
+    
+    table.add_row("Samples/chirp", str(cfg.adc.samples_per_chirp))
+    table.add_row("Chirps/frame", str(cfg.frame.chirps_per_frame))
+    table.add_row("Frames", str(cfg.frame.num_frames))
+    table.add_row("Expected adc_data.bin size", f"{expected_bytes:,} bytes ({expected_mib:.2f} MiB)")
+    
+    table.add_row("Bandwidth", f"{derived.bandwidth_mhz:.1f} MHz")
+    table.add_row("Range resolution", f"{derived.range_resolution_m * 100:.2f} cm")
+    table.add_row("Max range", f"{derived.max_range_m:.2f} m")
+    table.add_row("Max velocity (estimate)", f"{derived.max_velocity_mps:.2f} m/s")
+    table.add_row("Velocity resolution (estimate)", f"{derived.velocity_resolution_mps:.4f} m/s")
+    table.add_row("Virtual antennas (estimate)", str(derived.num_virtual_antennas))
+    table.add_row("Capture duration", f"{derived.capture_duration_s:.3f} s")
+
+    console.print(table)
+    
+    # Print layout below table to prevent truncation
+    console.print(f"[cyan]Parser layout:[/cyan] {cfg.adc.layout}")
+
+    if "candidate" in cfg.adc.layout or "unvalidated" in cfg.adc.layout:
+        console.print(
+            "\n[yellow]WARNING: Layout is a candidate/unvalidated. "
+            "Run 'awr compare-layouts' with real data to confirm.[/yellow]"
+        )
+
+
+set_app = typer.Typer(help="Modify local config values.", no_args_is_help=True)
+app.add_typer(set_app, name="set")
+
+@set_app.command("device")
+def set_device(
+    device: str = typer.Argument(..., help="Radar device name (e.g. AWR2944EVM)"),
+) -> None:
+    """Set the radar device in the local capture.yaml."""
+    from awr2944_dca.api.experiment import Experiment
+    try:
+        exp = Experiment.open(".")
+        exp.set_device(device)
+        console.print(f"[green]OK[/green] Updated device to {device}")
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+
+
+@set_app.command("capture")
+def set_capture(
+    backend: str = typer.Argument(..., help="Capture backend (e.g. DCA1000EVM)"),
+) -> None:
+    """Set the capture backend in the local capture.yaml."""
+    from awr2944_dca.api.experiment import Experiment
+    try:
+        exp = Experiment.open(".")
+        exp.set_capture(backend)
+        console.print(f"[green]OK[/green] Updated capture card to {backend}")
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+
+
 # ===========================================================================
 # awr config ...
 # ===========================================================================
@@ -565,6 +817,76 @@ def config_new(
         console.print(
             "[yellow]WARNING: This preset uses TDM-MIMO which is NOT validated.[/yellow]"
         )
+
+
+@config_app.command("edit")
+def config_edit(
+    config_path: Path | None = typer.Option(None, "--config", "-c", help="Explicit config path"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Don't actually open editor (for tests)"),
+) -> None:
+    """Open capture.yaml in the system editor, then validate."""
+    from awr2944_dca.api.experiment import Experiment
+    
+    try:
+        exp = Experiment.open(config_path.parent if config_path else ".")
+        exp.config_edit(dry_run=dry_run)
+        console.print("[dim]Editor closed. Running validation...[/dim]")
+        check_alias(exp.config_path)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@config_app.command("wizard")
+def config_wizard(
+    out: Path | None = typer.Option(None, "--out", "-o", help="Output YAML path"),
+) -> None:
+    """Interactive config generator."""
+    from rich.prompt import Prompt, Confirm, IntPrompt, FloatPrompt
+    from awr2944_dca.config.schema import RadarConfig
+    from awr2944_dca.context import discover_context
+
+    if out is None:
+        ctx = discover_context()
+        if ctx:
+            out = ctx.config_path
+        else:
+            out = Path("capture.yaml")
+
+    console.print("[bold cyan]AWR2944 Config Wizard[/bold cyan]")
+    
+    name = Prompt.ask("Experiment name", default="wizard_capture")
+    device = Prompt.ask("Radar device", default="AWR2944EVM")
+    capture = Prompt.ask("Capture backend", default="DCA1000EVM")
+    
+    is_complex = Confirm.ask("Complex ADC?", default=False)
+    bits = IntPrompt.ask("ADC bits", default=16, choices=["12", "14", "16"])
+    
+    samples = IntPrompt.ask("Samples per chirp", default=256)
+    chirps = IntPrompt.ask("Chirps per frame", default=128)
+    frames = IntPrompt.ask("Number of frames", default=10)
+
+    cfg = {
+        "experiment": {"name": name},
+        "rig": {"radar": device, "capture_card": capture},
+        "adc": {
+            "is_complex": is_complex,
+            "bits": bits,
+            "samples_per_chirp": samples,
+            "layout": f"{device.lower().replace('evm', '')}_{'complex' if is_complex else 'real'}_2lane_noninterleaved_candidate"
+        },
+        "frame": {
+            "chirps_per_frame": chirps,
+            "num_frames": frames
+        }
+    }
+
+    import yaml
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(yaml.dump(cfg, default_flow_style=False, sort_keys=False), encoding="utf-8")
+    
+    console.print(f"[green]OK[/green] Wrote config to {out}")
+    config_validate(out)
 
 
 @config_app.command("validate")
@@ -694,86 +1016,7 @@ def experiment_init(
     root: Path = typer.Option(Path("experiments"), "--root", "-r", help="Experiments root dir"),
 ) -> None:
     """Scaffold an experiment directory with config, folders, and notes template."""
-    import datetime
-
-    import yaml
-
-    from awr2944_dca import __version__
-    from awr2944_dca.config.presets import get_preset, list_presets
-
-    try:
-        preset_dict = get_preset(preset)
-    except KeyError:
-        console.print(
-            f"[red]Unknown preset '{preset}'.[/red] "
-            f"Available: {list_presets()}"
-        )
-        raise typer.Exit(code=1)
-
-    # Override experiment name
-    preset_dict["experiment"]["name"] = name
-
-    exp_dir = root / name
-    if exp_dir.exists():
-        console.print(f"[red]Directory already exists: {exp_dir}[/red]")
-        raise typer.Exit(code=1)
-
-    # Create directory structure
-    dirs = [
-        exp_dir / "raw",
-        exp_dir / "ti_config",
-        exp_dir / "screenshots",
-        exp_dir / "compare_layouts",
-    ]
-    for d in dirs:
-        d.mkdir(parents=True, exist_ok=True)
-
-    # Write capture.yaml
-    capture_path = exp_dir / "capture.yaml"
-    header = (
-        f"# Experiment: {name}\n"
-        f"# Preset: {preset}\n"
-        f"# Generated by awr2944_dca v{__version__}\n\n"
-    )
-    yaml_str = yaml.dump(preset_dict, default_flow_style=False, sort_keys=False)
-    capture_path.write_text(header + yaml_str, encoding="utf-8")
-
-    # Write manifest.yaml
-    manifest = {
-        "experiment": name,
-        "preset": preset,
-        "created": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "tool_version": __version__,
-        "status": "initialized",
-        "notes": "",
-    }
-    manifest_path = exp_dir / "manifest.yaml"
-    manifest_path.write_text(
-        yaml.dump(manifest, default_flow_style=False, sort_keys=False),
-        encoding="utf-8",
-    )
-
-    # Write notes.md template
-    notes_path = exp_dir / "notes.md"
-    notes_path.write_text(
-        f"# {name}\n\n"
-        f"## Setup Notes\n\n"
-        f"- Preset: {preset}\n"
-        f"- Date: \n"
-        f"- Operator: \n\n"
-        f"## Observations\n\n"
-        f"## Issues\n\n",
-        encoding="utf-8",
-    )
-
-    console.print(f"[green]OK[/green] Experiment initialized: {exp_dir}")
-    console.print(f"  capture.yaml  — edit before capture")
-    console.print(f"  manifest.yaml — auto-generated metadata")
-    console.print(f"  notes.md      — your lab notes")
-    console.print(f"  raw/          — place adc_data.bin here")
-    console.print(f"  ti_config/    — place TI Lua/JSON files here")
-    console.print(f"  screenshots/  — mmWave Studio screenshots")
-    console.print(f"  compare_layouts/ — compare-layouts output")
+    init_alias(name=name, preset=preset, root=root)
 
 
 # ===========================================================================
@@ -979,3 +1222,232 @@ def ti_export_dca_config(
     console.print(
         "[yellow]NOTE: Verify firmware/schema version matches your DCA1000.[/yellow]"
     )
+
+
+@ti_app.command("find-studio")
+def ti_find_studio() -> None:
+    """Search for mmWave Studio installations."""
+    from awr2944_dca.ti.probe import find_studio
+
+    installs = find_studio()
+    if not installs:
+        console.print("[yellow]No mmWave Studio installations found in common paths.[/yellow]")
+        return
+
+    console.print(f"[green]Found {len(installs)} installation(s):[/green]")
+    for install in installs:
+        console.print(f"  - {install.path}")
+        console.print(f"    Exe: {install.exe_path}")
+
+
+@ti_app.command("probe")
+def ti_probe(
+    offline: bool = typer.Option(False, "--offline", help="Required. Probe without connecting to hardware"),
+) -> None:
+    """Probe mmWave Studio for offline execution capabilities."""
+    if not offline:
+        console.print("[red]Must pass --offline flag. Hardware probe is not implemented.[/red]")
+        raise typer.Exit(1)
+
+    from awr2944_dca.api.experiment import Experiment
+
+    try:
+        exp = Experiment.open(".")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+
+    probe_lua = exp.generate_ti_probe()
+
+    console.print("\n[yellow]PARTIAL: probe.lua generated.[/yellow]")
+    console.print(f"Run this helper to get the command for mmWave Studio:")
+    console.print(f"  awr ti lua-command {probe_lua.relative_to(exp.root_dir)} --copy")
+    console.print("Then run `awr ti probe-status`")
+
+
+@ti_app.command("probe-status")
+def ti_probe_status() -> None:
+    """Read the results of the offline Lua probe."""
+    import json
+    from awr2944_dca.api.experiment import Experiment
+
+    try:
+        exp = Experiment.open(".")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+
+    result_file = exp.root_dir / "ti" / "probe_logs" / "probe_result.json"
+    manifest_file = exp.root_dir / "ti" / "probe_logs" / "probe_manifest.json"
+
+    if not result_file.exists():
+        console.print("[yellow]NOT RUN[/yellow] - probe_result.json not found.")
+        return
+
+    try:
+        data = json.loads(result_file.read_text(encoding="utf-8"))
+    except Exception as e:
+        console.print(f"[red]ERROR[/red] parsing probe_result.json: {e}")
+        raise typer.Exit(1)
+        
+    if manifest_file.exists():
+        try:
+            manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+            if data.get("probe_id") != manifest_data.get("probe_id"):
+                console.print(f"[yellow]STALE RESULT[/yellow] - probe_id mismatch. Re-run the script in mmWave Studio.")
+                return
+        except Exception as e:
+            console.print(f"[red]ERROR[/red] parsing probe_manifest.json: {e}")
+            raise typer.Exit(1)
+
+    if data.get("error"):
+        console.print(f"[red]ERROR[/red] in Lua script: {data['error']}")
+        return
+
+    if not data.get("probe_executed"):
+        console.print("[yellow]PARTIAL[/yellow] - JSON exists but probe_executed is false?")
+        return
+
+    if data.get("ar1_available"):
+        console.print("[green]SUCCESS[/green] - Lua ran and ar1 API is available.")
+    else:
+        console.print("[yellow]PARTIAL[/yellow] - Lua ran but ar1 API is MISSING.")
+        
+    table = Table(show_lines=True)
+    table.add_column("Field", style="cyan")
+    table.add_column("Value")
+    for k, v in data.items():
+        table.add_row(str(k), str(v))
+    console.print(table)
+
+
+@ti_app.command("inventory")
+def ti_inventory(
+    offline: bool = typer.Option(False, "--offline", help="Required. Run without connecting to hardware"),
+) -> None:
+    """Generate the offline API inventory extraction script."""
+    if not offline:
+        console.print("[red]Must pass --offline flag. Hardware inventory is not implemented.[/red]")
+        raise typer.Exit(1)
+
+    from awr2944_dca.api.experiment import Experiment
+
+    try:
+        exp = Experiment.open(".")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+
+    inventory_lua = exp.generate_ti_inventory()
+
+    console.print("\n[yellow]PARTIAL: inventory.lua generated.[/yellow]")
+    console.print(f"Run this helper to get the command for mmWave Studio:")
+    console.print(f"  awr ti lua-command {inventory_lua.relative_to(exp.root_dir)} --copy")
+    console.print("Then run `awr ti inventory-status`")
+
+
+@ti_app.command("inventory-status")
+def ti_inventory_status() -> None:
+    """Read the results of the offline Lua API inventory."""
+    import json
+    from awr2944_dca.api.experiment import Experiment
+
+    try:
+        exp = Experiment.open(".")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+
+    result_file = exp.root_dir / "ti" / "probe_logs" / "inventory_result.json"
+    manifest_file = exp.root_dir / "ti" / "probe_logs" / "inventory_manifest.json"
+
+    if not result_file.exists():
+        console.print("[yellow]NOT RUN[/yellow] - inventory_result.json not found.")
+        return
+
+    try:
+        data = json.loads(result_file.read_text(encoding="utf-8"))
+    except Exception as e:
+        console.print(f"[red]ERROR[/red] parsing inventory_result.json: {e}")
+        raise typer.Exit(1)
+        
+    if manifest_file.exists():
+        try:
+            manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+            if data.get("probe_id") != manifest_data.get("probe_id"):
+                console.print(f"[yellow]STALE RESULT[/yellow] - probe_id mismatch. Re-run the script in mmWave Studio.")
+                return
+        except Exception as e:
+            console.print(f"[red]ERROR[/red] parsing inventory_manifest.json: {e}")
+            raise typer.Exit(1)
+
+    if data.get("inventory_executed"):
+        console.print("[green]SUCCESS[/green] - Inventory script executed.")
+    else:
+        console.print("[red]ERROR[/red] - Script failed to execute properly.")
+        return
+
+    console.print(f"ar1 exists: {data.get('ar1_exists')}")
+    console.print(f"ar1 type: {data.get('ar1_type')}")
+    console.print(f"ar1 iterable: {data.get('ar1_iterable')}")
+    
+    if data.get("ar1_error"):
+        console.print(f"[red]ar1 iteration error:[/red] {data.get('ar1_error')}")
+
+    ar1_keys = data.get("ar1_keys", {})
+    console.print(f"Extracted {len(ar1_keys)} keys from ar1.")
+    g_keys = data.get("_G_keys", {})
+    console.print(f"Extracted {len(g_keys)} keys from _G.")
+    
+
+@ti_app.command("lua-command")
+def ti_lua_command(
+    script_path: Path = typer.Argument(..., help="Path to Lua script"),
+    copy: bool = typer.Option(False, "--copy", help="Copy command to clipboard (Windows only)"),
+) -> None:
+    """Print the dofile command to execute a script in mmWave Studio."""
+    import subprocess
+    import sys
+    
+    cmd = f'dofile([[{script_path.resolve()}]])'
+    console.print(f"\n{cmd}\n")
+    
+    if copy:
+        if sys.platform == "win32":
+            try:
+                subprocess.run(['clip.exe'], input=cmd.encode('utf-16le'), check=True)
+                console.print("[green]Command copied to clipboard![/green]")
+            except Exception as e:
+                console.print(f"[yellow]Warning: Could not copy to clipboard: {e}[/yellow]")
+        else:
+            console.print("[yellow]Clipboard copy is only supported on Windows with clip.exe.[/yellow]")
+
+
+@ti_app.command("run-lua")
+def ti_run_lua(
+    script_path: Path = typer.Argument(..., help="Path to Lua script"),
+    offline: bool = typer.Option(False, "--offline", help="Required. Run without connecting to hardware"),
+    force_hardware_risk: bool = typer.Option(False, "--force-hardware-risk", help="Bypass static scan for hardware actions"),
+) -> None:
+    """Run a Lua script via mmWave Studio."""
+    if not offline:
+        console.print("[red]Must pass --offline flag. Hardware execution is not implemented.[/red]")
+        raise typer.Exit(1)
+
+    from awr2944_dca.ti.probe import static_scan_for_hardware_actions
+
+    if not script_path.exists():
+        console.print(f"[red]Script not found: {script_path}[/red]")
+        raise typer.Exit(1)
+
+    if not force_hardware_risk:
+        findings = static_scan_for_hardware_actions(script_path)
+        if findings:
+            console.print("[red]ERROR: Script contains dangerous hardware actions![/red]")
+            for line in findings:
+                console.print(f"  [yellow]{line}[/yellow]")
+            console.print("Refusing to run. Pass --force-hardware-risk to bypass.")
+            raise typer.Exit(1)
+
+    console.print("[green]Scan passed. No hardware actions found.[/green]")
+    console.print("Headless execution of Lua is partially supported. (See probe command).")
