@@ -43,6 +43,10 @@ app = typer.Typer(
 )
 ports_app = typer.Typer(help="Hardware COM port discovery and management")
 app.add_typer(ports_app, name="ports")
+mmws_app = typer.Typer(help="mmWave Studio backend controller")
+app.add_typer(mmws_app, name="mmws")
+mmws_conn_app = typer.Typer(help="Connection-tab control")
+mmws_app.add_typer(mmws_conn_app, name="connection")
 console = Console()
 
 
@@ -1648,78 +1652,273 @@ def ports_save(
     console.print("This file is gitignored as COM ports are machine-specific.")
 
 
-@ti_app.command("connection-probe")
+@ti_app.command("connection-probe", deprecated=True)
 def ti_connection_probe(
-    com: str = typer.Option(None, "--com", help="COM port (e.g., COM8). If omitted, reads from local_hardware.yaml"),
+    com: str = typer.Option(None, "--com", help="[DEPRECATED] Use 'awr mmws connection script'"),
     baud: int = typer.Option(921600, "--baud", help="Baud rate"),
     timeout_ms: int = typer.Option(1000, "--timeout-ms", help="Connect timeout in ms"),
 ) -> None:
-    """Generate a safe connection-only Lua script."""
+    """[DEPRECATED] Use 'awr mmws connection script' instead."""
+    console.print("[yellow]DEPRECATED: Use 'awr mmws connection script' instead.[/yellow]")
+    mmws_connection_script(com=com, baud=baud, timeout_ms=timeout_ms)
+
+
+@ti_app.command("connection-status", deprecated=True)
+def ti_connection_status() -> None:
+    """[DEPRECATED] Use 'awr mmws connection status' instead."""
+    console.print("[yellow]DEPRECATED: Use 'awr mmws connection status' instead.[/yellow]")
+    mmws_connection_status()
+
+
+# ---------------------------------------------------------------------------
+# awr mmws scan-scripts
+# ---------------------------------------------------------------------------
+
+
+@mmws_app.command("scan-scripts")
+def mmws_scan_scripts() -> None:
+    """Scan TI mmWave Studio scripts for ar1 API calls and build a catalog."""
+    from awr2944_dca.api.experiment import Experiment
+    from awr2944_dca.mmws.catalog import discover_mmws_installations, scan_scripts, write_catalog
+
+    try:
+        exp = Experiment.open(".")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+
+    installs = discover_mmws_installations()
+    if not installs:
+        console.print("[red]No mmWave Studio installations found under C:\\ti[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"Found {len(installs)} mmWave Studio installation(s):")
+    for d in installs:
+        console.print(f"  {d}")
+
+    catalog = scan_scripts(installs)
+    log_dir = exp.root_dir / "ti" / "probe_logs"
+    json_path, md_path = write_catalog(catalog, log_dir)
+
+    console.print(f"\n[green]Catalog written:[/green]")
+    console.print(f"  {json_path.name} ({len(catalog)} functions)")
+    console.print(f"  {md_path.name}")
+
+    known = sum(1 for e in catalog.values() if e.known_stage)
+    unknown = len(catalog) - known
+    console.print(f"\n  Known stage functions: {known}")
+    console.print(f"  Unknown (needs manual inspection): {unknown}")
+
+
+# ---------------------------------------------------------------------------
+# awr mmws connection plan / script / status
+# ---------------------------------------------------------------------------
+
+
+def _resolve_com(com: str | None) -> str:
+    """Resolve COM port from argument or local_hardware.yaml."""
     from awr2944_dca.api.experiment import Experiment
     from awr2944_dca.hardware.ports import get_local_hardware_config
-    import re
-    
+
+    if com:
+        return com
+
     try:
         exp = Experiment.open(".")
-    except FileNotFoundError as e:
-        console.print(f"[red]{e}[/red]")
-        raise typer.Exit(code=1)
-        
-    if not com:
+    except FileNotFoundError:
+        pass
+    else:
         cfg = get_local_hardware_config(exp.root_dir)
-        com = cfg.get("hardware", {}).get("awr_rs232_com")
-        if not com:
-            console.print("[red]No COM port specified and awr_rs232_com not found in local_hardware.yaml.[/red]")
-            console.print("Run [cyan]awr ports resolve --role awr-rs232[/cyan] and save it first.")
-            raise typer.Exit(1)
-            
-    # Extract numeric part
-    m = re.search(r'\d+', com)
-    if not m:
-        console.print(f"[red]Could not parse numeric port from '{com}'.[/red]")
-        raise typer.Exit(1)
-        
-    com_num = int(m.group(0))
-    
-    script = exp.generate_ti_connection_probe(com_num, baud, timeout_ms)
-    console.print(f"[green]Generated {script.name}[/green]")
-    console.print("Run it manually in mmWave Studio Lua Shell:")
-    console.print(f"  [cyan]awr ti lua-command {script} --copy[/cyan]")
+        saved = cfg.get("hardware", {}).get("awr_rs232_com")
+        if saved:
+            return saved
+
+    return ""
 
 
-@ti_app.command("connection-status")
-def ti_connection_status() -> None:
-    """Check the result of the connection-only hardware probe."""
+@mmws_conn_app.command("plan")
+def mmws_connection_plan() -> None:
+    """Show the dry-run plan for connection-only stage (no script generated)."""
+    from awr2944_dca.mmws.stages import get_stage, StageName
+
+    stage = get_stage(StageName.CONNECTION_ONLY)
+
+    console.print(Panel(
+        f"[bold]Stage: {stage.display_name}[/bold]\n"
+        f"Risk: {stage.risk}\n"
+        f"Enabled: {stage.allowed_yet}",
+        title="Connection Plan",
+    ))
+
+    table = Table(title="Planned ar1 Calls", show_lines=True)
+    table.add_column("ar1 Call")
+    table.add_column("Purpose")
+    table.add_column("Allowed")
+
+    purposes = {
+        "SOPControl": "Set SOP mode for RS232 connection",
+        "Connect": "Open RS232 connection to AWR device",
+        "IsConnected": "Check connection status (optional)",
+        "Disconnect": "Close RS232 connection (optional)",
+    }
+    for call in sorted(stage.allowed_ar1_calls):
+        table.add_row(
+            f"ar1.{call}",
+            purposes.get(call, ""),
+            "[green]Yes[/green]" if stage.allowed_yet else "[red]No[/red]",
+        )
+    console.print(table)
+    console.print("\nTo generate the Lua script: [cyan]awr mmws connection script[/cyan]")
+
+
+@mmws_conn_app.command("script")
+def mmws_connection_script(
+    com: str = typer.Option(None, "--com", help="COM port (e.g., COM6)"),
+    baud: int = typer.Option(921600, "--baud", help="Baud rate"),
+    timeout_ms: int = typer.Option(1000, "--timeout-ms", help="Connect timeout in ms"),
+) -> None:
+    """Generate a connection-only Lua script for mmWave Studio."""
     from awr2944_dca.api.experiment import Experiment
-    import json
-    
+    from awr2944_dca.mmws.bridge import ManualOneShotBridge
+    import re
+
     try:
         exp = Experiment.open(".")
     except FileNotFoundError as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(code=1)
-        
+
+    resolved = _resolve_com(com)
+    if not resolved:
+        console.print("[red]No COM port specified and awr_rs232_com not found in local_hardware.yaml.[/red]")
+        console.print("Run:")
+        console.print("  [cyan]awr ports scan[/cyan]")
+        console.print("  [cyan]awr ports resolve --role awr-rs232[/cyan]")
+        console.print("  [cyan]awr ports save --role awr-rs232 --com COM<number>[/cyan]")
+        raise typer.Exit(1)
+
+    m = re.search(r"\d+", resolved)
+    if not m:
+        console.print(f"[red]Could not parse numeric port from '{resolved}'.[/red]")
+        raise typer.Exit(1)
+
+    com_num = int(m.group(0))
     log_dir = exp.root_dir / "ti" / "probe_logs"
-    manifest_path = log_dir / "connection_manifest.json"
-    result_path = log_dir / "connection_result.json"
-    
-    if not result_path.exists() or not manifest_path.exists():
-        console.print("[yellow]STATUS: NOT RUN[/yellow] (connection result or manifest missing)")
-        return
-        
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    result = json.loads(result_path.read_text(encoding="utf-8"))
-    
-    if manifest.get("run_id") != result.get("run_id"):
-        console.print("[yellow]STATUS: STALE RESULT[/yellow] (run_id mismatch, run connection-probe again)")
-        return
-        
-    err = result.get("error")
-    connect_ret = result.get("connect_return")
-    
-    if connect_ret == 0 and not err:
-        console.print(f"[green]STATUS: SUCCESS[/green] (Connected on {result.get('com_display')})")
+    bridge = ManualOneShotBridge(log_dir)
+    script = bridge.generate_connection_script(com_num, baud, timeout_ms)
+
+    console.print(f"[green]Generated {script.name}[/green] (COM{com_num}, baud={baud})")
+    console.print("Run it in mmWave Studio Lua Shell:")
+    console.print(f"  [cyan]awr ti lua-command {script} --copy[/cyan]")
+    console.print("Then check: [cyan]awr mmws connection status[/cyan]")
+
+
+@mmws_conn_app.command("status")
+def mmws_connection_status() -> None:
+    """Check the result of the connection-only stage."""
+    from awr2944_dca.api.experiment import Experiment
+    from awr2944_dca.mmws.bridge import ManualOneShotBridge, StageStatus
+    from awr2944_dca.mmws.stages import StageName
+
+    try:
+        exp = Experiment.open(".")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+
+    log_dir = exp.root_dir / "ti" / "probe_logs"
+    bridge = ManualOneShotBridge(log_dir)
+    status, result = bridge.check_status(StageName.CONNECTION_ONLY)
+
+    if status == StageStatus.NOT_RUN:
+        console.print("[yellow]STATUS: NOT RUN[/yellow]")
+    elif status == StageStatus.STALE_RESULT:
+        console.print("[yellow]STATUS: STALE RESULT[/yellow] (run_id mismatch)")
+    elif status == StageStatus.SUCCESS:
+        com = result.get("com_display", "?")
+        console.print(f"[green]STATUS: SUCCESS[/green] (Connected on {com})")
     else:
         console.print("[red]STATUS: ERROR[/red]")
-        if err: console.print(f"  Error: {err}")
-        if connect_ret is not None: console.print(f"  Connect returned: {connect_ret}")
+        err = result.get("error")
+        if err:
+            console.print(f"  Error: {err}")
+        ret = result.get("connect_return")
+        if ret is not None:
+            console.print(f"  Connect returned: {ret}")
+
+
+# ---------------------------------------------------------------------------
+# awr mmws static plan
+# ---------------------------------------------------------------------------
+
+
+@mmws_app.command("static-plan")
+def mmws_static_plan(
+    config: Path = typer.Argument(..., help="Path to capture.yaml"),
+) -> None:
+    """Dry-run plan: show what static-config ar1 calls would be needed.
+
+    Does NOT generate an executable Lua script.
+    """
+    from awr2944_dca.config.schema import RadarConfig
+    from awr2944_dca.mmws.stages import STATIC_CONFIG_FIELD_MAP, get_stage, StageName
+
+    if not config.exists():
+        console.print(f"[red]Config file not found: {config}[/red]")
+        raise typer.Exit(1)
+
+    cfg = RadarConfig.from_yaml(config)
+    stage = get_stage(StageName.STATIC_CONFIG)
+
+    console.print(Panel(
+        f"[bold]Stage: {stage.display_name}[/bold]\n"
+        f"Risk: {stage.risk}\n"
+        f"Enabled: [red]{stage.allowed_yet}[/red] (dry-run only)",
+        title="Static Config Plan",
+    ))
+
+    # Safety checks
+    warnings = []
+    if len(cfg.hardware.tx_enabled) > 1:
+        warnings.append("WARNING: Multiple TX channels enabled. Consider single TX for first bring-up.")
+    if cfg.adc.bits not in (12, 14, 16):
+        warnings.append(f"WARNING: Unusual ADC bits ({cfg.adc.bits}). Standard values: 12, 14, 16.")
+
+    for w in warnings:
+        console.print(f"[yellow]{w}[/yellow]")
+
+    # Build the plan table
+    tx_mask = 0
+    for tx in cfg.hardware.tx_enabled:
+        tx_mask |= 1 << tx
+    rx_mask = 0
+    for rx in cfg.hardware.rx_enabled:
+        rx_mask |= 1 << rx
+
+    adc_fmt = 2 if cfg.adc.is_complex else 1  # 1=real, 2=complex1x
+
+    table = Table(title="Intended ar1 Calls (NOT executed)", show_lines=True)
+    table.add_column("ar1 Call")
+    table.add_column("Source Fields")
+    table.add_column("Example Args")
+    table.add_column("Allowed Yet")
+
+    plans = [
+        ("ChanNAdcConfig", f"rx_mask={rx_mask}, tx_mask={tx_mask}, bits={cfg.adc.bits}, fmt={adc_fmt}"),
+        ("LPModConfig", f"low_power={0}"),
+        ("DataPathConfig", f"intf_sel={1}, fmt={adc_fmt}"),
+        ("LvdsClkConfig", f"lanes={cfg.adc.num_lvds_lanes}"),
+        ("LVDSLaneConfig", f"lanes={cfg.adc.num_lvds_lanes}"),
+    ]
+    for call, example in plans:
+        fields = ", ".join(STATIC_CONFIG_FIELD_MAP.get(call, []))
+        table.add_row(
+            f"ar1.{call}",
+            fields,
+            example,
+            "[red]No[/red]",
+        )
+    console.print(table)
+    console.print("\n[yellow]This is a dry-run plan. No Lua script is generated.[/yellow]")
+    console.print("Static config execution is not yet enabled.")
+
