@@ -1,0 +1,11 @@
+{
+  "run_id": "dde88be4",
+  "executed": true,
+  "status": "AR1_READONLY_OK",
+  "type_ar1": "table",
+  "ar1_connect_exists": true,
+  "ar1_isconnected_exists": true,
+  "ar1_sopcontrol_exists": true,
+  "is_connected_return": null,
+  "error": null
+}

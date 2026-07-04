@@ -888,3 +888,425 @@ if not ok then
     end
 end
 """
+
+
+# ---------------------------------------------------------------------------
+# Shared startup-lite Lua snippet (embedded inline into compound scripts)
+# ---------------------------------------------------------------------------
+
+_STARTUP_LITE_SNIPPET = r"""
+local RSTD_PATH = "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio"
+if type(RSTD) == "table" and RSTD.GetRstdPath then RSTD_PATH = RSTD.GetRstdPath() end
+
+local ar1x_controller_path = RSTD_PATH .. "\\Clients\\AR1xController\\AR1xController.dll"
+local registers_xml = RSTD_PATH .. "\\Clients\\AR1xController\\AR2944ES1P0_Registers.xml"
+local al_path = RSTD_PATH .. "\\RunTime\\SAL.dll"
+local client_path = RSTD_PATH .. "\\Clients\\LabClient.dll"
+
+if type(RSTD) ~= "table" or not RSTD.UnBuild then
+    error("STARTUP_LITE_FAILED: RSTD not available")
+end
+
+RSTD.UnBuild()
+RSTD.SetClientDll(al_path, client_path, "", 0)
+
+RSTD.SetVar("/Settings/AutoUpdate/Enabled", "TRUE")
+RSTD.SetVar("/Settings/AutoUpdate/Interval", "1")
+RSTD.SetVar("/Settings/Monitors/UpdateDisplay", "TRUE")
+RSTD.SetVar("/Settings/Monitors/OneClickStart", "TRUE")
+RSTD.SetVar("/Settings/Automation/Automation Mode", "false")
+RSTD.Transmit("/")
+RSTD.SaveClientSettings()
+
+pcall(function() dofile(RSTD_PATH .. "\\Scripts\\Startup\\General_functions.lua") end)
+pcall(function() dofile(RSTD_PATH .. "\\Scripts\\Startup\\BinDecHex.lua") end)
+pcall(function() dofile(RSTD_PATH .. "\\Scripts\\Startup\\lib_math.lua") end)
+
+RSTD.Build()
+
+RSTD.RegisterDllEx(ar1x_controller_path, false)
+RSTD.SetExternalAL(ar1x_controller_path)
+RSTD.SetTitle("AWR-CLI")
+RSTD.LoadExpose(registers_xml)
+"""
+
+
+def build_lua_launch_ar1_readonly_probe(run_id: str, result_path: str, jsonl_path: str, mode: str = "method-only") -> str:
+    """Generate a probe that runs startup-lite then does read-only ar1 checks.
+    mode can be "method-only" or "isconnected-call".
+    """
+    result_path = result_path.replace("\\", "/")
+    jsonl_path = jsonl_path.replace("\\", "/")
+    snippet = _STARTUP_LITE_SNIPPET.replace("\\", "\\\\")
+    
+    isconnected_block = ""
+    if mode == "isconnected-call":
+        isconnected_block = """
+    -- Step 4: Call ar1.IsConnected() explicitly
+    progress("before_IsConnected")
+    local ic_ok, ic_ret = pcall(function() return ar1.IsConnected() end)
+    if not ic_ok then
+        status = "RADARLINK_ENTRYPOINT_MISSING"
+        progress("after_IsConnected", "ERROR: " .. tostring(ic_ret))
+        error("RADARLINK_ENTRYPOINT_MISSING: " .. tostring(ic_ret))
+    end
+    progress("after_IsConnected", tostring(ic_ret))
+    ic_ret_str = esc(ic_ret)
+"""
+    else:
+        isconnected_block = """
+    local ic_ret_str = "null"
+"""
+
+    return f"""\
+-- lua-launch ar1-readonly-probe
+-- run_id: {run_id}
+-- mode: {mode}
+
+local run_id = "{run_id}"
+local out_path = [[{result_path}]]
+local jsonl_path = [[{jsonl_path}]]
+
+local function esc(s)
+    if s == nil then return "null" end
+    s = tostring(s)
+    s = s:gsub("\\\\", "\\\\\\\\")
+    s = s:gsub('"', '\\\\"')
+    s = s:gsub("\\r", "\\\\r")
+    s = s:gsub("\\n", "\\\\n")
+    s = s:gsub("\\t", "\\\\t")
+    return '"' .. s .. '"'
+end
+local function line(f, s) f:write(s); f:write("\\n") end
+
+local function progress(step, detail)
+    local lf = io.open(jsonl_path, "a")
+    if lf then
+        if detail then
+            line(lf, '{{"step": ' .. esc(step) .. ', "detail": ' .. esc(detail) .. '}}')
+        else
+            line(lf, '{{"step": ' .. esc(step) .. '}}')
+        end
+        lf:close()
+    end
+end
+
+local status = "NO_LUA_START"
+
+local ok, err = pcall(function()
+    local lf = io.open(jsonl_path, "w"); if lf then lf:close() end
+    progress("script_started")
+
+    progress("before_startup_lite")
+    local lite_ok, lite_err = pcall(function()
+{snippet}
+    end)
+    progress("after_startup_lite", tostring(lite_ok) .. " " .. tostring(lite_err))
+
+    if not lite_ok then
+        status = "STARTUP_LITE_FAILED"
+        error("STARTUP_LITE_FAILED: " .. tostring(lite_err))
+    end
+
+    progress("check_ar1_type", type(ar1))
+    if type(ar1) ~= "table" then
+        status = "AR1_MISSING"
+        error("AR1_MISSING: type(ar1) = " .. type(ar1))
+    end
+
+    local ar1_connect_exists = (ar1.Connect ~= nil)
+    local ar1_isconnected_exists = (ar1.IsConnected ~= nil)
+    local ar1_sopcontrol_exists = (ar1.SOPControl ~= nil)
+    progress("ar1_methods", "Connect=" .. tostring(ar1_connect_exists) .. " IsConnected=" .. tostring(ar1_isconnected_exists) .. " SOPControl=" .. tostring(ar1_sopcontrol_exists))
+{isconnected_block}
+    status = "AR1_READONLY_OK"
+
+    local f = io.open(out_path, "w")
+    if not f then error("Cannot open result file") end
+
+    line(f, "{{")
+    line(f, '  "run_id": ' .. esc(run_id) .. ',')
+    line(f, '  "executed": true,')
+    line(f, '  "status": ' .. esc(status) .. ',')
+    line(f, '  "type_ar1": ' .. esc(type(ar1)) .. ',')
+    line(f, '  "ar1_connect_exists": ' .. tostring(ar1_connect_exists) .. ',')
+    line(f, '  "ar1_isconnected_exists": ' .. tostring(ar1_isconnected_exists) .. ',')
+    line(f, '  "ar1_sopcontrol_exists": ' .. tostring(ar1_sopcontrol_exists) .. ',')
+    line(f, '  "is_connected_return": ' .. ic_ret_str .. ',')
+    line(f, '  "error": null')
+    line(f, "}}")
+    f:close()
+end)
+
+if not ok then
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": false,')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "error": ' .. esc(tostring(err)))
+        line(f, "}}")
+        f:close()
+    end
+end
+"""
+
+
+def build_lua_launch_connect_only(
+    run_id: str,
+    result_path: str,
+    jsonl_path: str,
+    com_num: int,
+    baud: int = 115200,
+    timeout_ms: int = 1000,
+) -> str:
+    result_path = result_path.replace("\\", "/")
+    jsonl_path = jsonl_path.replace("\\", "/")
+    snippet = _STARTUP_LITE_SNIPPET.replace("\\", "\\\\")
+    return f"""\
+-- lua-launch connect-only
+-- run_id: {run_id}
+-- Safety: NO SOPControl, NO firmware, NO PowerOn, NO RfEnable, NO DCA
+
+local run_id = "{run_id}"
+local out_path = [[{result_path}]]
+local jsonl_path = [[{jsonl_path}]]
+
+local function esc(s)
+    if s == nil then return "null" end
+    s = tostring(s)
+    s = s:gsub("\\\\", "\\\\\\\\")
+    s = s:gsub('"', '\\\\"')
+    s = s:gsub("\\r", "\\\\r")
+    s = s:gsub("\\n", "\\\\n")
+    s = s:gsub("\\t", "\\\\t")
+    return '"' .. s .. '"'
+end
+local function line(f, s) f:write(s); f:write("\\n") end
+
+local function progress(step, detail)
+    local lf = io.open(jsonl_path, "a")
+    if lf then
+        if detail then
+            line(lf, '{{"step": ' .. esc(step) .. ', "detail": ' .. esc(detail) .. '}}')
+        else
+            line(lf, '{{"step": ' .. esc(step) .. '}}')
+        end
+        lf:close()
+    end
+end
+
+local status = "NO_LUA_START"
+
+local ok, err = pcall(function()
+    local lf = io.open(jsonl_path, "w"); if lf then lf:close() end
+    progress("script_started")
+
+    progress("before_startup_lite")
+    local lite_ok, lite_err = pcall(function()
+{snippet}
+    end)
+    progress("after_startup_lite", tostring(lite_ok) .. " " .. tostring(lite_err))
+
+    if not lite_ok then
+        status = "STARTUP_LITE_FAILED"
+        error("STARTUP_LITE_FAILED: " .. tostring(lite_err))
+    end
+
+    progress("check_ar1_type", type(ar1))
+    if type(ar1) ~= "table" then
+        status = "AR1_MISSING"
+        error("AR1_MISSING: type(ar1) = " .. type(ar1))
+    end
+
+    progress("before_Connect", "COM{com_num} baud={baud} timeout={timeout_ms}")
+    local c_ok, c_ret = pcall(function() return ar1.Connect({com_num}, {baud}, {timeout_ms}) end)
+    if not c_ok then
+        status = "CONNECT_EXCEPTION_NULLREF"
+        progress("after_Connect", "ERROR: " .. tostring(c_ret))
+        error("HUNG_AT_CONNECT: " .. tostring(c_ret))
+    end
+    progress("after_Connect", tostring(c_ret))
+
+    if c_ret == 0 then
+        status = "CONNECT_SUCCESS"
+    else
+        status = "CONNECT_RETURNED_ERROR"
+    end
+
+    local f = io.open(out_path, "w")
+    if not f then error("Cannot open result file") end
+
+    line(f, "{{")
+    line(f, '  "run_id": ' .. esc(run_id) .. ',')
+    line(f, '  "executed": true,')
+    line(f, '  "status": ' .. esc(status) .. ',')
+    line(f, '  "com_number": {com_num},')
+    line(f, '  "baud": {baud},')
+    line(f, '  "timeout_ms": {timeout_ms},')
+    line(f, '  "connect_return": ' .. esc(c_ret) .. ',')
+    line(f, '  "error": null')
+    line(f, "}}")
+    f:close()
+end)
+
+if not ok then
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": false,')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "error": ' .. esc(tostring(err)))
+        line(f, "}}")
+        f:close()
+    end
+end
+"""
+
+
+def build_lua_manual_connect_script(run_id: str, result_path: str, com_num: int, baud: int) -> str:
+    result_path = result_path.replace("\\", "/")
+    return f"""\
+-- manual connect-script
+-- run_id: {run_id}
+local run_id = "{run_id}"
+local out_path = [[{result_path}]]
+local function esc(s)
+    if s == nil then return "null" end
+    s = tostring(s)
+    s = s:gsub("\\\\", "\\\\\\\\")
+    s = s:gsub('"', '\\\\"')
+    s = s:gsub("\\r", "\\\\r")
+    s = s:gsub("\\n", "\\\\n")
+    s = s:gsub("\\t", "\\\\t")
+    return '"' .. s .. '"'
+end
+local function line(f, s) f:write(s); f:write("\\n") end
+
+local status = "NO_START"
+local c_ret_str = "null"
+
+local ok, err = pcall(function()
+    status = "CHECKING_AR1"
+    if type(ar1) ~= "table" then
+        status = "AR1_MISSING"
+        error("AR1_MISSING")
+    end
+    if ar1.Connect == nil then
+        status = "CONNECT_METHOD_MISSING"
+        error("CONNECT_METHOD_MISSING")
+    end
+    
+    status = "BEFORE_CONNECT"
+    WriteToLog("Attempting ar1.Connect({com_num}, {baud}, 1000)...\\n", "blue")
+    
+    local c_ok, c_ret = pcall(function() return ar1.Connect({com_num}, {baud}, 1000) end)
+    
+    if not c_ok then
+        status = "CONNECT_EXCEPTION_NULLREF"
+        error("CONNECT_EXCEPTION: " .. tostring(c_ret))
+    end
+    c_ret_str = esc(c_ret)
+    if c_ret == 0 then
+        status = "CONNECT_SUCCESS"
+    else
+        status = "CONNECT_RETURNED_ERROR"
+    end
+    
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": true,')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "connect_return": ' .. c_ret_str .. ',')
+        line(f, '  "error": null')
+        line(f, "}}")
+        f:close()
+    end
+end)
+
+if not ok then
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": false,')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "error": ' .. esc(tostring(err)))
+        line(f, "}}")
+        f:close()
+    end
+end
+"""
+
+
+def build_lua_launch_ar1_methods(run_id: str, result_path: str, filter_str: str) -> str:
+    result_path = result_path.replace("\\", "/")
+    snippet = _STARTUP_LITE_SNIPPET.replace("\\", "\\\\")
+    return f"""\
+local run_id = "{run_id}"
+local out_path = [[{result_path}]]
+local filter_str = "{filter_str}"
+
+local function esc(s)
+    if s == nil then return "null" end
+    s = tostring(s)
+    s = s:gsub("\\\\", "\\\\\\\\")
+    s = s:gsub('"', '\\\\"')
+    s = s:gsub("\\r", "\\\\r")
+    s = s:gsub("\\n", "\\\\n")
+    s = s:gsub("\\t", "\\\\t")
+    return '"' .. s .. '"'
+end
+local function line(f, s) f:write(s); f:write("\\n") end
+
+local ok, err = pcall(function()
+{snippet}
+    
+    local methods = {{}}
+    if type(ar1) == "table" then
+        for k, v in pairs(ar1) do
+            if type(v) == "function" or type(v) == "userdata" then
+                if filter_str == "" or string.find(string.lower(k), string.lower(filter_str)) then
+                    table.insert(methods, k)
+                end
+            end
+        end
+    end
+    
+    table.sort(methods)
+    
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": true,')
+        line(f, '  "methods": [')
+        for i, m in ipairs(methods) do
+            if i < #methods then
+                line(f, '    ' .. esc(m) .. ',')
+            else
+                line(f, '    ' .. esc(m))
+            end
+        end
+        line(f, '  ]')
+        line(f, "}}")
+        f:close()
+    end
+end)
+
+if not ok then
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": false,')
+        line(f, '  "error": ' .. esc(tostring(err)))
+        line(f, "}}")
+        f:close()
+    end
+end
+"""

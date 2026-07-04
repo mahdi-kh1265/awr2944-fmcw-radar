@@ -1466,8 +1466,16 @@ def _execute_lua_launch(
 
     # Use Popen so we can poll for the result file while the process runs.
     # mmWaveStudio.exe typically does NOT exit after /lua — it stays open.
+        # Prepend required DLL paths to PATH to avoid EntryPointNotFoundExceptions
+    import os
+    env = os.environ.copy()
+    ar1x_path = "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\Clients\\AR1xController"
+    runtime_path = "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime"
+    current_path = env.get("PATH", "")
+    env["PATH"] = f"{ar1x_path};{runtime_path};{current_path}"
+    
     proc = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
     )
 
     # Poll for result file (primary success signal) or process exit

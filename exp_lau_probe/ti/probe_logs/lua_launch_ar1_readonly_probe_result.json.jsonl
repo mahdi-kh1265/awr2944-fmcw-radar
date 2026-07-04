@@ -1,0 +1,7 @@
+{"step": "script_started"}
+{"step": "before_startup_lite"}
+{"step": "after_startup_lite", "detail": "true nil"}
+{"step": "check_ar1_type", "detail": "table"}
+{"step": "ar1_methods", "detail": "Connect=true IsConnected=true SOPControl=true"}
+{"step": "before_IsConnected"}
+{"step": "after_IsConnected", "detail": "ERROR: System.EntryPointNotFoundException: Unable to find an entry point named 'RadarLinkImpl_IsConnected' in DLL 'RadarLinkDLL.dll'.\r\n   at AR1xController.Imports.RadarLinkImpl_IsConnected()\r\n   at AR1xController.AR1xxxWrapper.IsConnected(): 35320229"}

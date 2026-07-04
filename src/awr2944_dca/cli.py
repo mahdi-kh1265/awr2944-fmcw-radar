@@ -3793,3 +3793,349 @@ def mmws_lua_launch_startup_lite_probe(
     for k, v in data.items():
         if k not in ["run_id", "executed", "error"]:
             console.print(f"  {k}: {v}")
+
+
+# ---------------------------------------------------------------------------
+# lua-launch: cleanup
+# ---------------------------------------------------------------------------
+
+@mmws_lua_launch_app.command("cleanup")
+def mmws_lua_launch_cleanup(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Kill existing mmWaveStudio.exe instances and wait until gone."""
+    import subprocess
+    import time
+
+    def _is_running() -> bool:
+        try:
+            r = subprocess.run(
+                ["tasklist", "/FI", "IMAGENAME eq mmWaveStudio.exe", "/NH"],
+                capture_output=True, text=True, timeout=5,
+            )
+            return "mmWaveStudio.exe" in r.stdout
+        except Exception:
+            return False
+
+    if not _is_running():
+        console.print("[green][OK] No mmWaveStudio.exe instances running.[/green]")
+        return
+
+    console.print("[yellow]Found running mmWaveStudio.exe -- attempting to kill...[/yellow]")
+
+    # Try taskkill first (may need admin on some installs)
+    r = subprocess.run(
+        ["taskkill", "/F", "/IM", "mmWaveStudio.exe"],
+        capture_output=True, text=True, timeout=10,
+    )
+    if verbose:
+        console.print(f"  [dim]taskkill stdout: {r.stdout.strip()}[/dim]")
+        console.print(f"  [dim]taskkill stderr: {r.stderr.strip()}[/dim]")
+
+    # Wait up to 10 seconds for the process to disappear
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if not _is_running():
+            console.print("[green][OK] mmWaveStudio.exe terminated.[/green]")
+            return
+        time.sleep(0.5)
+
+    if _is_running():
+        console.print("[red][FAIL] Could not kill mmWaveStudio.exe. Try running as admin or close manually.[/red]")
+        raise typer.Exit(1)
+    else:
+        console.print("[green][OK] mmWaveStudio.exe terminated.[/green]")
+
+
+# ---------------------------------------------------------------------------
+# lua-launch: ar1-readonly-probe
+# ---------------------------------------------------------------------------
+
+@mmws_lua_launch_app.command("ar1-readonly-probe")
+def mmws_lua_launch_ar1_readonly_probe(
+    mode: str = typer.Option("method-only", "--mode", help="Probe mode: method-only or isconnected-call"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+    force: bool = typer.Option(False, "--force", help="Kill existing mmWaveStudio.exe before running"),
+) -> None:
+    """Run startup-lite + read-only ar1 checks."""
+    from .mmws.executor import _execute_lua_launch, _is_mmws_running
+    from .mmws.lua_builder import build_lua_launch_ar1_readonly_probe
+    import uuid
+    import json
+
+    if mode not in ("method-only", "isconnected-call"):
+        console.print(f"[red][FAIL] Invalid mode: {mode}[/red]")
+        raise typer.Exit(1)
+
+    if _is_mmws_running():
+        if force:
+            console.print("[yellow]--force: killing existing mmWaveStudio.exe...[/yellow]")
+            import subprocess, time
+            subprocess.run(["taskkill", "/F", "/IM", "mmWaveStudio.exe"],
+                           capture_output=True, text=True, timeout=10)
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                if not _is_mmws_running():
+                    break
+                time.sleep(0.5)
+            if _is_mmws_running():
+                console.print("[red][FAIL] Could not kill mmWaveStudio.exe.[/red]")
+                raise typer.Exit(1)
+            console.print("[green]Existing instance terminated.[/green]")
+        else:
+            console.print("[red][FAIL] mmWaveStudio.exe is already running.[/red]")
+            console.print("  Use --force to kill it, or run 'awr mmws lua-launch cleanup' first.")
+            raise typer.Exit(1)
+
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "lua_launch_ar1_readonly_probe_result.json"
+    jsonl_path = probe_dir / "lua_launch_ar1_readonly_probe_progress.jsonl"
+    script_path = probe_dir / "lua_launch_ar1_readonly_probe.lua"
+
+    if result_path.exists():
+        result_path.unlink()
+    if jsonl_path.exists():
+        jsonl_path.unlink()
+
+    script = build_lua_launch_ar1_readonly_probe(run_id, str(result_path.resolve()), str(jsonl_path.resolve()), mode)
+    script_path.write_text(script, encoding="utf-8")
+
+    console.print(f"[cyan]lua-launch ar1-readonly-probe (mode={mode}, run_id={run_id})...[/cyan]")
+
+    if verbose:
+        console.print("[dim]Generated Lua:[/dim]")
+        for line in script.splitlines():
+            console.print(f"  [dim]{line}[/dim]")
+
+    res = _execute_lua_launch(
+        script_path.resolve(), verbose=verbose, timeout=60.0, result_path=result_path.resolve(),
+    )
+
+    if jsonl_path.exists():
+        console.print("[cyan]Progress Log:[/cyan]")
+        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            console.print(f"  [dim]{line}[/dim]")
+
+    if not res.success:
+        console.print(f"[red][FAIL] ar1-readonly-probe failed: {res.error}[/red]")
+        raise typer.Exit(1)
+
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    status = data.get("status", "UNKNOWN")
+
+    if status == "AR1_READONLY_OK":
+        console.print(f"[green][OK] ar1-readonly-probe passed (status={status})[/green]")
+    else:
+        console.print(f"[red][FAIL] ar1-readonly-probe status: {status}[/red]")
+
+    for k, v in data.items():
+        if k not in ["run_id", "executed"]:
+            console.print(f"  {k}: {v}")
+
+    if status != "AR1_READONLY_OK":
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# lua-launch: connect-only
+# ---------------------------------------------------------------------------
+
+def _check_ar1_readonly_gate() -> bool:
+    import json
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "lua_launch_ar1_readonly_probe_result.json"
+    if not result_path.exists():
+        return False
+    try:
+        data = json.loads(result_path.read_text(encoding="utf-8"))
+        return data.get("status") == "AR1_READONLY_OK" and data.get("executed") is True
+    except Exception:
+        return False
+
+
+@mmws_lua_launch_app.command("connect-only")
+def mmws_lua_launch_connect_only(
+    com: str = typer.Option("COM6", "--com", help="COM port (e.g. COM6)"),
+    baud: int = typer.Option(115200, "--baud", help="Baud rate"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+    force: bool = typer.Option(False, "--force", help="Kill existing mmWaveStudio.exe before running"),
+    skip_gate: bool = typer.Option(False, "--skip-gate", help="Skip ar1-readonly-probe safety gate"),
+) -> None:
+    """Connect to radar via ar1.Connect only (no SOPControl, no firmware, no DCA)."""
+    from .mmws.executor import _execute_lua_launch, _is_mmws_running
+    from .mmws.lua_builder import build_lua_launch_connect_only
+    import uuid
+    import json
+
+    if not skip_gate and not _check_ar1_readonly_gate():
+        console.print("[red][FAIL] Safety gate: ar1-readonly-probe has not passed.[/red]")
+        console.print("  Run 'awr mmws lua-launch ar1-readonly-probe --verbose' first.")
+        console.print("  Or use --skip-gate to bypass (expert only).")
+        raise typer.Exit(1)
+
+    if _is_mmws_running():
+        if force:
+            console.print("[yellow]--force: killing existing mmWaveStudio.exe...[/yellow]")
+            import subprocess, time
+            subprocess.run(["taskkill", "/F", "/IM", "mmWaveStudio.exe"],
+                           capture_output=True, text=True, timeout=10)
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                if not _is_mmws_running():
+                    break
+                time.sleep(0.5)
+            if _is_mmws_running():
+                console.print("[red][FAIL] Could not kill mmWaveStudio.exe.[/red]")
+                raise typer.Exit(1)
+            console.print("[green]Existing instance terminated.[/green]")
+        else:
+            console.print("[red][FAIL] mmWaveStudio.exe is already running.[/red]")
+            console.print("  Use --force to kill it, or run 'awr mmws lua-launch cleanup' first.")
+            raise typer.Exit(1)
+
+    com_upper = com.upper()
+    if not com_upper.startswith("COM"):
+        console.print(f"[red][FAIL] Invalid COM port: {com}. Expected format: COM6[/red]")
+        raise typer.Exit(1)
+    try:
+        com_num = int(com_upper[3:])
+    except ValueError:
+        console.print(f"[red][FAIL] Invalid COM port number: {com}[/red]")
+        raise typer.Exit(1)
+
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "lua_launch_connect_only_result.json"
+    jsonl_path = probe_dir / "lua_launch_connect_only_progress.jsonl"
+    script_path = probe_dir / "lua_launch_connect_only.lua"
+
+    if result_path.exists():
+        result_path.unlink()
+    if jsonl_path.exists():
+        jsonl_path.unlink()
+
+    script = build_lua_launch_connect_only(
+        run_id, str(result_path.resolve()), str(jsonl_path.resolve()),
+        com_num=com_num, baud=baud, timeout_ms=1000,
+    )
+    script_path.write_text(script, encoding="utf-8")
+
+    console.print(f"[cyan]lua-launch connect-only (run_id={run_id})...[/cyan]")
+    console.print(f"  COM: {com_upper}  Baud: {baud}")
+
+    if verbose:
+        console.print("[dim]Generated Lua:[/dim]")
+        for line in script.splitlines():
+            console.print(f"  [dim]{line}[/dim]")
+
+    res = _execute_lua_launch(
+        script_path.resolve(), verbose=verbose, timeout=60.0, result_path=result_path.resolve(),
+    )
+
+    if jsonl_path.exists():
+        console.print("[cyan]Progress Log:[/cyan]")
+        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            console.print(f"  [dim]{line}[/dim]")
+
+    if not res.success:
+        console.print(f"[red][FAIL] connect-only failed: {res.error}[/red]")
+        raise typer.Exit(1)
+
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    status = data.get("status", "UNKNOWN")
+
+    if status == "CONNECT_SUCCESS":
+        console.print(f"[green][OK] connect-only passed (status={status})[/green]")
+    elif status == "CONNECT_RETURNED_ERROR":
+        console.print(f"[yellow][WARN] ar1.Connect returned non-zero (status={status})[/yellow]")
+    else:
+        console.print(f"[red][FAIL] connect-only status: {status}[/red]")
+
+    for k, v in data.items():
+        if k not in ["run_id", "executed"]:
+            console.print(f"  {k}: {v}")
+
+    if status not in ("CONNECT_SUCCESS",):
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# lua-launch: dll-diagnostics
+# ---------------------------------------------------------------------------
+
+@mmws_lua_launch_app.command("dll-diagnostics")
+def mmws_lua_launch_dll_diagnostics(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Analyze mmWave Studio DLL paths and export hashes."""
+    from pathlib import Path
+    import os
+    import hashlib
+    from datetime import datetime
+    from rich.table import Table
+
+    def file_info(path: Path) -> dict:
+        try:
+            stat = path.stat()
+            size = stat.st_size
+            mtime = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+            return {"size": size, "mtime": mtime, "sha256": sha256, "ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def check_export(path: Path, func_name: str) -> bool:
+        try:
+            # Simple binary scan for the export name. This works for most uncompressed PE files.
+            content = path.read_bytes()
+            return func_name.encode("ascii") in content
+        except Exception:
+            return False
+
+    console.print("[cyan]Scanning for mmWave Studio DLLs in C:\\ti...[/cyan]")
+    base_dir = Path("C:/ti")
+
+    radar_dlls = list(base_dir.rglob("RadarLinkDLL.dll")) if base_dir.exists() else []
+    ar1_dlls = list(base_dir.rglob("AR1xController.dll")) if base_dir.exists() else []
+
+    table = Table(title="RadarLinkDLL.dll")
+    table.add_column("Path", style="cyan")
+    table.add_column("Size", justify="right")
+    table.add_column("Modified")
+    table.add_column("SHA256 (short)")
+    table.add_column("Export: IsConnected?")
+
+    for dll in radar_dlls:
+        info = file_info(dll)
+        if info["ok"]:
+            has_export = check_export(dll, "RadarLinkImpl_IsConnected")
+            table.add_row(str(dll), f"{info['size']:,}", info["mtime"], info["sha256"][:12], "[green]YES[/green]" if has_export else "[red]NO[/red]")
+        else:
+            table.add_row(str(dll), "ERROR", "-", "-", "-")
+
+    console.print(table)
+
+    table2 = Table(title="AR1xController.dll")
+    table2.add_column("Path", style="cyan")
+    table2.add_column("Size", justify="right")
+    table2.add_column("Modified")
+    table2.add_column("SHA256 (short)")
+
+    for dll in ar1_dlls:
+        info = file_info(dll)
+        if info["ok"]:
+            table2.add_row(str(dll), f"{info['size']:,}", info["mtime"], info["sha256"][:12])
+        else:
+            table2.add_row(str(dll), "ERROR", "-", "-")
+
+    console.print(table2)
+
+    console.print("\n[yellow]Pre-launch PATH injections for _execute_lua_launch:[/yellow]")
+    console.print("  C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\Clients\\AR1xController")
+    console.print("  C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime")
+
