@@ -1,0 +1,139 @@
+# ---------------------------------------------------------------------------
+# lua-launch self-contained scripts
+#
+# These scripts are executed via mmWaveStudio.exe /lua BEFORE Startup.lua
+# finishes.  They must NOT depend on WriteToLog, writeToLog, ar1, or any
+# Startup.lua helper.  All output is via io.open only.
+# ---------------------------------------------------------------------------
+
+
+def build_lua_launch_smoke(run_id: str, result_path: str) -> str:
+    """Generate a self-contained smoke script for lua-launch.
+
+    No WriteToLog, no ar1, no Startup.lua dependency.
+    Writes result JSON via io.open only.
+    """
+    result_path = result_path.replace("\\", "/")
+    return f"""\
+-- lua-launch smoke test
+-- Self-contained: no WriteToLog, no ar1, no Startup.lua
+-- run_id: {run_id}
+
+local run_id = "{run_id}"
+local out_path = [[{result_path}]]
+
+local function line(f, s)
+    f:write(s)
+    f:write("\\n")
+end
+
+local ok, err = pcall(function()
+    local f = io.open(out_path, "w")
+    if not f then
+        error("Cannot open result file: " .. out_path)
+    end
+    line(f, "{{")
+    line(f, '  "run_id": "' .. run_id .. '",')
+    line(f, '  "executed": true,')
+    line(f, '  "write_ok": true,')
+    line(f, '  "error": null')
+    line(f, "}}")
+    f:close()
+end)
+
+if not ok then
+    -- Last-ditch: try to write error result
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": "' .. run_id .. '",')
+        line(f, '  "executed": false,')
+        line(f, '  "write_ok": false,')
+        line(f, '  "error": "' .. tostring(err):gsub('"', '\\\\"') .. '"')
+        line(f, "}}")
+        f:close()
+    end
+end
+"""
+
+
+def build_lua_launch_env_probe(run_id: str, result_path: str) -> str:
+    """Generate a self-contained environment probe for lua-launch.
+
+    Reports minimal fields:
+      run_id, executed, _VERSION, type_ar1, ar1_connect_exists,
+      type_WriteToLog, type_writeToLog, io_open_works.
+    """
+    result_path = result_path.replace("\\", "/")
+    # The esc() function must escape in this order:
+    #   1. backslash -> \\   (must be first!)
+    #   2. quote -> \"
+    #   3. newline -> \\n
+    #   4. carriage return -> \\r
+    #   5. tab -> \\t
+    # In the f-string, Lua sees the literal gsub patterns.
+    return f"""\
+-- lua-launch env-probe
+-- Self-contained: no WriteToLog, no ar1, no Startup.lua
+-- run_id: {run_id}
+
+local run_id = "{run_id}"
+local out_path = [[{result_path}]]
+
+local function esc(s)
+    if s == nil then return "null" end
+    s = tostring(s)
+    s = s:gsub("\\\\", "\\\\\\\\")
+    s = s:gsub('"', '\\\\"')
+    s = s:gsub("\\r", "\\\\r")
+    s = s:gsub("\\n", "\\\\n")
+    s = s:gsub("\\t", "\\\\t")
+    return '"' .. s .. '"'
+end
+
+local function line(f, s)
+    f:write(s)
+    f:write("\\n")
+end
+
+local ok, err = pcall(function()
+    local lua_version = _VERSION or "unknown"
+    local ar1_type = type(ar1)
+    local ar1_connect_exists = false
+    if type(ar1) == "table" and ar1.Connect then
+        ar1_connect_exists = true
+    end
+    local write_to_log_type = type(WriteToLog)
+    local write_to_log_lower_type = type(writeToLog)
+
+    local f = io.open(out_path, "w")
+    if not f then
+        error("Cannot open result file: " .. out_path)
+    end
+    
+    line(f, "{{")
+    line(f, '  "run_id": ' .. esc(run_id) .. ',')
+    line(f, '  "executed": true,')
+    line(f, '  "_VERSION": ' .. esc(lua_version) .. ',')
+    line(f, '  "type_ar1": ' .. esc(ar1_type) .. ',')
+    line(f, '  "ar1_connect_exists": ' .. tostring(ar1_connect_exists) .. ',')
+    line(f, '  "type_WriteToLog": ' .. esc(write_to_log_type) .. ',')
+    line(f, '  "type_writeToLog": ' .. esc(write_to_log_lower_type) .. ',')
+    line(f, '  "io_open_works": true,')
+    line(f, '  "error": null')
+    line(f, "}}")
+    f:close()
+end)
+
+if not ok then
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": false,')
+        line(f, '  "error": ' .. esc(tostring(err)))
+        line(f, "}}")
+        f:close()
+    end
+end
+"""

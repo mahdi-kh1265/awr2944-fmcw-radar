@@ -3191,6 +3191,14 @@ f:close()
 # awr mmws lua-launch *
 # ---------------------------------------------------------------------------
 
+def _lua_launch_probe_dir() -> "Path":
+    """Return (and create) the lua-launch probe_logs directory."""
+    from pathlib import Path
+    d = Path("ti") / "probe_logs"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 @mmws_lua_launch_app.command("smoke")
 def mmws_lua_launch_smoke(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
@@ -3198,36 +3206,44 @@ def mmws_lua_launch_smoke(
     """Self-contained smoke test via mmWaveStudio.exe /lua.
 
     No WriteToLog, no ar1, no Startup.lua dependency.
-    Verifies io.open writes a result JSON and the process exits cleanly.
+    Verifies io.open writes a result JSON.  Process exit is NOT required.
+    Generated script and result JSON are saved to ti/probe_logs/.
     """
     from .mmws.executor import _execute_lua_launch
     from .mmws.lua_builder import build_lua_launch_smoke
-    import tempfile
     import uuid
     from pathlib import Path
     
     run_id = str(uuid.uuid4())[:8]
-    console.print(f"[cyan]lua-launch smoke (run_id={run_id})...[/cyan]")
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "lua_launch_smoke_result.json"
+    script_path = probe_dir / "lua_launch_smoke.lua"
     
-    with tempfile.TemporaryDirectory() as d:
-        result_path = Path(d) / "smoke_result.json"
-        script_path = Path(d) / "smoke.lua"
-        script = build_lua_launch_smoke(run_id, str(result_path))
-        script_path.write_text(script, encoding="utf-8")
-        
-        if verbose:
-            console.print("[dim]Generated Lua:[/dim]")
-            for line in script.splitlines():
-                console.print(f"  [dim]{line}[/dim]")
-        
-        res = _execute_lua_launch(
-            script_path, verbose=verbose, timeout=30.0, result_path=result_path,
-        )
-        
+    # Clean previous result
+    if result_path.exists():
+        result_path.unlink()
+    
+    script = build_lua_launch_smoke(run_id, str(result_path.resolve()))
+    script_path.write_text(script, encoding="utf-8")
+    
+    console.print(f"[cyan]lua-launch smoke (run_id={run_id})...[/cyan]")
+    console.print(f"  Script:  {script_path.resolve()}")
+    console.print(f"  Result:  {result_path.resolve()}")
+    
+    if verbose:
+        console.print("[dim]Generated Lua:[/dim]")
+        for line in script.splitlines():
+            console.print(f"  [dim]{line}[/dim]")
+    
+    res = _execute_lua_launch(
+        script_path.resolve(), verbose=verbose, timeout=30.0, result_path=result_path.resolve(),
+    )
+    
     if res.success:
-        console.print("[green]✓ lua-launch smoke successful![/green]")
+        console.print("[green][OK] lua-launch smoke successful![/green]")
+        console.print(f"  Result saved: {result_path.resolve()}")
     else:
-        console.print(f"[red]✗ lua-launch smoke failed: {res.error}[/red]")
+        console.print(f"[red][FAIL] lua-launch smoke failed: {res.error}[/red]")
     
     if res.verbose_log:
         for line in res.verbose_log:
@@ -3244,56 +3260,80 @@ def mmws_lua_launch_env_probe(
     """Probe the mmWaveStudio /lua environment.
 
     Reports: _VERSION, type(ar1), type(WriteToLog), type(writeToLog),
-    package.path, whether io.open works.  Useful to determine what is
-    available before Startup.lua finishes.
+    package.path, whether io.open works.
+
+    The Startup.lua warning is expected and harmless for standalone scripts.
+    Generated script and result are saved to ti/probe_logs/.
     """
     from .mmws.executor import _execute_lua_launch
     from .mmws.lua_builder import build_lua_launch_env_probe
-    import tempfile
     import uuid
     import json
     from pathlib import Path
     
     run_id = str(uuid.uuid4())[:8]
-    console.print(f"[cyan]lua-launch env-probe (run_id={run_id})...[/cyan]")
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "lua_launch_env_probe_result.json"
+    script_path = probe_dir / "lua_launch_env_probe.lua"
     
-    with tempfile.TemporaryDirectory() as d:
-        result_path = Path(d) / "env_probe_result.json"
-        script_path = Path(d) / "env_probe.lua"
-        script = build_lua_launch_env_probe(run_id, str(result_path))
-        script_path.write_text(script, encoding="utf-8")
-        
-        if verbose:
-            console.print("[dim]Generated Lua:[/dim]")
-            for line in script.splitlines():
-                console.print(f"  [dim]{line}[/dim]")
-        
-        res = _execute_lua_launch(
-            script_path, verbose=verbose, timeout=30.0, result_path=result_path,
-        )
+    # Clean previous result
+    if result_path.exists():
+        result_path.unlink()
+    
+    script = build_lua_launch_env_probe(run_id, str(result_path.resolve()))
+    script_path.write_text(script, encoding="utf-8")
+    
+    console.print(f"[cyan]lua-launch env-probe (run_id={run_id})...[/cyan]")
+    console.print(f"  Script:  {script_path.resolve()}")
+    console.print(f"  Result:  {result_path.resolve()}")
+    
+    if verbose:
+        console.print("[dim]Generated Lua:[/dim]")
+        for line in script.splitlines():
+            console.print(f"  [dim]{line}[/dim]")
+    
+    res = _execute_lua_launch(
+        script_path.resolve(), verbose=verbose, timeout=30.0, result_path=result_path.resolve(),
+    )
     
     if not res.success:
-        console.print(f"[red]✗ env-probe failed: {res.error}[/red]")
+        console.print(f"[red][FAIL] env-probe failed: {res.error}[/red]")
+        # Dump raw result if it exists but couldn't be parsed
+        if result_path.exists():
+            raw = result_path.read_text(encoding="utf-8")
+            raw_path = probe_dir / "env_probe_result_raw.txt"
+            raw_path.write_text(raw, encoding="utf-8")
+            console.print(f"[yellow]Raw result saved: {raw_path.resolve()}[/yellow]")
+            console.print(f"[dim]Raw contents:\n{raw}[/dim]")
         if res.verbose_log:
             for line in res.verbose_log:
                 console.print(line)
         raise typer.Exit(1)
     
     # Parse and display the probe results
-    try:
-        data = json.loads(result_path.read_text(encoding="utf-8"))
-    except Exception:
-        data = {}
+    data: dict = {}
+    if result_path.exists():
+        raw = result_path.read_text(encoding="utf-8")
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            console.print(f"[red]Result JSON parse error: {e}[/red]")
+            raw_path = probe_dir / "env_probe_result_raw.txt"
+            raw_path.write_text(raw, encoding="utf-8")
+            console.print(f"[yellow]Raw result saved: {raw_path.resolve()}[/yellow]")
+            console.print(f"[dim]Raw contents:\n{raw}[/dim]")
+            raise typer.Exit(1)
     
-    console.print("[green]✓ env-probe completed[/green]")
-    console.print(f"  _VERSION:        {data.get('_VERSION', '?')}")
-    console.print(f"  type(ar1):       {data.get('type_ar1', '?')}")
+    console.print("[green][OK] env-probe completed[/green]")
+    console.print(f"  _VERSION:         {data.get('_VERSION', '?')}")
+    console.print(f"  type(ar1):        {data.get('type_ar1', '?')}")
     ar1_connect = data.get("ar1_connect_exists", False)
-    console.print(f"  ar1.Connect:     {'exists' if ar1_connect else '[red]missing[/red]'}")
+    console.print(f"  ar1.Connect:      {'exists' if ar1_connect else '[red]missing[/red]'}")
     console.print(f"  type(WriteToLog): {data.get('type_WriteToLog', '?')}")
     console.print(f"  type(writeToLog): {data.get('type_writeToLog', '?')}")
-    console.print(f"  io.open works:   {data.get('io_open_works', '?')}")
-    console.print(f"  package.path:    {data.get('package_path', '?')}")
+    console.print(f"  io.open works:    {data.get('io_open_works', '?')}")
+    console.print(f"  package.path:     {data.get('package_path', '?')}")
+    console.print(f"  Result saved:     {result_path.resolve()}")
     
     if data.get("type_ar1") == "nil":
         console.print(
@@ -3307,6 +3347,7 @@ def mmws_lua_launch_env_probe(
             "[yellow]Do NOT run hardware connection under lua-launch until\n"
             "env-probe proves type(ar1)==\"table\" and ar1.Connect exists.[/yellow]"
         )
+
 
 # awr mmws csharp-bridge *
 # ---------------------------------------------------------------------------
@@ -3502,3 +3543,253 @@ def mmws_bridge_introspect(
             console.print(f"[red]Introspection timed out after {timeout}s[/red]")
             raise typer.Exit(1)
 
+
+
+@mmws_lua_launch_app.command("startup-probe")
+def mmws_lua_launch_startup_probe(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Explicitly invoke Startup.lua and probe the environment to see if it loads ar1."""
+    from .mmws.executor import _execute_lua_launch
+    from .mmws.lua_builder import build_lua_launch_startup_probe
+    import uuid
+    import json
+    from pathlib import Path
+    
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "lua_launch_startup_probe_result.json"
+    script_path = probe_dir / "lua_launch_startup_probe.lua"
+    
+    # Clean previous result
+    if result_path.exists():
+        result_path.unlink()
+    
+    # Path to standard mmWave Studio Startup.lua
+    startup_lua_path = "C:/ti/mmwave_studio_03_01_04_04/mmWaveStudio/Scripts/Startup.lua"
+    
+    script = build_lua_launch_startup_probe(run_id, str(result_path.resolve()), startup_lua_path)
+    script_path.write_text(script, encoding="utf-8")
+    
+    console.print(f"[cyan]lua-launch startup-probe (run_id={run_id})...[/cyan]")
+    console.print(f"  Script:  {script_path.resolve()}")
+    console.print(f"  Result:  {result_path.resolve()}")
+    
+    if verbose:
+        console.print("[dim]Generated Lua:[/dim]")
+        for line in script.splitlines():
+            console.print(f"  [dim]{line}[/dim]")
+            
+    res = _execute_lua_launch(
+        script_path.resolve(), verbose=verbose, timeout=120.0, result_path=result_path.resolve(),
+    )
+    
+    if not res.success:
+        console.print(f"[red][FAIL] startup-probe failed: {res.error}[/red]")
+        if res.verbose_log:
+            for line in res.verbose_log:
+                console.print(line)
+        raise typer.Exit(1)
+        
+    data: dict = {}
+    if result_path.exists():
+        raw = result_path.read_text(encoding="utf-8")
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            console.print(f"[red]Result JSON parse error: {e}[/red]")
+            console.print(f"[dim]Raw contents:\n{raw}[/dim]")
+            raise typer.Exit(1)
+            
+    console.print("[green][OK] startup-probe completed[/green]")
+    console.print("[cyan]Before Startup.lua:[/cyan]")
+    console.print(f"  type(ar1):        {data.get('before_type_ar1', '?')}")
+    console.print(f"  type(WriteToLog): {data.get('before_type_WriteToLog', '?')}")
+    console.print(f"  type(RSTD):       {data.get('before_type_RSTD', '?')}")
+    console.print(f"  startup_ok:       {data.get('startup_ok', '?')}")
+    if not data.get('startup_ok'):
+        console.print(f"[red]  startup_err:      {data.get('startup_err', '?')}[/red]")
+    console.print("[cyan]After Startup.lua:[/cyan]")
+    console.print(f"  type(ar1):        {data.get('after_type_ar1', '?')}")
+    console.print(f"  ar1.Connect:      {'exists' if data.get('after_ar1_connect_exists') else '[red]missing[/red]'}")
+    console.print(f"  type(WriteToLog): {data.get('after_type_WriteToLog', '?')}")
+    console.print(f"  type(RSTD):       {data.get('after_type_RSTD', '?')}")
+
+
+            
+    res = _execute_lua_launch(
+        script_path.resolve(), verbose=verbose, timeout=30.0, result_path=result_path.resolve(),
+    )
+    
+    if not res.success:
+        console.print(f"[red][FAIL] wait-env-probe failed: {res.error}[/red]")
+        raise typer.Exit(1)
+        
+    data: dict = {}
+    if result_path.exists():
+        raw = result_path.read_text(encoding="utf-8")
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            console.print(f"[red]Result JSON parse error: {e}[/red]")
+            raise typer.Exit(1)
+            
+    console.print("[green][OK] wait-env-probe completed[/green]")
+    console.print(f"  timeout hit:      {data.get('timeout', '?')}")
+    console.print(f"  final type(ar1):  {data.get('final_ar1_type', '?')}")
+    
+    if jsonl_path.exists():
+        console.print("[cyan]Progress Log:[/cyan]")
+        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip(): continue
+            try:
+                row = json.loads(line)
+                console.print(f"  [dim]{row['elapsed']:.2f}s | ar1: {row['type_ar1']} | connect: {row['ar1_connect_exists']} | log: {row['type_WriteToLog']}[/dim]")
+            except:
+                pass
+
+
+mmws_startup_app = typer.Typer(
+    help="Inspect mmWave Studio initialization scripts", no_args_is_help=True
+)
+mmws_app.add_typer(mmws_startup_app, name="startup")
+
+@mmws_startup_app.command("inspect")
+def mmws_startup_inspect() -> None:
+    """Inspect Startup.lua directly."""
+    from pathlib import Path
+    
+    startup_path = Path("C:/ti/mmwave_studio_03_01_04_04/mmWaveStudio/Scripts/Startup.lua")
+    if not startup_path.exists():
+        console.print("[red]Startup.lua not found![/red]")
+        raise typer.Exit(1)
+        
+    content = startup_path.read_text()
+    console.print(f"[cyan]Inspecting {startup_path.resolve()}[/cyan]")
+    
+    ar1_creations = [line.strip() for line in content.splitlines() if "ar1" in line.lower() and "=" in line]
+    console.print(f"\n[yellow]ar1 assignments:[/yellow]")
+    if not ar1_creations:
+        console.print("  (None found)")
+    else:
+        for c in ar1_creations: console.print(f"  {c}")
+        
+    log_creations = [line.strip() for line in content.splitlines() if "WriteToLog" in line and "=" in line]
+    console.print(f"\n[yellow]WriteToLog assignments:[/yellow]")
+    if not log_creations:
+        console.print("  (None found)")
+    else:
+        for c in log_creations: console.print(f"  {c}")
+        
+    netstarts = [line.strip() for line in content.splitlines() if "NetStart" in line]
+    console.print(f"\n[yellow]RSTD.NetStart calls:[/yellow]")
+    for n in netstarts: console.print(f"  {n}")
+    
+    registerdlls = [line.strip() for line in content.splitlines() if "RegisterDll" in line]
+    console.print(f"\n[yellow]DLL registrations:[/yellow]")
+    for r in registerdlls: console.print(f"  {r}")
+
+
+@mmws_lua_launch_app.command("rstd-env-probe")
+def mmws_lua_launch_rstd_env_probe(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Probe the initial /lua environment for RSTD availability without running Startup.lua."""
+    from .mmws.executor import _execute_lua_launch
+    from .mmws.lua_builder import build_lua_launch_rstd_env_probe
+    import uuid, json
+    
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "lua_launch_rstd_env_probe_result.json"
+    script_path = probe_dir / "lua_launch_rstd_env_probe.lua"
+    
+    if result_path.exists(): result_path.unlink()
+        
+    script = build_lua_launch_rstd_env_probe(run_id, str(result_path.resolve()))
+    script_path.write_text(script, encoding="utf-8")
+    
+    console.print(f"[cyan]lua-launch rstd-env-probe (run_id={run_id})...[/cyan]")
+    res = _execute_lua_launch(script_path.resolve(), verbose=verbose, timeout=30.0, result_path=result_path.resolve())
+    
+    if not res.success:
+        console.print(f"[red][FAIL] rstd-env-probe failed: {res.error}[/red]")
+        raise typer.Exit(1)
+        
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    console.print("[green][OK] rstd-env-probe completed[/green]")
+    for k, v in data.items():
+        if k not in ["run_id", "executed", "error"]:
+            console.print(f"  {k}: {v}")
+
+@mmws_lua_launch_app.command("registerdll-probe")
+def mmws_lua_launch_registerdll_probe(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Probe environment after calling RSTD.RegisterDllEx."""
+    from .mmws.executor import _execute_lua_launch
+    from .mmws.lua_builder import build_lua_launch_registerdll_probe
+    import uuid, json
+    
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "lua_launch_registerdll_probe_result.json"
+    script_path = probe_dir / "lua_launch_registerdll_probe.lua"
+    jsonl_path = probe_dir / "lua_launch_registerdll_probe_result.jsonl"
+    
+    if result_path.exists(): result_path.unlink()
+    if jsonl_path.exists(): jsonl_path.unlink()
+        
+    script = build_lua_launch_registerdll_probe(run_id, str(result_path.resolve()))
+    script_path.write_text(script, encoding="utf-8")
+    
+    console.print(f"[cyan]lua-launch registerdll-probe (run_id={run_id})...[/cyan]")
+    res = _execute_lua_launch(script_path.resolve(), verbose=verbose, timeout=30.0, result_path=result_path.resolve())
+    
+    if jsonl_path.exists():
+        console.print("[cyan]Progress Log:[/cyan]")
+        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+            console.print(f"  [dim]{line}[/dim]")
+            
+    if not res.success:
+        console.print(f"[red][FAIL] registerdll-probe failed: {res.error}[/red]")
+        raise typer.Exit(1)
+        
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    console.print("[green][OK] registerdll-probe completed[/green]")
+    for k, v in data.items():
+        if k not in ["run_id", "executed", "error"]:
+            console.print(f"  {k}: {v}")
+
+
+@mmws_lua_launch_app.command("startup-lite-probe")
+def mmws_lua_launch_startup_lite_probe(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Run non-blocking subset of Startup.lua."""
+    from .mmws.executor import _execute_lua_launch
+    from .mmws.lua_builder import build_lua_launch_startup_lite_probe
+    import uuid, json
+    
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "lua_launch_startup_lite_probe_result.json"
+    script_path = probe_dir / "lua_launch_startup_lite_probe.lua"
+    
+    if result_path.exists(): result_path.unlink()
+        
+    script = build_lua_launch_startup_lite_probe(run_id, str(result_path.resolve()))
+    script_path.write_text(script, encoding="utf-8")
+    
+    console.print(f"[cyan]lua-launch startup-lite-probe (run_id={run_id})...[/cyan]")
+    res = _execute_lua_launch(script_path.resolve(), verbose=verbose, timeout=60.0, result_path=result_path.resolve())
+            
+    if not res.success:
+        console.print(f"[red][FAIL] startup-lite-probe failed: {res.error}[/red]")
+        raise typer.Exit(1)
+        
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    console.print("[green][OK] startup-lite-probe completed[/green]")
+    for k, v in data.items():
+        if k not in ["run_id", "executed", "error"]:
+            console.print(f"  {k}: {v}")

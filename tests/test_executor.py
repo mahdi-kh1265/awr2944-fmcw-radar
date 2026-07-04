@@ -344,3 +344,30 @@ def test_missing_pywinauto_helpful_message():
 def test_manual_one_shot_bridge_alias():
     from awr2944_dca.mmws.bridge import ManualOneShotBridge
     assert ManualOneShotBridge is StudioBridge
+
+
+# ---------------------------------------------------------------------------
+# lua-launch script validation
+# ---------------------------------------------------------------------------
+
+
+def test_lua_launch_scripts_no_raw_newlines():
+    """Verify that generated lua-launch scripts don't contain raw newlines
+    inside string literals, which causes Lua syntax errors.
+    """
+    from awr2944_dca.mmws.lua_builder import build_lua_launch_smoke, build_lua_launch_env_probe
+    
+    smoke = build_lua_launch_smoke("run123", "C:/tmp/result.json")
+    probe = build_lua_launch_env_probe("run123", "C:/tmp/result.json")
+    
+    # Neither script should have f:write('{ followed directly by a newline
+    assert "{\\n" not in smoke, "Found raw newline in string literal"
+    assert "}\\n" not in smoke, "Found raw newline in string literal"
+    assert "{\\n" not in probe, "Found raw newline in string literal"
+    assert "}\\n" not in probe, "Found raw newline in string literal"
+    
+    # We should see the safe line() helper being used
+    assert 'line(f, "{")' in smoke
+    assert 'line(f, "}")' in smoke
+    assert 'line(f, "{")' in probe
+    assert 'line(f, "}")' in probe

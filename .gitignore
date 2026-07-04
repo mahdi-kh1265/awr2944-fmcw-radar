@@ -162,3 +162,6 @@ data/
 
 # C# RSTD bridge build artifacts
 tools/MmwsRstdBridge/MmwsRstdBridge.exe
+
+# lua-launch probe artifacts
+ti/probe_logs/
