@@ -1,0 +1,15 @@
+{
+  "run_id": "d4ca630a",
+  "executed": true,
+  "sequence": "showgui-sop-sleep-connect",
+  "status": "CONNECT_RETURNED_3",
+  "connect_return": "3",
+  "connect_return_1": null,
+  "connect_return_2": null,
+  "sop_return": "0",
+  "device_variant_selection_return": null,
+  "frequency_band_selection_return": null,
+  "chip_version_selection_return": null,
+  "gui_version": "unknown",
+  "error": null
+}

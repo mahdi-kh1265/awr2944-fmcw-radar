@@ -1,0 +1,5 @@
+{"step": "script_started"}
+{"step": "check_ar1_type", "detail": "table"}
+{"step": "check_connect_exists", "detail": "true"}
+{"step": "before_Connect", "detail": "COM6 baud=115200 timeout=1000"}
+{"step": "after_Connect", "detail": "0"}

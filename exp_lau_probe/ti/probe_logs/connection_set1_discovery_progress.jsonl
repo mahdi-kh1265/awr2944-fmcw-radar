@@ -1,0 +1,7 @@
+{"step": "script_started"}
+{"step": "before_startup_lite_v3"}
+{"step": "after_startup_lite_v3", "detail": "true nil"}
+{"step": "check_ar1_type", "detail": "table"}
+{"step": "before_ShowGui"}
+{"step": "after_ShowGui", "detail": "true nil"}
+{"step": "dumping_ar1_methods"}

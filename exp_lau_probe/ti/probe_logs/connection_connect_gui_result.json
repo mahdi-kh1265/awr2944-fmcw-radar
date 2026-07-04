@@ -1,0 +1,15 @@
+{
+  "run_id": "65f0dda2",
+  "executed": true,
+  "sequence": "select-set-connect",
+  "status": "CONNECT_RETURNED_ERROR",
+  "connect_return": "3",
+  "connect_return_1": "3",
+  "connect_return_2": "1",
+  "sop_return": "0",
+  "device_variant_selection_return": "0",
+  "frequency_band_selection_return": "0",
+  "chip_version_selection_return": "0",
+  "gui_version": "unknown",
+  "error": null
+}

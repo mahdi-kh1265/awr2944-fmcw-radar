@@ -1,0 +1,12 @@
+{
+  "RSTD_GetRstdPath": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio",
+  "RSTD_GetApplicationDir": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime",
+  "RSTD_GetWorkingDirectory": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime",
+  "RSTD_GetInputPath": " \\",
+  "RSTD_GetOutputPath": "C:\\Users\\khams008\\AppData\\Roaming\\RSTD\\Output\\",
+  "RSTD_GetSettingsPath": "C:\\Users\\khams008\\AppData\\Roaming\\RSTD",
+  "type_RSTD": "table",
+  "type_RTTT": "table",
+  "type_ar1": "table",
+  "package_path": ".\\?.lua;C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime\\lua\\?.lua;C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime\\lua\\?\\init.lua;C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime\\?.lua;C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime\\?\\init.lua;C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime\\LuaScripts\\?.lua;C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime\\..\\Clients\\LuaModules\\LuaSocket\\?.lua"
+}

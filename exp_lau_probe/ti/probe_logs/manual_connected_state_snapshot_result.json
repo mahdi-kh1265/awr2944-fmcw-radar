@@ -1,0 +1,7 @@
+{
+  "type_ar1": "table",
+  "GuiVersion": "3.1.4.4",
+  "GetVersion": "ERROR: ...be\\ti\\probe_logs\\manual_connected_state_snapshot.lua:24: attempt to call field 'GetVersion' (a nil value)",
+  "Calling_IsConnected": "false",
+  "IsConnected": "ERROR: System.EntryPointNotFoundException: Unable to find an entry point named 'RadarLinkImpl_IsConnected' in DLL 'RadarLinkDLL.dll'.\r\n   at AR1xController.Imports.RadarLinkImpl_IsConnected()\r\n   at AR1xController.AR1xxxWrapper.IsConnected(): 34340307"
+}

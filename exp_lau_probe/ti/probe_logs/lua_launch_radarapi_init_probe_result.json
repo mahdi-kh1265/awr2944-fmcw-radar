@@ -1,0 +1,6 @@
+{
+  "run_id": "1cd68112",
+  "executed": false,
+  "status": "SHOWGUI_FAILED",
+  "error": "...obe\\ti\\probe_logs\\lua_launch_radarapi_init_probe.lua:87: SHOWGUI_FAILED"
+}

@@ -1,0 +1,17 @@
+{"step": "script_started"}
+{"step": "pre_init_snapshot"}
+{"step": "pre_GetRstdPath", "detail": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio"}
+{"step": "pre_GetApplicationDir", "detail": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime"}
+{"step": "pre_GetWorkingDirectory", "detail": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime"}
+{"step": "pre_GetSettingsPath", "detail": "C:\\Users\\khams008\\AppData\\Roaming\\RSTD"}
+{"step": "pre_package_path", "detail": ".\\?.lua;C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime\\lua\\?.lua;C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime\\lua\\?\\init.lua;C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime\\?.lua;C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime\\?\\init.lua"}
+{"step": "pre_types", "detail": "RSTD=table RTTT=nil ar1=nil AR1_GUI=nil val=nil"}
+{"step": "before_startup_lite_v3"}
+{"step": "after_startup_lite_v3", "detail": "true nil"}
+{"step": "post_init_snapshot"}
+{"step": "post_GetRstdPath", "detail": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio"}
+{"step": "post_GetApplicationDir", "detail": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime"}
+{"step": "post_GetWorkingDirectory", "detail": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime"}
+{"step": "post_GetSettingsPath", "detail": "C:\\Users\\khams008\\AppData\\Roaming\\RSTD"}
+{"step": "post_package_path", "detail": ".\\\\?.lua;C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\\\RunTime\\\\lua\\\\?.lua;C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\\\RunTime\\\\lua\\\\?\\\\init.lua;C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\\\RunTime\\\\?.lua;C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\\\RunTime\\\\?\\\\init.lua;C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\\\RunTime\\\\LuaScripts\\\\?.lua;C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\\\RunTime\\\\..\\\\Clients\\\\LuaModules\\\\LuaSocket\\\\?.lua;C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime\\LuaScripts\\?.lua;C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime\\..\\Clients\\LuaModules\\LuaSocket\\?.lua"}
+{"step": "post_types", "detail": "RSTD=table RTTT=table ar1=table AR1_GUI=boolean val=true"}

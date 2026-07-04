@@ -898,6 +898,12 @@ _STARTUP_LITE_SNIPPET = r"""
 local RSTD_PATH = "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio"
 if type(RSTD) == "table" and RSTD.GetRstdPath then RSTD_PATH = RSTD.GetRstdPath() end
 
+-- Critical alias from Startup.lua line 4: RTTT = RSTD
+-- AR1xController internals (ShowGui, Connect, etc.) reference RTTT
+if type(RSTD) == "table" then
+    RTTT = RSTD
+end
+
 local ar1x_controller_path = RSTD_PATH .. "\\Clients\\AR1xController\\AR1xController.dll"
 local registers_xml = RSTD_PATH .. "\\Clients\\AR1xController\\AR2944ES1P0_Registers.xml"
 local al_path = RSTD_PATH .. "\\RunTime\\SAL.dll"
@@ -928,6 +934,428 @@ RSTD.RegisterDllEx(ar1x_controller_path, false)
 RSTD.SetExternalAL(ar1x_controller_path)
 RSTD.SetTitle("AWR-CLI")
 RSTD.LoadExpose(registers_xml)
+"""
+
+
+# ---------------------------------------------------------------------------
+# Startup-lite V3: exact reproduction of Startup.lua non-blocking lines
+# ---------------------------------------------------------------------------
+
+_STARTUP_LITE_V3_SNIPPET = r"""
+local RSTD_PATH = "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio"
+if type(RSTD) == "table" and RSTD.GetRstdPath then RSTD_PATH = RSTD.GetRstdPath() end
+
+-- Startup.lua line 4: RTTT = RSTD (critical alias used by AR1xController)
+if type(RSTD) == "table" then
+    RTTT = RSTD
+end
+
+-- Startup.lua line 16: AR1_GUI = true
+AR1_GUI = true
+
+-- Setup package.path to match normal GUI environment
+local runtime_path = RSTD_PATH .. "\\RunTime"
+package.path = ".\\?.lua;"
+    .. runtime_path .. "\\lua\\?.lua;"
+    .. runtime_path .. "\\lua\\?\\init.lua;"
+    .. runtime_path .. "\\?.lua;"
+    .. runtime_path .. "\\?\\init.lua;"
+    .. runtime_path .. "\\LuaScripts\\?.lua;"
+    .. runtime_path .. "\\..\\Clients\\LuaModules\\LuaSocket\\?.lua"
+
+local ar1x_controller_path = RSTD_PATH .. "\\Clients\\AR1xController\\AR1xController.dll"
+local registers_xml = RSTD_PATH .. "\\Clients\\AR1xController\\AR2944ES1P0_Registers.xml"
+local al_path = RSTD_PATH .. "\\RunTime\\SAL.dll"
+local client_path = RSTD_PATH .. "\\Clients\\LabClient.dll"
+
+if type(RSTD) ~= "table" or not RSTD.UnBuild then
+    error("STARTUP_LITE_V3_FAILED: RSTD not available")
+end
+
+RSTD.UnBuild()
+RSTD.SetClientDll(al_path, client_path, "", 0)
+
+RSTD.SetVar("/Settings/AutoUpdate/Enabled", "TRUE")
+RSTD.SetVar("/Settings/AutoUpdate/Interval", "1")
+RSTD.SetVar("/Settings/Monitors/UpdateDisplay", "TRUE")
+RSTD.SetVar("/Settings/Monitors/OneClickStart", "TRUE")
+RSTD.SetVar("/Settings/Automation/Automation Mode", "false")
+RSTD.Transmit("/")
+RSTD.SaveClientSettings()
+
+RSTD.SetAndTransmit("/Settings/Scripter/Display DateTime", "1")
+RSTD.SetAndTransmit("/Settings/Scripter/DateTime Format", "HH:mm:ss")
+
+pcall(function() dofile(RSTD_PATH .. "\\Scripts\\Startup\\General_functions.lua") end)
+pcall(function() dofile(RSTD_PATH .. "\\Scripts\\Startup\\BinDecHex.lua") end)
+pcall(function() dofile(RSTD_PATH .. "\\Scripts\\Startup\\lib_math.lua") end)
+
+RSTD.Build()
+
+RSTD.RegisterDllEx(ar1x_controller_path, false)
+RSTD.SetExternalAL(ar1x_controller_path)
+
+-- Startup.lua line 66: RSTD.SetTitle(ar1.GuiVersion())
+local gv_ok, gv_ret = pcall(function() return ar1.GuiVersion() end)
+if gv_ok and gv_ret then
+    RSTD.SetTitle(tostring(gv_ret))
+else
+    RSTD.SetTitle("AWR-CLI")
+end
+
+RSTD.LoadExpose(registers_xml)
+"""
+
+
+def _v3_snippet_escaped() -> str:
+    """Return the v3 snippet with backslashes doubled for f-string embedding."""
+    return _STARTUP_LITE_V3_SNIPPET.replace("\\", "\\\\")
+
+
+def build_lua_launch_startup_lite_v3_probe(
+    run_id: str, result_path: str, jsonl_path: str,
+) -> str:
+    """Probe that runs startup-lite-v3 with granular progress at every step."""
+    result_path = result_path.replace("\\", "/")
+    jsonl_path = jsonl_path.replace("\\", "/")
+    snippet = _v3_snippet_escaped()
+    return f"""\
+local run_id = "{run_id}"
+local out_path = [[{result_path}]]
+local jsonl_path = [[{jsonl_path}]]
+
+local function esc(s)
+    if s == nil then return "null" end
+    s = tostring(s)
+    s = s:gsub("\\\\", "\\\\\\\\")
+    s = s:gsub('"', '\\\\"')
+    s = s:gsub("\\r", "\\\\r")
+    s = s:gsub("\\n", "\\\\n")
+    s = s:gsub("\\t", "\\\\t")
+    return '"' .. s .. '"'
+end
+local function line(f, s) f:write(s); f:write("\\n") end
+local function progress(step, detail)
+    local lf = io.open(jsonl_path, "a")
+    if lf then
+        if detail then
+            line(lf, '{{"step": ' .. esc(step) .. ', "detail": ' .. esc(detail) .. '}}')
+        else
+            line(lf, '{{"step": ' .. esc(step) .. '}}')
+        end
+        lf:close()
+    end
+end
+
+local status = "NO_START"
+local gv_ret = nil
+
+local ok, err = pcall(function()
+    local lf = io.open(jsonl_path, "w"); if lf then lf:close() end
+    progress("script_started")
+
+    local RSTD_PATH = RSTD.GetRstdPath()
+    progress("rstd_path", RSTD_PATH)
+
+    progress("before_RTTT_alias")
+    if type(RSTD) == "table" then RTTT = RSTD end
+    progress("after_RTTT_alias", "type(RTTT)=" .. type(RTTT))
+
+    progress("before_AR1_GUI")
+    AR1_GUI = true
+    progress("after_AR1_GUI", tostring(AR1_GUI))
+
+    local runtime_path = RSTD_PATH .. "\\\\RunTime"
+    package.path = ".\\\\?.lua;"
+        .. runtime_path .. "\\\\lua\\\\?.lua;"
+        .. runtime_path .. "\\\\lua\\\\?\\\\init.lua;"
+        .. runtime_path .. "\\\\?.lua;"
+        .. runtime_path .. "\\\\?\\\\init.lua;"
+        .. runtime_path .. "\\\\LuaScripts\\\\?.lua;"
+        .. runtime_path .. "\\\\..\\\\Clients\\\\LuaModules\\\\LuaSocket\\\\?.lua"
+    progress("package_path_set", package.path)
+
+    local ar1x_controller_path = RSTD_PATH .. "\\\\Clients\\\\AR1xController\\\\AR1xController.dll"
+    local registers_xml = RSTD_PATH .. "\\\\Clients\\\\AR1xController\\\\AR2944ES1P0_Registers.xml"
+    local al_path = RSTD_PATH .. "\\\\RunTime\\\\SAL.dll"
+    local client_path = RSTD_PATH .. "\\\\Clients\\\\LabClient.dll"
+
+    RSTD.UnBuild()
+    RSTD.SetClientDll(al_path, client_path, "", 0)
+    RSTD.SetVar("/Settings/AutoUpdate/Enabled", "TRUE")
+    RSTD.SetVar("/Settings/AutoUpdate/Interval", "1")
+    RSTD.SetVar("/Settings/Monitors/UpdateDisplay", "TRUE")
+    RSTD.SetVar("/Settings/Monitors/OneClickStart", "TRUE")
+    RSTD.SetVar("/Settings/Automation/Automation Mode", "false")
+    RSTD.Transmit("/")
+    RSTD.SaveClientSettings()
+    RSTD.SetAndTransmit("/Settings/Scripter/Display DateTime", "1")
+    RSTD.SetAndTransmit("/Settings/Scripter/DateTime Format", "HH:mm:ss")
+
+    pcall(function() dofile(RSTD_PATH .. "\\\\Scripts\\\\Startup\\\\General_functions.lua") end)
+    pcall(function() dofile(RSTD_PATH .. "\\\\Scripts\\\\Startup\\\\BinDecHex.lua") end)
+    pcall(function() dofile(RSTD_PATH .. "\\\\Scripts\\\\Startup\\\\lib_math.lua") end)
+
+    progress("before_Build")
+    RSTD.Build()
+    progress("after_Build")
+
+    progress("before_RegisterDllEx")
+    RSTD.RegisterDllEx(ar1x_controller_path, false)
+    RSTD.SetExternalAL(ar1x_controller_path)
+    progress("after_RegisterDllEx", "type(ar1)=" .. type(ar1))
+
+    progress("before_GuiVersion")
+    local gv_ok2
+    gv_ok2, gv_ret = pcall(function() return ar1.GuiVersion() end)
+    progress("after_GuiVersion", tostring(gv_ok2) .. " " .. tostring(gv_ret))
+    if gv_ok2 and gv_ret then
+        RSTD.SetTitle(tostring(gv_ret))
+    else
+        RSTD.SetTitle("AWR-CLI")
+    end
+
+    progress("before_LoadExpose")
+    RSTD.LoadExpose(registers_xml)
+    progress("after_LoadExpose")
+
+    status = "STARTUP_LITE_V3_OK"
+
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": true,')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "type_ar1": ' .. esc(type(ar1)) .. ',')
+        line(f, '  "type_RTTT": ' .. esc(type(RTTT)) .. ',')
+        line(f, '  "AR1_GUI": ' .. tostring(AR1_GUI) .. ',')
+        line(f, '  "gui_version": ' .. esc(gv_ret) .. ',')
+        line(f, '  "error": null')
+        line(f, "}}")
+        f:close()
+    end
+end)
+
+if not ok then
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": false,')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "error": ' .. esc(tostring(err)))
+        line(f, "}}")
+        f:close()
+    end
+end
+"""
+
+
+def build_lua_launch_path_env_probe(
+    run_id: str, result_path: str, jsonl_path: str,
+) -> str:
+    """Dump environment paths before and after startup-lite-v3."""
+    result_path = result_path.replace("\\", "/")
+    jsonl_path = jsonl_path.replace("\\", "/")
+    snippet_v3 = _v3_snippet_escaped()
+    return f"""\
+local run_id = "{run_id}"
+local out_path = [[{result_path}]]
+local jsonl_path = [[{jsonl_path}]]
+
+local function esc(s)
+    if s == nil then return "null" end
+    s = tostring(s)
+    s = s:gsub("\\\\", "\\\\\\\\")
+    s = s:gsub('"', '\\\\"')
+    s = s:gsub("\\r", "\\\\r")
+    s = s:gsub("\\n", "\\\\n")
+    s = s:gsub("\\t", "\\\\t")
+    return '"' .. s .. '"'
+end
+local function line(f, s) f:write(s); f:write("\\n") end
+local function progress(step, detail)
+    local lf = io.open(jsonl_path, "a")
+    if lf then
+        if detail then
+            line(lf, '{{"step": ' .. esc(step) .. ', "detail": ' .. esc(detail) .. '}}')
+        else
+            line(lf, '{{"step": ' .. esc(step) .. '}}')
+        end
+        lf:close()
+    end
+end
+
+local function safe_call(fn)
+    local ok2, ret = pcall(fn)
+    if ok2 then return tostring(ret) else return "ERROR: " .. tostring(ret) end
+end
+
+local ok, err = pcall(function()
+    local lf = io.open(jsonl_path, "w"); if lf then lf:close() end
+    progress("script_started")
+
+    progress("pre_init_snapshot")
+    progress("pre_GetRstdPath", safe_call(function() return RSTD.GetRstdPath() end))
+    progress("pre_GetApplicationDir", safe_call(function() return RSTD.GetApplicationDir() end))
+    progress("pre_GetWorkingDirectory", safe_call(function() return RSTD.GetWorkingDirectory() end))
+    progress("pre_GetSettingsPath", safe_call(function() return RSTD.GetSettingsPath() end))
+    progress("pre_package_path", package.path or "nil")
+    progress("pre_types", "RSTD=" .. type(RSTD) .. " RTTT=" .. type(RTTT) .. " ar1=" .. type(ar1) .. " AR1_GUI=" .. type(AR1_GUI) .. " val=" .. tostring(AR1_GUI))
+
+    progress("before_startup_lite_v3")
+    local lite_ok, lite_err = pcall(function()
+{snippet_v3}
+    end)
+    progress("after_startup_lite_v3", tostring(lite_ok) .. " " .. tostring(lite_err))
+
+    progress("post_init_snapshot")
+    progress("post_GetRstdPath", safe_call(function() return RSTD.GetRstdPath() end))
+    progress("post_GetApplicationDir", safe_call(function() return RSTD.GetApplicationDir() end))
+    progress("post_GetWorkingDirectory", safe_call(function() return RSTD.GetWorkingDirectory() end))
+    progress("post_GetSettingsPath", safe_call(function() return RSTD.GetSettingsPath() end))
+    progress("post_package_path", package.path or "nil")
+    progress("post_types", "RSTD=" .. type(RSTD) .. " RTTT=" .. type(RTTT) .. " ar1=" .. type(ar1) .. " AR1_GUI=" .. type(AR1_GUI) .. " val=" .. tostring(AR1_GUI))
+
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": true,')
+        line(f, '  "startup_lite_v3_ok": ' .. tostring(lite_ok) .. ',')
+        line(f, '  "type_RSTD": ' .. esc(type(RSTD)) .. ',')
+        line(f, '  "type_RTTT": ' .. esc(type(RTTT)) .. ',')
+        line(f, '  "type_ar1": ' .. esc(type(ar1)) .. ',')
+        line(f, '  "AR1_GUI": ' .. tostring(AR1_GUI) .. ',')
+        line(f, '  "package_path": ' .. esc(package.path) .. ',')
+        line(f, '  "error": null')
+        line(f, "}}")
+        f:close()
+    end
+end)
+
+if not ok then
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": false,')
+        line(f, '  "error": ' .. esc(tostring(err)))
+        line(f, "}}")
+        f:close()
+    end
+end
+"""
+
+
+def build_lua_launch_radarapi_v3_connect_probe(
+    run_id: str, result_path: str, jsonl_path: str,
+    com_num: int, baud: int, show_gui: bool = False,
+) -> str:
+    """Startup-lite-v3 + optional ShowGui + ar1.Connect."""
+    result_path = result_path.replace("\\", "/")
+    jsonl_path = jsonl_path.replace("\\", "/")
+    snippet_v3 = _v3_snippet_escaped()
+    showgui_block = ""
+    if show_gui:
+        showgui_block = """
+    progress("before_ShowGui")
+    local sg_ok, sg_err = pcall(function() ar1.ShowGui() end)
+    progress("after_ShowGui", tostring(sg_ok) .. " " .. tostring(sg_err))
+    if not sg_ok then status = "SHOWGUI_FAILED"; error("SHOWGUI_FAILED: " .. tostring(sg_err)) end
+"""
+    return f"""\
+local run_id = "{run_id}"
+local out_path = [[{result_path}]]
+local jsonl_path = [[{jsonl_path}]]
+
+local function esc(s)
+    if s == nil then return "null" end
+    s = tostring(s)
+    s = s:gsub("\\\\", "\\\\\\\\")
+    s = s:gsub('"', '\\\\"')
+    s = s:gsub("\\r", "\\\\r")
+    s = s:gsub("\\n", "\\\\n")
+    s = s:gsub("\\t", "\\\\t")
+    return '"' .. s .. '"'
+end
+local function line(f, s) f:write(s); f:write("\\n") end
+local function progress(step, detail)
+    local lf = io.open(jsonl_path, "a")
+    if lf then
+        if detail then
+            line(lf, '{{"step": ' .. esc(step) .. ', "detail": ' .. esc(detail) .. '}}')
+        else
+            line(lf, '{{"step": ' .. esc(step) .. '}}')
+        end
+        lf:close()
+    end
+end
+
+local status = "NO_START"
+local c_ret_str = "null"
+
+local ok, err = pcall(function()
+    local lf = io.open(jsonl_path, "w"); if lf then lf:close() end
+    progress("script_started")
+
+    progress("before_startup_lite_v3")
+    local lite_ok, lite_err = pcall(function()
+{snippet_v3}
+    end)
+    progress("after_startup_lite_v3", tostring(lite_ok) .. " " .. tostring(lite_err))
+    if not lite_ok then status = "STARTUP_LITE_V3_FAILED"; error("STARTUP_LITE_V3_FAILED") end
+
+    progress("check_ar1_type", type(ar1))
+    if type(ar1) ~= "table" then
+        status = "AR1_MISSING"
+        error("AR1_MISSING")
+    end
+{showgui_block}
+    progress("before_Connect", "COM{com_num} baud={baud} timeout=1000")
+    local c_ok, c_ret = pcall(function() return ar1.Connect({com_num}, {baud}, 1000) end)
+
+    if not c_ok then
+        status = "CONNECT_EXCEPTION"
+        progress("after_Connect", "ERROR: " .. tostring(c_ret))
+        error("CONNECT_EXCEPTION: " .. tostring(c_ret))
+    end
+
+    progress("after_Connect", tostring(c_ret))
+    c_ret_str = esc(c_ret)
+
+    if c_ret == 0 then
+        status = "CONNECT_SUCCESS"
+    else
+        status = "CONNECT_RETURNED_ERROR"
+    end
+
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": true,')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "connect_return": ' .. c_ret_str .. ',')
+        line(f, '  "error": null')
+        line(f, "}}")
+        f:close()
+    end
+end)
+
+if not ok then
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": false,')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "error": ' .. esc(tostring(err)))
+        line(f, "}}")
+        f:close()
+    end
+end
 """
 
 
@@ -1304,6 +1732,1041 @@ if not ok then
         line(f, "{{")
         line(f, '  "run_id": ' .. esc(run_id) .. ',')
         line(f, '  "executed": false,')
+        line(f, '  "error": ' .. esc(tostring(err)))
+        line(f, "}}")
+        f:close()
+    end
+end
+"""
+
+
+def build_lua_launch_radarapi_init_probe(run_id: str, result_path: str, jsonl_path: str, mode: str) -> str:
+    result_path = result_path.replace("\\", "/")
+    jsonl_path = jsonl_path.replace("\\", "/")
+    snippet = _STARTUP_LITE_SNIPPET.replace("\\", "\\\\")
+    
+    return f"""\
+local run_id = "{run_id}"
+local out_path = [[{result_path}]]
+local jsonl_path = [[{jsonl_path}]]
+local mode = "{mode}"
+
+local function esc(s)
+    if s == nil then return "null" end
+    s = tostring(s)
+    s = s:gsub("\\\\", "\\\\\\\\")
+    s = s:gsub('"', '\\\\"')
+    s = s:gsub("\\r", "\\\\r")
+    s = s:gsub("\\n", "\\\\n")
+    s = s:gsub("\\t", "\\\\t")
+    return '"' .. s .. '"'
+end
+local function line(f, s) f:write(s); f:write("\\n") end
+local function progress(step, detail)
+    local lf = io.open(jsonl_path, "a")
+    if lf then
+        if detail then
+            line(lf, '{{"step": ' .. esc(step) .. ', "detail": ' .. esc(detail) .. '}}')
+        else
+            line(lf, '{{"step": ' .. esc(step) .. '}}')
+        end
+        lf:close()
+    end
+end
+
+local status = "NO_START"
+local err_msg = "null"
+
+local ok, err = pcall(function()
+    local lf = io.open(jsonl_path, "w"); if lf then lf:close() end
+    progress("script_started")
+
+    progress("before_startup_lite")
+    local lite_ok, lite_err = pcall(function()
+{snippet}
+    end)
+    progress("after_startup_lite", tostring(lite_ok) .. " " .. tostring(lite_err))
+    if not lite_ok then status = "STARTUP_LITE_FAILED"; error("STARTUP_LITE_FAILED") end
+
+    if mode ~= "no-showgui" and mode ~= "rttt-no-showgui" then
+        progress("before_ShowGui")
+        local sg_ok, sg_err = pcall(function() ar1.ShowGui() end)
+        progress("after_ShowGui", tostring(sg_ok) .. " " .. tostring(sg_err))
+        if not sg_ok then status = "SHOWGUI_FAILED"; error("SHOWGUI_FAILED") end
+    end
+
+    if mode == "showgui-plus-getversion" or mode == "showgui-plus-loadsettings" or mode == "full" then
+        progress("before_GetVersion")
+        local gv_ok, gv_ret = pcall(function() return ar1.GetVersion() end)
+        progress("after_GetVersion", tostring(gv_ok) .. " " .. tostring(gv_ret))
+        
+        progress("before_SelectRadarMode")
+        local srm_ok, srm_ret = pcall(function() return ar1.SelectRadarMode(0) end)
+        progress("after_SelectRadarMode", tostring(srm_ok) .. " " .. tostring(srm_ret))
+        
+        progress("before_selectCascadeMode")
+        local scm_ok, scm_ret = pcall(function() return ar1.selectCascadeMode(0) end)
+        progress("after_selectCascadeMode", tostring(scm_ok) .. " " .. tostring(scm_ret))
+    end
+    
+    if mode == "showgui-plus-loadsettings" or mode == "full" then
+        progress("before_LoadSettings")
+    local ls_ok, ls_ret = pcall(function() return ar1.LoadSettings([[C:/Users/khams008/AppData/Roaming/RSTD/ar1gui.ini]]) end)
+        progress("after_LoadSettings", tostring(ls_ok) .. " " .. tostring(ls_ret))
+    end
+
+    if mode == "full" then
+        progress("before_NetStart")
+        local ns_ok, ns_ret = pcall(function() return RSTD.NetStart() end)
+        progress("after_NetStart", tostring(ns_ok) .. " " .. tostring(ns_ret))
+    end
+
+    status = "INIT_PROBE_SUCCESS"
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": true,')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "error": null')
+        line(f, "}}")
+        f:close()
+    end
+end)
+
+if not ok then
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": false,')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "error": ' .. esc(tostring(err)))
+        line(f, "}}")
+        f:close()
+    end
+end
+"""
+
+def build_lua_launch_radarapi_connect_probe(run_id: str, result_path: str, jsonl_path: str, mode: str, com_num: int, baud: int) -> str:
+    result_path = result_path.replace("\\", "/")
+    jsonl_path = jsonl_path.replace("\\", "/")
+    snippet = _STARTUP_LITE_SNIPPET.replace("\\", "\\\\")
+    
+    return f"""\
+local run_id = "{run_id}"
+local out_path = [[{result_path}]]
+local jsonl_path = [[{jsonl_path}]]
+local mode = "{mode}"
+
+local function esc(s)
+    if s == nil then return "null" end
+    s = tostring(s)
+    s = s:gsub("\\\\", "\\\\\\\\")
+    s = s:gsub('"', '\\\\"')
+    s = s:gsub("\\r", "\\\\r")
+    s = s:gsub("\\n", "\\\\n")
+    s = s:gsub("\\t", "\\\\t")
+    return '"' .. s .. '"'
+end
+local function line(f, s) f:write(s); f:write("\\n") end
+local function progress(step, detail)
+    local lf = io.open(jsonl_path, "a")
+    if lf then
+        if detail then
+            line(lf, '{{"step": ' .. esc(step) .. ', "detail": ' .. esc(detail) .. '}}')
+        else
+            line(lf, '{{"step": ' .. esc(step) .. '}}')
+        end
+        lf:close()
+    end
+end
+
+local status = "NO_START"
+local err_msg = "null"
+local c_ret_str = "null"
+
+local ok, err = pcall(function()
+    local lf = io.open(jsonl_path, "w"); if lf then lf:close() end
+    progress("script_started")
+
+    progress("before_startup_lite")
+    local lite_ok, lite_err = pcall(function()
+{snippet}
+    end)
+    progress("after_startup_lite", tostring(lite_ok) .. " " .. tostring(lite_err))
+    if not lite_ok then status = "STARTUP_LITE_FAILED"; error("STARTUP_LITE_FAILED") end
+
+    if mode ~= "no-showgui" and mode ~= "rttt-no-showgui" then
+        progress("before_ShowGui")
+        local sg_ok, sg_err = pcall(function() ar1.ShowGui() end)
+        progress("after_ShowGui", tostring(sg_ok) .. " " .. tostring(sg_err))
+        if not sg_ok then status = "SHOWGUI_FAILED"; error("SHOWGUI_FAILED") end
+    end
+
+    if mode == "showgui-plus-getversion" or mode == "showgui-plus-loadsettings" or mode == "full" then
+        progress("before_GetVersion")
+        local gv_ok = pcall(function() return ar1.GetVersion() end)
+        progress("after_GetVersion", tostring(gv_ok))
+        
+        progress("before_SelectRadarMode")
+        local srm_ok = pcall(function() return ar1.SelectRadarMode(0) end)
+        progress("after_SelectRadarMode", tostring(srm_ok))
+        
+        progress("before_selectCascadeMode")
+        local scm_ok = pcall(function() return ar1.selectCascadeMode(0) end)
+        progress("after_selectCascadeMode", tostring(scm_ok))
+    end
+    
+    if mode == "showgui-plus-loadsettings" or mode == "full" then
+        progress("before_LoadSettings")
+    local ls_ok, ls_ret = pcall(function() return ar1.LoadSettings([[C:/Users/khams008/AppData/Roaming/RSTD/ar1gui.ini]]) end)
+        progress("after_LoadSettings", tostring(ls_ok))
+    end
+
+    if mode == "full" then
+        progress("before_NetStart")
+        local ns_ok = pcall(function() return RSTD.NetStart() end)
+        progress("after_NetStart", tostring(ns_ok))
+    end
+
+    progress("before_Connect", "COM{com_num} baud={baud} timeout=1000")
+    local c_ok, c_ret = pcall(function() return ar1.Connect({com_num}, {baud}, 1000) end)
+    
+    if not c_ok then
+        status = "CONNECT_EXCEPTION_NULLREF"
+        progress("after_Connect", "ERROR: " .. tostring(c_ret))
+        error("CONNECT_EXCEPTION: " .. tostring(c_ret))
+    end
+    
+    progress("after_Connect", tostring(c_ret))
+    c_ret_str = esc(c_ret)
+    
+    if c_ret == 0 then
+        status = "CONNECT_SUCCESS"
+    else
+        status = "CONNECT_RETURNED_ERROR"
+    end
+
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": true,')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "connect_return": ' .. c_ret_str .. ',')
+        line(f, '  "error": null')
+        line(f, "}}")
+        f:close()
+    end
+end)
+
+if not ok then
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": false,')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "error": ' .. esc(tostring(err)))
+        line(f, "}}")
+        f:close()
+    end
+end
+"""
+
+# ---------------------------------------------------------------------------
+# connection stage official builders
+# ---------------------------------------------------------------------------
+
+def build_lua_launch_connection_connect_gui(
+    run_id: str, result_path: str, jsonl_path: str,
+    com_num: int, baud: int,
+) -> str:
+    """Official connection backend using startup-lite-v3 + ShowGui + Connect."""
+    result_path = result_path.replace("\\", "/")
+    jsonl_path = jsonl_path.replace("\\", "/")
+    snippet_v3 = _v3_snippet_escaped()
+    
+    return f"""\
+local run_id = "{run_id}"
+local out_path = [[{result_path}]]
+local jsonl_path = [[{jsonl_path}]]
+
+local function esc(s)
+    if s == nil then return "null" end
+    s = tostring(s)
+    s = s:gsub("\\\\", "\\\\\\\\")
+    s = s:gsub('"', '\\\\"')
+    s = s:gsub("\\r", "\\\\r")
+    s = s:gsub("\\n", "\\\\n")
+    s = s:gsub("\\t", "\\\\t")
+    return '"' .. s .. '"'
+end
+local function line(f, s) f:write(s); f:write("\\n") end
+local function progress(step, detail)
+    local lf = io.open(jsonl_path, "a")
+    if lf then
+        if detail then
+            line(lf, '{{"step": ' .. esc(step) .. ', "detail": ' .. esc(detail) .. '}}')
+        else
+            line(lf, '{{"step": ' .. esc(step) .. '}}')
+        end
+        lf:close()
+    end
+end
+
+local status = "NO_START"
+local c_ret_str = "null"
+local dv_ret_str = "null"
+local fb_ret_str = "null"
+local cv_ret_str = "null"
+
+local gui_ver = "unknown"
+local rl_ver = "unknown"
+local pp_ver = "unknown"
+
+local function safe_call(fn)
+    local ok, ret = pcall(fn)
+    if ok then return ret else return nil end
+end
+
+local ok, err = pcall(function()
+    local lf = io.open(jsonl_path, "w"); if lf then lf:close() end
+    progress("script_started")
+
+    progress("before_startup_lite_v3")
+    local lite_ok, lite_err = pcall(function()
+{snippet_v3}
+    end)
+    progress("after_startup_lite_v3", tostring(lite_ok) .. " " .. tostring(lite_err))
+    if not lite_ok then status = "STARTUP_LITE_V3_FAILED"; error("STARTUP_LITE_V3_FAILED") end
+
+    progress("check_ar1_type", type(ar1))
+    if type(ar1) ~= "table" then
+        status = "AR1_MISSING"
+        error("AR1_MISSING")
+    end
+
+    progress("before_ShowGui")
+    local sg_ok, sg_err = pcall(function() ar1.ShowGui() end)
+    progress("after_ShowGui", tostring(sg_ok) .. " " .. tostring(sg_err))
+    if not sg_ok then status = "SHOWGUI_FAILED"; error("SHOWGUI_FAILED") end
+
+    progress("before_Connect", "COM{com_num} baud={baud} timeout=1000")
+    local c_ok, c_ret = pcall(function() return ar1.Connect({com_num}, {baud}, 1000) end)
+
+    if not c_ok then
+        status = "CONNECT_EXCEPTION"
+        progress("after_Connect", "ERROR: " .. tostring(c_ret))
+        error("CONNECT_EXCEPTION: " .. tostring(c_ret))
+    end
+    progress("after_Connect", tostring(c_ret))
+    c_ret_str = esc(c_ret)
+
+    if c_ret == 0 then
+        -- Perform selections
+        progress("before_deviceVariantSelection", "XWR2944")
+        local dv_ok, dv_ret = pcall(function() return ar1.deviceVariantSelection("XWR2944") end)
+        progress("after_deviceVariantSelection", tostring(dv_ret))
+        dv_ret_str = esc(dv_ret)
+        
+        progress("before_frequencyBandSelection", "77G")
+        local fb_ok, fb_ret = pcall(function() return ar1.frequencyBandSelection("77G") end)
+        progress("after_frequencyBandSelection", tostring(fb_ret))
+        fb_ret_str = esc(fb_ret)
+        
+        progress("before_SelectChipVersion", "AWR2944")
+        local cv_ok, cv_ret = pcall(function() return ar1.SelectChipVersion("AWR2944") end)
+        progress("after_SelectChipVersion", tostring(cv_ret))
+        cv_ret_str = esc(cv_ret)
+
+        if dv_ret == 0 and fb_ret == 0 and cv_ret == 0 then
+            status = "CONNECTION_GUI_SUCCESS"
+        else
+            status = "CONNECTION_GUI_SELECTION_FAILED"
+        end
+
+        -- Try to retrieve versions
+        local gv = safe_call(function() return ar1.GuiVersion() end)
+        if gv then gui_ver = tostring(gv) end
+        
+        if type(ar1.GetRadarLinkVersion) == "function" then
+            local rlv = safe_call(function() return ar1.GetRadarLinkVersion() end)
+            if rlv then rl_ver = tostring(rlv) end
+        end
+        if type(ar1.GetPostProcVersion) == "function" then
+            local ppv = safe_call(function() return ar1.GetPostProcVersion() end)
+            if ppv then pp_ver = tostring(ppv) end
+        end
+
+    else
+        status = "CONNECT_RETURNED_ERROR"
+    end
+
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": true,')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "connect_return": ' .. c_ret_str .. ',')
+        line(f, '  "device_variant_selection_return": ' .. dv_ret_str .. ',')
+        line(f, '  "frequency_band_selection_return": ' .. fb_ret_str .. ',')
+        line(f, '  "chip_version_selection_return": ' .. cv_ret_str .. ',')
+        line(f, '  "full_reset_return": ' .. fr_ret_str .. ',')
+        line(f, '  "gui_version": ' .. esc(gui_ver) .. ',')
+        line(f, '  "radar_link_version": ' .. esc(rl_ver) .. ',')
+        line(f, '  "post_proc_version": ' .. esc(pp_ver) .. ',')
+        line(f, '  "error": null')
+        line(f, "}}")
+        f:close()
+    end
+end)
+
+if not ok then
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": false,')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "error": ' .. esc(tostring(err)))
+        line(f, "}}")
+        f:close()
+    end
+end
+"""
+
+def build_lua_launch_connection_sop_set_only(
+    run_id: str, result_path: str, jsonl_path: str,
+    mode: int,
+) -> str:
+    """Run SOPControl on an already initialized/connected GUI."""
+    result_path = result_path.replace("\\", "/")
+    jsonl_path = jsonl_path.replace("\\", "/")
+    return f"""\
+local run_id = "{run_id}"
+local out_path = [[{result_path}]]
+local jsonl_path = [[{jsonl_path}]]
+
+local function esc(s)
+    if s == nil then return "null" end
+    s = tostring(s)
+    s = s:gsub("\\\\", "\\\\\\\\")
+    s = s:gsub('"', '\\\\"')
+    s = s:gsub("\\r", "\\\\r")
+    s = s:gsub("\\n", "\\\\n")
+    s = s:gsub("\\t", "\\\\t")
+    return '"' .. s .. '"'
+end
+local function line(f, s) f:write(s); f:write("\\n") end
+local function progress(step, detail)
+    local lf = io.open(jsonl_path, "a")
+    if lf then
+        if detail then
+            line(lf, '{{"step": ' .. esc(step) .. ', "detail": ' .. esc(detail) .. '}}')
+        else
+            line(lf, '{{"step": ' .. esc(step) .. '}}')
+        end
+        lf:close()
+    end
+end
+
+local status = "NO_START"
+local sop_ret_str = "null"
+
+local ok, err = pcall(function()
+    local lf = io.open(jsonl_path, "w"); if lf then lf:close() end
+    progress("script_started")
+
+    progress("check_ar1_type", type(ar1))
+    if type(ar1) ~= "table" then
+        status = "AR1_MISSING"
+        error("AR1_MISSING: this script must be run in an already-initialized mmWave Studio context")
+    end
+
+    progress("before_SOPControl", "{mode}")
+    local s_ok, s_ret = pcall(function() return ar1.SOPControl({mode}) end)
+
+    if not s_ok then
+        status = "SOPCONTROL_EXCEPTION"
+        progress("after_SOPControl", "ERROR: " .. tostring(s_ret))
+        error("SOPCONTROL_EXCEPTION: " .. tostring(s_ret))
+    end
+    progress("after_SOPControl", tostring(s_ret))
+    sop_ret_str = esc(s_ret)
+
+    if s_ret == 0 then
+        status = "SOPCONTROL_SUCCESS"
+    else
+        status = "SOPCONTROL_RETURNED_ERROR"
+    end
+
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": true,')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "sopcontrol_return": ' .. sop_ret_str .. ',')
+        line(f, '  "error": null')
+        line(f, "}}")
+        f:close()
+    end
+end)
+
+if not ok then
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": false,')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "error": ' .. esc(tostring(err)))
+        line(f, "}}")
+        f:close()
+    end
+end
+"""
+
+
+# ---------------------------------------------------------------------------
+# Connection sequences with retry logic
+# ---------------------------------------------------------------------------
+
+# Valid sequences for connect-gui and return3-diag
+CONNECT_SEQUENCES = [
+    "showgui-connect",
+    "showgui-sleep-connect",
+    "showgui-sop-sleep-connect",
+    "gui-set1-fullreset-connect",
+    "gui-set1-fullreset-aw2944-connect",
+    "select-set-connect",
+    "showgui-select-sop-connect",
+    "showgui-sop-reset-longwait-connect",
+]
+
+
+def build_lua_launch_connection_sequenced(
+    run_id: str, result_path: str, jsonl_path: str,
+    com_num: int, baud: int, sequence: str,
+    retry_on_3: bool = True,
+) -> str:
+    """Generate a connection script with a specific sequence and optional retry.
+
+    Sequences:
+      A. showgui-connect
+      B. showgui-sleep-connect
+      C. showgui-sop-sleep-connect
+      D. showgui-select-sop-connect
+      E. showgui-sop-reset-longwait-connect
+      F. select-set-connect
+      G. gui-set1-fullreset-connect (DEFAULT)
+      H. gui-set1-fullreset-aw2944-connect
+
+    If retry_on_3 is True and the first Connect returns 3,
+    the script waits 3s and retries once.
+    """
+    result_path = result_path.replace("\\", "/")
+    jsonl_path = jsonl_path.replace("\\", "/")
+    snippet_v3 = _v3_snippet_escaped()
+
+    # Build the sequence-specific Lua block
+    seq_blocks = {
+
+
+        "gui-set1-fullreset-connect": """
+    progress("before_selectRadarMode", "0")
+    local sr_ok, sr_ret = pcall(function() return ar1.selectRadarMode(0) end)
+    progress("after_selectRadarMode", tostring(sr_ret))
+
+    progress("before_selectCascadeMode", "0")
+    local sc_ok, sc_ret = pcall(function() return ar1.selectCascadeMode(0) end)
+    progress("after_selectCascadeMode", tostring(sc_ret))
+
+    progress("before_LoadSettings")
+    local ls_ok, ls_ret = pcall(function() return ar1.LoadSettings([[C:/Users/khams008/AppData/Roaming/RSTD/ar1gui.ini]]) end)
+    progress("after_LoadSettings", tostring(ls_ret))
+
+    progress("before_frequencyBandSelection", "77G")
+    local fb_ok, fb_ret = pcall(function() return ar1.frequencyBandSelection("77G") end)
+    progress("after_frequencyBandSelection", tostring(fb_ret))
+    fb_ret_str = esc(fb_ret)
+
+    progress("before_SelectChipVersion", "AR1642")
+    local cv_ok, cv_ret = pcall(function() return ar1.SelectChipVersion("AR1642") end)
+    progress("after_SelectChipVersion", tostring(cv_ret))
+    cv_ret_str = esc(cv_ret)
+
+    progress("before_deviceVariantSelection", "XWR2944")
+    local dv_ok, dv_ret = pcall(function() return ar1.deviceVariantSelection("XWR2944") end)
+    progress("after_deviceVariantSelection", tostring(dv_ret))
+    dv_ret_str = esc(dv_ret)
+
+    progress("before_FullReset")
+    local fr_ok, fr_ret = pcall(function() return ar1.FullReset() end)
+    progress("after_FullReset", tostring(fr_ret))
+    fr_ret_str = esc(fr_ret)
+
+    progress("before_Sleep", "1000 ms")
+    RSTD.Sleep(1000)
+    progress("after_Sleep")
+
+    progress("before_SOPControl", "mode=2")
+    local sop_ok, sop_ret = pcall(function() return ar1.SOPControl(2) end)
+    if not sop_ok then
+        progress("after_SOPControl", "ERROR: " .. tostring(sop_ret))
+        sop_ret_str = esc(tostring(sop_ret))
+    else
+        progress("after_SOPControl", tostring(sop_ret))
+        sop_ret_str = esc(sop_ret)
+    end
+
+    progress("before_Sleep", "3000 ms")
+    RSTD.Sleep(3000)
+    progress("after_Sleep")
+""",
+        "gui-set1-fullreset-aw2944-connect": """
+    progress("before_selectRadarMode", "0")
+    local sr_ok, sr_ret = pcall(function() return ar1.selectRadarMode(0) end)
+    progress("after_selectRadarMode", tostring(sr_ret))
+
+    progress("before_selectCascadeMode", "0")
+    local sc_ok, sc_ret = pcall(function() return ar1.selectCascadeMode(0) end)
+    progress("after_selectCascadeMode", tostring(sc_ret))
+
+    progress("before_LoadSettings")
+    local ls_ok, ls_ret = pcall(function() return ar1.LoadSettings([[C:/Users/khams008/AppData/Roaming/RSTD/ar1gui.ini]]) end)
+    progress("after_LoadSettings", tostring(ls_ret))
+
+    progress("before_frequencyBandSelection", "77G")
+    local fb_ok, fb_ret = pcall(function() return ar1.frequencyBandSelection("77G") end)
+    progress("after_frequencyBandSelection", tostring(fb_ret))
+    fb_ret_str = esc(fb_ret)
+
+    progress("before_SelectChipVersion", "AWR2944")
+    local cv_ok, cv_ret = pcall(function() return ar1.SelectChipVersion("AWR2944") end)
+    progress("after_SelectChipVersion", tostring(cv_ret))
+    cv_ret_str = esc(cv_ret)
+
+    progress("before_deviceVariantSelection", "XWR2944")
+    local dv_ok, dv_ret = pcall(function() return ar1.deviceVariantSelection("XWR2944") end)
+    progress("after_deviceVariantSelection", tostring(dv_ret))
+    dv_ret_str = esc(dv_ret)
+
+    progress("before_FullReset")
+    local fr_ok, fr_ret = pcall(function() return ar1.FullReset() end)
+    progress("after_FullReset", tostring(fr_ret))
+    fr_ret_str = esc(fr_ret)
+
+    progress("before_Sleep", "1000 ms")
+    RSTD.Sleep(1000)
+    progress("after_Sleep")
+
+    progress("before_SOPControl", "mode=2")
+    local sop_ok, sop_ret = pcall(function() return ar1.SOPControl(2) end)
+    if not sop_ok then
+        progress("after_SOPControl", "ERROR: " .. tostring(sop_ret))
+        sop_ret_str = esc(tostring(sop_ret))
+    else
+        progress("after_SOPControl", tostring(sop_ret))
+        sop_ret_str = esc(sop_ret)
+    end
+
+    progress("before_Sleep", "3000 ms")
+    RSTD.Sleep(3000)
+    progress("after_Sleep")
+""",
+        "select-set-connect": """
+    progress("before_frequencyBandSelection", "77G")
+    local fb_ok, fb_ret = pcall(function() return ar1.frequencyBandSelection("77G") end)
+    progress("after_frequencyBandSelection", tostring(fb_ret))
+    fb_ret_str = esc(fb_ret)
+
+    progress("before_deviceVariantSelection", "XWR2944")
+    local dv_ok, dv_ret = pcall(function() return ar1.deviceVariantSelection("XWR2944") end)
+    progress("after_deviceVariantSelection", tostring(dv_ret))
+    dv_ret_str = esc(dv_ret)
+
+    progress("before_SelectChipVersion", "AWR2944")
+    local cv_ok, cv_ret = pcall(function() return ar1.SelectChipVersion("AWR2944") end)
+    progress("after_SelectChipVersion", tostring(cv_ret))
+    cv_ret_str = esc(cv_ret)
+
+    progress("before_SOPControl", "mode=2")
+    local sop_ok, sop_ret = pcall(function() return ar1.SOPControl(2) end)
+    if not sop_ok then
+        progress("after_SOPControl", "ERROR: " .. tostring(sop_ret))
+        sop_ret_str = esc(tostring(sop_ret))
+    else
+        progress("after_SOPControl", tostring(sop_ret))
+        sop_ret_str = esc(sop_ret)
+    end
+
+    progress("before_Sleep", "3000 ms")
+    RSTD.Sleep(3000)
+    progress("after_Sleep")
+""",
+        "showgui-connect": "",
+        "showgui-sleep-connect": """
+    progress("before_Sleep", "3000 ms")
+    RSTD.Sleep(3000)
+    progress("after_Sleep")
+""",
+        "showgui-sop-sleep-connect": """
+    progress("before_SOPControl", "mode=2")
+    local sop_ok, sop_ret = pcall(function() return ar1.SOPControl(2) end)
+    if not sop_ok then
+        progress("after_SOPControl", "ERROR: " .. tostring(sop_ret))
+        sop_ret_str = esc(tostring(sop_ret))
+    else
+        progress("after_SOPControl", tostring(sop_ret))
+        sop_ret_str = esc(sop_ret)
+    end
+
+    progress("before_Sleep", "3000 ms")
+    RSTD.Sleep(3000)
+    progress("after_Sleep")
+""",
+        "showgui-select-sop-connect": """
+    progress("before_deviceVariantSelection", "XWR2944")
+    local dv_ok, dv_ret = pcall(function() return ar1.deviceVariantSelection("XWR2944") end)
+    progress("after_deviceVariantSelection", tostring(dv_ret))
+    dv_ret_str = esc(dv_ret)
+
+    progress("before_frequencyBandSelection", "77G")
+    local fb_ok, fb_ret = pcall(function() return ar1.frequencyBandSelection("77G") end)
+    progress("after_frequencyBandSelection", tostring(fb_ret))
+    fb_ret_str = esc(fb_ret)
+
+    progress("before_SelectChipVersion", "AWR2944")
+    local cv_ok, cv_ret = pcall(function() return ar1.SelectChipVersion("AWR2944") end)
+    progress("after_SelectChipVersion", tostring(cv_ret))
+    cv_ret_str = esc(cv_ret)
+
+    progress("before_SOPControl", "mode=2")
+    local sop_ok, sop_ret = pcall(function() return ar1.SOPControl(2) end)
+    if not sop_ok then
+        progress("after_SOPControl", "ERROR: " .. tostring(sop_ret))
+        sop_ret_str = esc(tostring(sop_ret))
+    else
+        progress("after_SOPControl", tostring(sop_ret))
+        sop_ret_str = esc(sop_ret)
+    end
+
+    progress("before_Sleep", "3000 ms")
+    RSTD.Sleep(3000)
+    progress("after_Sleep")
+""",
+        "showgui-sop-reset-longwait-connect": """
+    progress("before_SOPControl", "mode=2")
+    local sop_ok, sop_ret = pcall(function() return ar1.SOPControl(2) end)
+    if not sop_ok then
+        progress("after_SOPControl", "ERROR: " .. tostring(sop_ret))
+        sop_ret_str = esc(tostring(sop_ret))
+    else
+        progress("after_SOPControl", tostring(sop_ret))
+        sop_ret_str = esc(sop_ret)
+    end
+
+    progress("before_Sleep", "8000 ms")
+    RSTD.Sleep(8000)
+    progress("after_Sleep")
+""",
+    }
+
+    mid_block = seq_blocks.get(sequence, "")
+
+    # Build retry block
+    retry_block = ""
+    if retry_on_3:
+        retry_block = """
+    if c_ret == 3 then
+        progress("connect_returned_3_retry", "waiting 3000ms then retrying once")
+        c1_ret_str = esc(c_ret)
+        RSTD.Sleep(3000)
+        progress("before_Connect_retry")
+        local c2_ok, c2_ret = pcall(function() return ar1.Connect(""" + str(com_num) + ", " + str(baud) + """, 1000) end)
+        if not c2_ok then
+            progress("after_Connect_retry", "ERROR: " .. tostring(c2_ret))
+            c2_ret_str = esc(tostring(c2_ret))
+            status = "CONNECT_RETRY_EXCEPTION"
+        else
+            progress("after_Connect_retry", tostring(c2_ret))
+            c2_ret_str = esc(c2_ret)
+            c_ret = c2_ret
+        end
+    end
+"""
+
+    return f"""\
+local run_id = "{run_id}"
+local out_path = [[{result_path}]]
+local jsonl_path = [[{jsonl_path}]]
+local sequence = "{sequence}"
+
+local function esc(s)
+    if s == nil then return "null" end
+    s = tostring(s)
+    s = s:gsub("\\\\", "\\\\\\\\")
+    s = s:gsub('"', '\\\\"')
+    s = s:gsub("\\r", "\\\\r")
+    s = s:gsub("\\n", "\\\\n")
+    s = s:gsub("\\t", "\\\\t")
+    return '"' .. s .. '"'
+end
+local function line(f, s) f:write(s); f:write("\\n") end
+local function progress(step, detail)
+    local lf = io.open(jsonl_path, "a")
+    if lf then
+        if detail then
+            line(lf, '{{"step": ' .. esc(step) .. ', "detail": ' .. esc(detail) .. '}}')
+        else
+            line(lf, '{{"step": ' .. esc(step) .. '}}')
+        end
+        lf:close()
+    end
+end
+
+local status = "NO_START"
+local c_ret_str = "null"
+local c1_ret_str = "null"
+local c2_ret_str = "null"
+local sop_ret_str = "null"
+local dv_ret_str = "null"
+local fb_ret_str = "null"
+local cv_ret_str = "null"
+local gui_ver = "unknown"
+
+local ok, err = pcall(function()
+    local lf = io.open(jsonl_path, "w"); if lf then lf:close() end
+    progress("script_started")
+    progress("sequence", sequence)
+
+    progress("before_startup_lite_v3")
+    local lite_ok, lite_err = pcall(function()
+{snippet_v3}
+    end)
+    progress("after_startup_lite_v3", tostring(lite_ok) .. " " .. tostring(lite_err))
+    if not lite_ok then status = "STARTUP_LITE_V3_FAILED"; error("STARTUP_LITE_V3_FAILED") end
+
+    progress("check_ar1_type", type(ar1))
+    if type(ar1) ~= "table" then
+        status = "AR1_MISSING"
+        error("AR1_MISSING")
+    end
+
+    progress("before_ShowGui")
+    local sg_ok, sg_err = pcall(function() ar1.ShowGui() end)
+    progress("after_ShowGui", tostring(sg_ok) .. " " .. tostring(sg_err))
+    if not sg_ok then status = "SHOWGUI_FAILED"; error("SHOWGUI_FAILED") end
+{mid_block}
+    progress("before_Connect", "COM{com_num} baud={baud} timeout=1000")
+    local c_ok, c_ret = pcall(function() return ar1.Connect({com_num}, {baud}, 1000) end)
+
+    if not c_ok then
+        status = "CONNECT_EXCEPTION"
+        progress("after_Connect", "ERROR: " .. tostring(c_ret))
+        c_ret_str = esc(tostring(c_ret))
+        error("CONNECT_EXCEPTION: " .. tostring(c_ret))
+    end
+    progress("after_Connect", tostring(c_ret))
+    c_ret_str = esc(c_ret)
+{retry_block}
+    if c_ret == 0 then
+        -- Mark success only if selection, reset and SOP steps (if executed) also passed
+        if (fb_ret_str == "null" or fb_ret_str == '"0"') and
+           (dv_ret_str == "null" or dv_ret_str == '"0"') and
+           (cv_ret_str == "null" or cv_ret_str == '"0"') and
+           (fr_ret_str == "null" or fr_ret_str == '"0"') and
+           (sop_ret_str == "null" or sop_ret_str == '"0"') then
+            status = "CONNECTION_GUI_SUCCESS"
+        else
+            status = "CONNECTION_GUI_SELECTION_FAILED"
+        end
+
+        -- Retrieve version info
+        local gv = nil
+        pcall(function() gv = ar1.GuiVersion() end)
+        if gv then gui_ver = tostring(gv) end
+
+        -- Post-connect selections (if not already done in sequence)
+        if dv_ret_str == "null" then
+            progress("before_deviceVariantSelection", "XWR2944")
+            local dv_ok2, dv_ret2 = pcall(function() return ar1.deviceVariantSelection("XWR2944") end)
+            progress("after_deviceVariantSelection", tostring(dv_ret2))
+            dv_ret_str = esc(dv_ret2)
+        end
+        if fb_ret_str == "null" then
+            progress("before_frequencyBandSelection", "77G")
+            local fb_ok2, fb_ret2 = pcall(function() return ar1.frequencyBandSelection("77G") end)
+            progress("after_frequencyBandSelection", tostring(fb_ret2))
+            fb_ret_str = esc(fb_ret2)
+        end
+        if cv_ret_str == "null" then
+            progress("before_SelectChipVersion", "AWR2944")
+            local cv_ok2, cv_ret2 = pcall(function() return ar1.SelectChipVersion("AWR2944") end)
+            progress("after_SelectChipVersion", tostring(cv_ret2))
+            cv_ret_str = esc(cv_ret2)
+        end
+    elseif c_ret == 3 then
+        status = "CONNECT_RETURNED_3"
+    else
+        status = "CONNECT_RETURNED_ERROR"
+    end
+
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": true,')
+        line(f, '  "sequence": ' .. esc(sequence) .. ',')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "connect_return": ' .. c_ret_str .. ',')
+        line(f, '  "connect_return_1": ' .. c1_ret_str .. ',')
+        line(f, '  "connect_return_2": ' .. c2_ret_str .. ',')
+        line(f, '  "sop_return": ' .. sop_ret_str .. ',')
+        line(f, '  "device_variant_selection_return": ' .. dv_ret_str .. ',')
+        line(f, '  "frequency_band_selection_return": ' .. fb_ret_str .. ',')
+        line(f, '  "chip_version_selection_return": ' .. cv_ret_str .. ',')
+        line(f, '  "full_reset_return": ' .. fr_ret_str .. ',')
+        line(f, '  "gui_version": ' .. esc(gui_ver) .. ',')
+        line(f, '  "error": null')
+        line(f, "}}")
+        f:close()
+    end
+end)
+
+if not ok then
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": false,')
+        line(f, '  "sequence": ' .. esc(sequence) .. ',')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "connect_return": ' .. c_ret_str .. ',')
+        line(f, '  "connect_return_1": ' .. c1_ret_str .. ',')
+        line(f, '  "connect_return_2": ' .. c2_ret_str .. ',')
+        line(f, '  "sop_return": ' .. sop_ret_str .. ',')
+        line(f, '  "error": ' .. esc(tostring(err)))
+        line(f, "}}")
+        f:close()
+    end
+end
+"""
+def build_lua_launch_connection_set1_discovery(
+    run_id: str, result_path: str, jsonl_path: str,
+) -> str:
+    """Dump all ar1 method names matching specific keywords to find Set(1)."""
+    result_path = result_path.replace("\\", "/")
+    jsonl_path = jsonl_path.replace("\\", "/")
+    snippet_v3 = _v3_snippet_escaped()
+
+    return f"""\
+local run_id = "{run_id}"
+local out_path = [[{result_path}]]
+local jsonl_path = [[{jsonl_path}]]
+
+local function esc(s)
+    if s == nil then return "null" end
+    s = tostring(s)
+    s = s:gsub("\\\\", "\\\\\\\\")
+    s = s:gsub('"', '\\\\"')
+    s = s:gsub("\\r", "\\\\r")
+    s = s:gsub("\\n", "\\\\n")
+    s = s:gsub("\\t", "\\\\t")
+    return '"' .. s .. '"'
+end
+local function line(f, s) f:write(s); f:write("\\n") end
+local function progress(step, detail)
+    local lf = io.open(jsonl_path, "a")
+    if lf then
+        if detail then
+            line(lf, '{{"step": ' .. esc(step) .. ', "detail": ' .. esc(detail) .. '}}')
+        else
+            line(lf, '{{"step": ' .. esc(step) .. '}}')
+        end
+        lf:close()
+    end
+end
+
+local status = "NO_START"
+local methods = {{}}
+
+local ok, err = pcall(function()
+    local lf = io.open(jsonl_path, "w"); if lf then lf:close() end
+    progress("script_started")
+
+    progress("before_startup_lite_v3")
+    local lite_ok, lite_err = pcall(function()
+{snippet_v3}
+    end)
+    progress("after_startup_lite_v3", tostring(lite_ok) .. " " .. tostring(lite_err))
+    if not lite_ok then status = "STARTUP_LITE_V3_FAILED"; error("STARTUP_LITE_V3_FAILED") end
+
+    progress("check_ar1_type", type(ar1))
+    if type(ar1) ~= "table" then
+        status = "AR1_MISSING"
+        error("AR1_MISSING")
+    end
+
+    progress("before_ShowGui")
+    local sg_ok, sg_err = pcall(function() ar1.ShowGui() end)
+    progress("after_ShowGui", tostring(sg_ok) .. " " .. tostring(sg_err))
+    if not sg_ok then status = "SHOWGUI_FAILED"; error("SHOWGUI_FAILED") end
+
+    progress("dumping_ar1_methods")
+    
+    local keywords = {{"set", "reset", "sop", "variant", "device", "frequency", "band", "chip", "connect", "rs232", "ftdi", "target", "port", "com", "power"}}
+    
+    for k, v in pairs(ar1) do
+        if type(v) == "function" or type(v) == "table" or type(v) == "string" or type(v) == "number" then
+            local k_lower = string.lower(k)
+            local matched = false
+            for _, word in ipairs(keywords) do
+                if string.find(k_lower, word) then
+                    matched = true
+                    break
+                end
+            end
+            if matched then
+                table.insert(methods, '"' .. k .. '": "' .. type(v) .. '"')
+            end
+        end
+    end
+
+    status = "DISCOVERY_SUCCESS"
+
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": true,')
+        line(f, '  "status": ' .. esc(status) .. ',')
+        line(f, '  "methods": {{')
+        for i, m in ipairs(methods) do
+            if i < #methods then
+                line(f, '    ' .. m .. ',')
+            else
+                line(f, '    ' .. m)
+            end
+        end
+        line(f, '  }},')
+        line(f, '  "error": null')
+        line(f, "}}")
+        f:close()
+    end
+end)
+
+if not ok then
+    local f = io.open(out_path, "w")
+    if f then
+        line(f, "{{")
+        line(f, '  "run_id": ' .. esc(run_id) .. ',')
+        line(f, '  "executed": false,')
+        line(f, '  "status": ' .. esc(status) .. ',')
         line(f, '  "error": ' .. esc(tostring(err)))
         line(f, "}}")
         f:close()

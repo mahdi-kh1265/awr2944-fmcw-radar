@@ -1,0 +1,5 @@
+{"step": "script_started"}
+{"step": "before_startup_lite"}
+{"step": "after_startup_lite", "detail": "true nil"}
+{"step": "before_ShowGui"}
+{"step": "after_ShowGui", "detail": "false LuaInterface.LuaException: [string \"chunk\"]:1: attempt to index global 'RTTT' (a nil value)\r\n   at System.Windows.Forms.Control.MarshaledInvoke(Control caller, Delegate method, Object[] args, Boolean synchronous)\r\n   at System.Windows.Forms.Control.Invoke(Delegate method, Object[] args)\r\n   at System.Windows.Forms.Control.Invoke(Delegate method)\r\n   at AR1xController.AR1xxxWrapper.ShowGui(): 35320229"}

@@ -55,6 +55,41 @@ mmws_app.add_typer(mmws_bridge_app, name="csharp-bridge")
 mmws_matlab_bridge_app = typer.Typer(help="MATLAB-to-Studio bridge diagnostics")
 mmws_app.add_typer(mmws_matlab_bridge_app, name="matlab-bridge")
 
+
+manual_app = typer.Typer(help="Manual Lua scripts for the mmWave Studio Lua Shell")
+mmws_app.add_typer(manual_app, name="manual")
+
+@manual_app.command("connect-script")
+def mmws_manual_connect_script(
+    com: str = typer.Option("COM6", "--com", help="COM port"),
+    baud: int = typer.Option(115200, "--baud", help="Baud rate"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Generate a connect script for manual copy/paste into an initialized mmWave Studio."""
+    from .mmws.lua_builder import build_lua_manual_connect_script
+    import uuid
+    from pathlib import Path
+
+    com_upper = com.upper()
+    try:
+        com_num = int(com_upper[3:])
+    except Exception:
+        com_num = 6
+
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    script_path = probe_dir / f"manual_connect_{run_id}.lua"
+    result_path = probe_dir / f"manual_connect_{run_id}_result.json"
+
+    script = build_lua_manual_connect_script(run_id, str(result_path.resolve()), com_num, baud)
+    script_path.write_text(script, encoding="utf-8")
+
+    console.print(f"[cyan]Generated manual script:[/cyan] {script_path}")
+    console.print(f"Paste this command into the mmWave Studio Lua Shell:")
+    console.print(f"[green]dofile([[{script_path.resolve()}]])[/green]")
+    console.print(f"\nResult will be written to: {result_path}")
+
+
 mmws_lua_launch_app = typer.Typer(help="Official Studio Lua Launch diagnostics")
 mmws_app.add_typer(mmws_lua_launch_app, name="lua-launch")
 
@@ -4139,3 +4174,734 @@ def mmws_lua_launch_dll_diagnostics(
     console.print("  C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\Clients\\AR1xController")
     console.print("  C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime")
 
+
+@mmws_lua_launch_app.command("ar1-methods")
+def mmws_lua_launch_ar1_methods(
+    filter: str = typer.Option("", "--filter", help="Filter string for methods (e.g. Connect)"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """List methods available in the ar1 table."""
+    from .mmws.executor import _execute_lua_launch
+    from .mmws.lua_builder import build_lua_launch_ar1_methods
+    import uuid, json
+    
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "lua_launch_ar1_methods_result.json"
+    script_path = probe_dir / "lua_launch_ar1_methods.lua"
+    
+    script = build_lua_launch_ar1_methods(run_id, str(result_path.resolve()), filter)
+    script_path.write_text(script, encoding="utf-8")
+    
+    console.print(f"[cyan]lua-launch ar1-methods...[/cyan]")
+    res = _execute_lua_launch(script_path.resolve(), verbose=verbose, timeout=60.0, result_path=result_path.resolve())
+    
+    if not res.success:
+        console.print(f"[red][FAIL] Failed: {res.error}[/red]")
+        raise typer.Exit(1)
+        
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    if not data.get("executed"):
+        console.print(f"[red][FAIL] Script failed: {data.get('error')}[/red]")
+        raise typer.Exit(1)
+        
+    console.print(f"[green]Methods matching '{filter}':[/green]")
+    for m in data.get("methods", []):
+        console.print(f"  {m}")
+
+@mmws_lua_launch_app.command("startup-lite-v2-probe")
+def mmws_lua_launch_startup_lite_v2_probe(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Run startup-lite-v2 (includes RTTT alias + NetStart). Use radarapi-init-probe --mode full instead."""
+    console.print("[yellow]Redirecting to radarapi-init-probe --mode full (startup-lite-v2 is now radarapi-init-probe).[/yellow]")
+    console.print("Run: awr mmws lua-launch radarapi-init-probe --mode full --verbose")
+
+@mmws_lua_launch_app.command("radarapi-init-probe")
+def mmws_lua_launch_radarapi_init_probe(
+    mode: str = typer.Option("full", "--mode", help="Mode: no-showgui, rttt-no-showgui, showgui-only, showgui-plus-getversion, showgui-plus-loadsettings, full"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Run startup-lite and the normal GUI initialization sequence."""
+    from .mmws.executor import _execute_lua_launch
+    from .mmws.lua_builder import build_lua_launch_radarapi_init_probe
+    import uuid, json
+
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "lua_launch_radarapi_init_probe_result.json"
+    jsonl_path = probe_dir / "lua_launch_radarapi_init_probe_progress.jsonl"
+    script_path = probe_dir / "lua_launch_radarapi_init_probe.lua"
+
+    if result_path.exists(): result_path.unlink()
+    if jsonl_path.exists(): jsonl_path.unlink()
+
+    script = build_lua_launch_radarapi_init_probe(run_id, str(result_path.resolve()), str(jsonl_path.resolve()), mode)
+    script_path.write_text(script, encoding="utf-8")
+    
+    console.print(f"[cyan]lua-launch radarapi-init-probe (mode={mode}, run_id={run_id})...[/cyan]")
+    
+    if verbose:
+        console.print("[dim]Generated Lua:[/dim]")
+        for line in script.splitlines():
+            console.print(f"  [dim]{line}[/dim]")
+            
+    res = _execute_lua_launch(script_path.resolve(), verbose=verbose, timeout=80.0, result_path=result_path.resolve())
+    
+    if jsonl_path.exists():
+        console.print("[cyan]Progress Log:[/cyan]")
+        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip(): continue
+            console.print(f"  [dim]{line}[/dim]")
+            
+    if not res.success:
+        console.print(f"[red][FAIL] Failed: {res.error}[/red]")
+        raise typer.Exit(1)
+        
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    status = data.get("status", "UNKNOWN")
+    
+    if status == "INIT_PROBE_SUCCESS":
+        console.print(f"[green][OK] Init passed (status={status})[/green]")
+    else:
+        console.print(f"[red][FAIL] Init status: {status}[/red]")
+
+    for k, v in data.items():
+        if k not in ["run_id", "executed"]:
+            console.print(f"  {k}: {v}")
+
+    if status != "INIT_PROBE_SUCCESS":
+        raise typer.Exit(1)
+
+
+@mmws_lua_launch_app.command("radarapi-connect-probe")
+def mmws_lua_launch_radarapi_connect_probe(
+    mode: str = typer.Option("full", "--mode", help="Mode: no-showgui, rttt-no-showgui, showgui-only, showgui-plus-getversion, showgui-plus-loadsettings, full"),
+    com: str = typer.Option("COM6", "--com", help="COM port (e.g. COM6)"),
+    baud: int = typer.Option(115200, "--baud", help="Baud rate"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Run radarapi init sequence and then connect."""
+    from .mmws.executor import _execute_lua_launch
+    from .mmws.lua_builder import build_lua_launch_radarapi_connect_probe
+    import uuid, json
+    
+    com_upper = com.upper()
+    try:
+        com_num = int(com_upper[3:])
+    except ValueError:
+        console.print(f"[red][FAIL] Invalid COM port number: {com}[/red]")
+        raise typer.Exit(1)
+        
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "lua_launch_radarapi_connect_probe_result.json"
+    jsonl_path = probe_dir / "lua_launch_radarapi_connect_probe_progress.jsonl"
+    script_path = probe_dir / "lua_launch_radarapi_connect_probe.lua"
+    
+    if result_path.exists(): result_path.unlink()
+    if jsonl_path.exists(): jsonl_path.unlink()
+    
+    script = build_lua_launch_radarapi_connect_probe(run_id, str(result_path.resolve()), str(jsonl_path.resolve()), mode, com_num, baud)
+    script_path.write_text(script, encoding="utf-8")
+    
+    console.print(f"[cyan]lua-launch radarapi-connect-probe (mode={mode}, run_id={run_id})...[/cyan]")
+    console.print(f"  COM: {com_upper}  Baud: {baud}")
+    
+    if verbose:
+        console.print("[dim]Generated Lua:[/dim]")
+        for line in script.splitlines():
+            console.print(f"  [dim]{line}[/dim]")
+            
+    res = _execute_lua_launch(script_path.resolve(), verbose=verbose, timeout=80.0, result_path=result_path.resolve())
+    
+    if jsonl_path.exists():
+        console.print("[cyan]Progress Log:[/cyan]")
+        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip(): continue
+            console.print(f"  [dim]{line}[/dim]")
+            
+    if not res.success:
+        console.print(f"[red][FAIL] Failed: {res.error}[/red]")
+        raise typer.Exit(1)
+        
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    status = data.get("status", "UNKNOWN")
+    
+    if status == "CONNECT_SUCCESS":
+        console.print(f"[green][OK] Connect passed (status={status})[/green]")
+    else:
+        console.print(f"[red][FAIL] Connect status: {status}[/red]")
+
+    for k, v in data.items():
+        if k not in ["run_id", "executed"]:
+            console.print(f"  {k}: {v}")
+
+    if status != "CONNECT_SUCCESS":
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# lua-launch: startup-lite-v3-probe
+# ---------------------------------------------------------------------------
+
+@mmws_lua_launch_app.command("startup-lite-v3-probe")
+def mmws_lua_launch_startup_lite_v3_probe(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Run startup-lite-v3 (exact Startup.lua reproduction with RTTT, AR1_GUI, GuiVersion)."""
+    from .mmws.executor import _execute_lua_launch
+    from .mmws.lua_builder import build_lua_launch_startup_lite_v3_probe
+    import uuid, json
+
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "lua_launch_startup_lite_v3_probe_result.json"
+    jsonl_path = probe_dir / "lua_launch_startup_lite_v3_probe_progress.jsonl"
+    script_path = probe_dir / "lua_launch_startup_lite_v3_probe.lua"
+
+    if result_path.exists(): result_path.unlink()
+    if jsonl_path.exists(): jsonl_path.unlink()
+
+    script = build_lua_launch_startup_lite_v3_probe(run_id, str(result_path.resolve()), str(jsonl_path.resolve()))
+    script_path.write_text(script, encoding="utf-8")
+
+    console.print(f"[cyan]lua-launch startup-lite-v3-probe (run_id={run_id})...[/cyan]")
+
+    if verbose:
+        console.print("[dim]Generated Lua:[/dim]")
+        for line in script.splitlines():
+            console.print(f"  [dim]{line}[/dim]")
+
+    res = _execute_lua_launch(script_path.resolve(), verbose=verbose, timeout=60.0, result_path=result_path.resolve())
+
+    if jsonl_path.exists():
+        console.print("[cyan]Progress Log:[/cyan]")
+        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip(): continue
+            console.print(f"  [dim]{line}[/dim]")
+
+    if not res.success:
+        console.print(f"[red][FAIL] Failed: {res.error}[/red]")
+        raise typer.Exit(1)
+
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    status = data.get("status", "UNKNOWN")
+
+    if status == "STARTUP_LITE_V3_OK":
+        console.print(f"[green][OK] startup-lite-v3 passed (status={status})[/green]")
+    else:
+        console.print(f"[red][FAIL] startup-lite-v3 status: {status}[/red]")
+
+    for k, v in data.items():
+        if k not in ["run_id", "executed"]:
+            console.print(f"  {k}: {v}")
+
+    if status != "STARTUP_LITE_V3_OK":
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# lua-launch: path-env-probe
+# ---------------------------------------------------------------------------
+
+@mmws_lua_launch_app.command("path-env-probe")
+def mmws_lua_launch_path_env_probe(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Dump RSTD paths, package.path, and type info before/after startup-lite-v3."""
+    from .mmws.executor import _execute_lua_launch
+    from .mmws.lua_builder import build_lua_launch_path_env_probe
+    import uuid, json
+
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "lua_launch_path_env_probe_result.json"
+    jsonl_path = probe_dir / "lua_launch_path_env_probe_progress.jsonl"
+    script_path = probe_dir / "lua_launch_path_env_probe.lua"
+
+    if result_path.exists(): result_path.unlink()
+    if jsonl_path.exists(): jsonl_path.unlink()
+
+    script = build_lua_launch_path_env_probe(run_id, str(result_path.resolve()), str(jsonl_path.resolve()))
+    script_path.write_text(script, encoding="utf-8")
+
+    console.print(f"[cyan]lua-launch path-env-probe (run_id={run_id})...[/cyan]")
+
+    res = _execute_lua_launch(script_path.resolve(), verbose=verbose, timeout=60.0, result_path=result_path.resolve())
+
+    if jsonl_path.exists():
+        console.print("[cyan]Progress Log:[/cyan]")
+        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip(): continue
+            console.print(f"  [dim]{line}[/dim]")
+
+    if not res.success:
+        console.print(f"[red][FAIL] Failed: {res.error}[/red]")
+        raise typer.Exit(1)
+
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    for k, v in data.items():
+        if k not in ["run_id"]:
+            console.print(f"  {k}: {v}")
+
+
+# ---------------------------------------------------------------------------
+# lua-launch: radarapi-v3-connect-probe
+# ---------------------------------------------------------------------------
+
+@mmws_lua_launch_app.command("radarapi-v3-connect-probe")
+def mmws_lua_launch_radarapi_v3_connect_probe(
+    mode: str = typer.Option("v3-no-showgui", "--mode", help="Mode: v3-no-showgui or v3-showgui"),
+    com: str = typer.Option("COM6", "--com", help="COM port (e.g. COM6)"),
+    baud: int = typer.Option(115200, "--baud", help="Baud rate"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Startup-lite-v3 + optional ShowGui + ar1.Connect."""
+    from .mmws.executor import _execute_lua_launch
+    from .mmws.lua_builder import build_lua_launch_radarapi_v3_connect_probe
+    import uuid, json
+
+    com_upper = com.upper()
+    try:
+        com_num = int(com_upper[3:])
+    except ValueError:
+        console.print(f"[red][FAIL] Invalid COM port number: {com}[/red]")
+        raise typer.Exit(1)
+
+    show_gui = (mode == "v3-showgui")
+
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "lua_launch_radarapi_v3_connect_probe_result.json"
+    jsonl_path = probe_dir / "lua_launch_radarapi_v3_connect_probe_progress.jsonl"
+    script_path = probe_dir / "lua_launch_radarapi_v3_connect_probe.lua"
+
+    if result_path.exists(): result_path.unlink()
+    if jsonl_path.exists(): jsonl_path.unlink()
+
+    script = build_lua_launch_radarapi_v3_connect_probe(
+        run_id, str(result_path.resolve()), str(jsonl_path.resolve()),
+        com_num=com_num, baud=baud, show_gui=show_gui,
+    )
+    script_path.write_text(script, encoding="utf-8")
+
+    console.print(f"[cyan]lua-launch radarapi-v3-connect-probe (mode={mode}, run_id={run_id})...[/cyan]")
+    console.print(f"  COM: {com_upper}  Baud: {baud}  ShowGui: {show_gui}")
+
+    if verbose:
+        console.print("[dim]Generated Lua:[/dim]")
+        for line in script.splitlines():
+            console.print(f"  [dim]{line}[/dim]")
+
+    res = _execute_lua_launch(
+        script_path.resolve(), verbose=verbose,
+        timeout=90.0 if show_gui else 60.0,
+        result_path=result_path.resolve(),
+    )
+
+    if jsonl_path.exists():
+        console.print("[cyan]Progress Log:[/cyan]")
+        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip(): continue
+            console.print(f"  [dim]{line}[/dim]")
+
+    if not res.success:
+        console.print(f"[red][FAIL] Failed: {res.error}[/red]")
+        raise typer.Exit(1)
+
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    status = data.get("status", "UNKNOWN")
+
+    if status == "CONNECT_SUCCESS":
+        console.print(f"[green][OK] Connect passed (status={status})[/green]")
+    else:
+        console.print(f"[red][FAIL] Connect status: {status}[/red]")
+
+    for k, v in data.items():
+        if k not in ["run_id", "executed"]:
+            console.print(f"  {k}: {v}")
+
+    if status != "CONNECT_SUCCESS":
+        raise typer.Exit(1)
+
+# ---------------------------------------------------------------------------
+# connection commands (official backend)
+# ---------------------------------------------------------------------------
+
+_RETURN3_DIAGNOSTICS = """
+[yellow]ConnectTarget returned 3.[/yellow]
+This may indicate the radar/FTDI/RS232 target is in the wrong state or needs
+a physical NRST/power-cycle. Do not proceed to firmware.
+
+[bold]Recovery steps:[/bold]
+  1. Verify you are using the default sequence (gui-set1-fullreset-connect).
+  2. If using default and still failing: Manual GUI also returned 3 after Set(1); power-cycle AWR using power-before-USB order.
+  3. Close/kill mmWave Studio.
+  4. Power-cycle or press NRST/SW1 on the AWR2944 board.
+  5. Confirm J10 FTDI USB is connected and COM port is correct.
+  6. Re-run connect-gui.
+"""
+
+
+@mmws_conn_app.command("connect-gui")
+def mmws_connection_connect_gui(
+    com: str = typer.Option("COM6", "--com", help="COM port (e.g. COM6)"),
+    baud: int = typer.Option(115200, "--baud", help="Baud rate"),
+    sequence: str = typer.Option(
+        "gui-set1-fullreset-connect", "--sequence",
+        help="Sequence: showgui-connect, showgui-sleep-connect, "
+             "showgui-sop-sleep-connect, showgui-select-sop-connect, "
+             "showgui-sop-reset-longwait-connect, select-set-connect, gui-set1-fullreset-connect, gui-set1-fullreset-aw2944-connect",
+    ),
+    force: bool = typer.Option(False, "--force", help="Kill existing mmWaveStudio instances first"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Official connection backend: startup-lite-v3 + ShowGui + Connect.
+
+    Uses the verified /lua transport with startup-lite-v3 environment.
+    ar1.ShowGui() is required -- v3-no-showgui still fails with NullReferenceException.
+    If Connect returns 3, one automatic retry is attempted after a 3s wait.
+    """
+    from .mmws.executor import _execute_lua_launch
+    from .mmws.lua_builder import build_lua_launch_connection_sequenced, CONNECT_SEQUENCES
+    import uuid, json
+
+    com_upper = com.upper()
+    try:
+        com_num = int(com_upper[3:])
+    except ValueError:
+        console.print(f"[red][FAIL] Invalid COM port number: {com}[/red]")
+        raise typer.Exit(1)
+
+    if sequence not in CONNECT_SEQUENCES:
+        console.print(f"[red][FAIL] Unknown sequence: {sequence}[/red]")
+        console.print(f"  Valid sequences: {', '.join(CONNECT_SEQUENCES)}")
+        raise typer.Exit(1)
+
+    if force:
+        console.print("[yellow]Killing existing mmWave Studio instances...[/yellow]")
+        mmws_lua_launch_cleanup(verbose=verbose)
+
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "connection_connect_gui_result.json"
+    jsonl_path = probe_dir / "connection_connect_gui_progress.jsonl"
+    script_path = probe_dir / "connection_connect_gui.lua"
+
+    if result_path.exists(): result_path.unlink()
+    if jsonl_path.exists(): jsonl_path.unlink()
+
+    # Compute timeout based on sequence sleep durations
+    timeout = 90.0
+    if "longwait" in sequence:
+        timeout = 120.0
+
+    script = build_lua_launch_connection_sequenced(
+        run_id, str(result_path.resolve()), str(jsonl_path.resolve()),
+        com_num=com_num, baud=baud, sequence=sequence, retry_on_3=True,
+    )
+    script_path.write_text(script, encoding="utf-8")
+
+    console.print(f"[cyan]connection connect-gui (run_id={run_id})...[/cyan]")
+    console.print(f"  COM: {com_upper}  Baud: {baud}  Sequence: {sequence}")
+
+    if verbose:
+        console.print("[dim]Generated Lua:[/dim]")
+        for line in script.splitlines():
+            console.print(f"  [dim]{line}[/dim]")
+
+    res = _execute_lua_launch(
+        script_path.resolve(), verbose=verbose,
+        timeout=timeout,
+        result_path=result_path.resolve(),
+    )
+
+    if jsonl_path.exists():
+        console.print("[cyan]Progress Log:[/cyan]")
+        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip(): continue
+            console.print(f"  [dim]{line}[/dim]")
+
+    if not res.success:
+        console.print(f"[red][FAIL] Failed: {res.error}[/red]")
+        raise typer.Exit(1)
+
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    status = data.get("status", "UNKNOWN")
+    connect_return = data.get("connect_return")
+
+    if status == "CONNECTION_GUI_SUCCESS":
+        console.print(f"[green][OK] Connect passed (status={status})[/green]")
+    else:
+        console.print(f"[red][FAIL] Connect status: {status}[/red]")
+
+    for k, v in data.items():
+        if k not in ["run_id", "executed"]:
+            console.print(f"  {k}: {v}")
+
+    # Return-3 specific diagnostics
+    if connect_return == "3" or connect_return == 3 or status == "CONNECT_RETURNED_3":
+        console.print(_RETURN3_DIAGNOSTICS)
+
+    if status != "CONNECTION_GUI_SUCCESS":
+        raise typer.Exit(1)
+
+
+@mmws_conn_app.command("connect-return3-diag")
+def mmws_connection_connect_return3_diag(
+    com: str = typer.Option("COM6", "--com", help="COM port (e.g. COM6)"),
+    baud: int = typer.Option(115200, "--baud", help="Baud rate"),
+    sequence: str = typer.Option(
+        "gui-set1-fullreset-connect", "--sequence",
+        help="Sequence: showgui-connect, showgui-sleep-connect, "
+             "showgui-sop-sleep-connect, showgui-select-sop-connect, "
+             "showgui-sop-reset-longwait-connect, select-set-connect, gui-set1-fullreset-connect, gui-set1-fullreset-aw2944-connect",
+    ),
+    force: bool = typer.Option(False, "--force", help="Kill existing mmWaveStudio instances first"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Diagnostic tool for ConnectTarget return code 3.
+
+    Runs the same startup-lite-v3 + ShowGui + Connect sequence as connect-gui,
+    but with no retry and detailed diagnostics. Use to test different sequences
+    after a power-cycle or board reset.
+    """
+    from .mmws.executor import _execute_lua_launch
+    from .mmws.lua_builder import build_lua_launch_connection_sequenced, CONNECT_SEQUENCES
+    import uuid, json
+
+    com_upper = com.upper()
+    try:
+        com_num = int(com_upper[3:])
+    except ValueError:
+        console.print(f"[red][FAIL] Invalid COM port number: {com}[/red]")
+        raise typer.Exit(1)
+
+    if sequence not in CONNECT_SEQUENCES:
+        console.print(f"[red][FAIL] Unknown sequence: {sequence}[/red]")
+        console.print(f"  Valid sequences: {', '.join(CONNECT_SEQUENCES)}")
+        raise typer.Exit(1)
+
+    if force:
+        console.print("[yellow]Killing existing mmWave Studio instances...[/yellow]")
+        mmws_lua_launch_cleanup(verbose=verbose)
+
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "connection_return3_diag_result.json"
+    jsonl_path = probe_dir / "connection_return3_diag_progress.jsonl"
+    script_path = probe_dir / "connection_return3_diag.lua"
+
+    if result_path.exists(): result_path.unlink()
+    if jsonl_path.exists(): jsonl_path.unlink()
+
+    timeout = 90.0
+    if "longwait" in sequence:
+        timeout = 120.0
+
+    # No retry for diagnostic mode
+    script = build_lua_launch_connection_sequenced(
+        run_id, str(result_path.resolve()), str(jsonl_path.resolve()),
+        com_num=com_num, baud=baud, sequence=sequence, retry_on_3=False,
+    )
+    script_path.write_text(script, encoding="utf-8")
+
+    console.print(f"[cyan]connection return3-diag (run_id={run_id})...[/cyan]")
+    console.print(f"  COM: {com_upper}  Baud: {baud}  Sequence: {sequence}")
+    console.print(f"  Retry: disabled (diagnostic mode)")
+
+    if verbose:
+        console.print("[dim]Generated Lua:[/dim]")
+        for line in script.splitlines():
+            console.print(f"  [dim]{line}[/dim]")
+
+    res = _execute_lua_launch(
+        script_path.resolve(), verbose=verbose,
+        timeout=timeout,
+        result_path=result_path.resolve(),
+    )
+
+    if jsonl_path.exists():
+        console.print("[cyan]Progress Log:[/cyan]")
+        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip(): continue
+            console.print(f"  [dim]{line}[/dim]")
+
+    if not res.success:
+        console.print(f"[red][FAIL] Failed: {res.error}[/red]")
+        raise typer.Exit(1)
+
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    status = data.get("status", "UNKNOWN")
+    connect_return = data.get("connect_return")
+
+    for k, v in data.items():
+        if k not in ["run_id", "executed"]:
+            console.print(f"  {k}: {v}")
+
+    if connect_return == "3" or connect_return == 3 or status == "CONNECT_RETURNED_3":
+        console.print(_RETURN3_DIAGNOSTICS)
+    elif status == "CONNECTION_GUI_SUCCESS":
+        console.print(f"[green][OK] Sequence '{sequence}' produced CONNECT_SUCCESS.[/green]")
+        console.print(f"  Use: awr mmws connection connect-gui --sequence {sequence} --force")
+    else:
+        console.print(f"[red][FAIL] Connect status: {status}[/red]")
+
+
+@mmws_conn_app.command("sop-set-only")
+def mmws_connection_sop_set_only(
+    mode: int = typer.Option(2, "--mode", help="SOP mode (e.g. 2)"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Run SOPControl only (NOTE: not proven to be full Set(1) action) inside a /lua script sequence.
+
+    This generates a standalone /lua script that runs startup-lite-v3 + ShowGui + SOPControl.
+    It does NOT inject into a running mmWave Studio instance -- external RSTD SendCommand
+    transport has not been proven reliable.
+    """
+    from .mmws.executor import _execute_lua_launch
+    from .mmws.lua_builder import build_lua_launch_connection_sop_set_only
+    import uuid, json
+
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "connection_sop_set_only_result.json"
+    jsonl_path = probe_dir / "connection_sop_set_only_progress.jsonl"
+    script_path = probe_dir / "connection_sop_set_only.lua"
+
+    if result_path.exists(): result_path.unlink()
+    if jsonl_path.exists(): jsonl_path.unlink()
+
+    script = build_lua_launch_connection_sop_set_only(
+        run_id, str(result_path.resolve()), str(jsonl_path.resolve()),
+        mode=mode
+    )
+    script_path.write_text(script, encoding="utf-8")
+
+    console.print(f"[cyan]connection sop-set-only (run_id={run_id})...[/cyan]")
+    console.print(f"  Mode: {mode}")
+
+    res = _execute_lua_launch(
+        script_path.resolve(), verbose=verbose,
+        timeout=30.0,
+        result_path=result_path.resolve(),
+    )
+
+    if jsonl_path.exists():
+        console.print("[cyan]Progress Log:[/cyan]")
+        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip(): continue
+            console.print(f"  [dim]{line}[/dim]")
+
+    if not res.success:
+        console.print(f"[red][FAIL] Failed: {res.error}[/red]")
+        raise typer.Exit(1)
+
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    status = data.get("status", "UNKNOWN")
+
+    if status == "SOPCONTROL_SUCCESS":
+        console.print(f"[green][OK] SOP Set passed (status={status})[/green]")
+    else:
+        console.print(f"[red][FAIL] SOP Set status: {status}[/red]")
+
+    for k, v in data.items():
+        if k not in ["run_id", "executed"]:
+            console.print(f"  {k}: {v}")
+
+    if status != "SOPCONTROL_SUCCESS":
+        raise typer.Exit(1)
+
+
+@mmws_conn_app.command("set1-discovery")
+def mmws_connection_set1_discovery(
+    force: bool = typer.Option(False, "--force", help="Kill existing mmWaveStudio instances first"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Dump ar1 methods matching Set(1) keywords to discover the true API."""
+    from .mmws.executor import _execute_lua_launch
+    from .mmws.lua_builder import build_lua_launch_connection_set1_discovery
+    import uuid, json
+
+    if force:
+        console.print("[yellow]Killing existing mmWave Studio instances...[/yellow]")
+        mmws_lua_launch_cleanup(verbose=verbose)
+
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "connection_set1_discovery_result.json"
+    jsonl_path = probe_dir / "connection_set1_discovery_progress.jsonl"
+    script_path = probe_dir / "connection_set1_discovery.lua"
+
+    if result_path.exists(): result_path.unlink()
+    if jsonl_path.exists(): jsonl_path.unlink()
+
+    script = build_lua_launch_connection_set1_discovery(
+        run_id, str(result_path.resolve()), str(jsonl_path.resolve())
+    )
+    script_path.write_text(script, encoding="utf-8")
+
+    console.print(f"[cyan]connection set1-discovery (run_id={run_id})...[/cyan]")
+
+    res = _execute_lua_launch(
+        script_path.resolve(), verbose=verbose,
+        timeout=60.0,
+        result_path=result_path.resolve(),
+    )
+
+    if jsonl_path.exists():
+        console.print("[cyan]Progress Log:[/cyan]")
+        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip(): continue
+            console.print(f"  [dim]{line}[/dim]")
+
+    if not res.success:
+        console.print(f"[red][FAIL] Failed: {res.error}[/red]")
+        raise typer.Exit(1)
+
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    status = data.get("status", "UNKNOWN")
+
+    if status == "DISCOVERY_SUCCESS":
+        console.print(f"[green][OK] Discovery passed (status={status})[/green]")
+    else:
+        console.print(f"[red][FAIL] Discovery status: {status}[/red]")
+
+    methods = data.get("methods", {})
+    console.print(f"[bold]Found {len(methods)} matching methods:[/bold]")
+    for k, v in methods.items():
+        console.print(f"  {k} : {v}")
+
+    if status != "DISCOVERY_SUCCESS":
+        raise typer.Exit(1)
+
+
+@mmws_conn_app.command("parse-manual-log")
+def mmws_connection_parse_manual_log(
+    log_path: str = typer.Argument(..., help="Path to manual GUI set1 log text file"),
+) -> None:
+    """Extract [RadarAPI] ar1.* calls in order from a manual GUI log paste."""
+    from pathlib import Path
+    
+    p = Path(log_path)
+    if not p.exists():
+        console.print(f"[red][FAIL] Log file not found: {log_path}[/red]")
+        raise typer.Exit(1)
+        
+    lines = p.read_text(encoding="utf-8", errors="ignore").splitlines()
+    console.print(f"[cyan]Parsing {p.name}...[/cyan]")
+    
+    found = 0
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        if "[RadarAPI]" in line and "ar1." in line:
+            console.print(f"[green]{line}[/green]")
+            found += 1
+            
+    if found == 0:
+        console.print("[yellow]No [RadarAPI] ar1. calls found in log.[/yellow]")
+    else:
+        console.print(f"[bold]Extracted {found} RadarAPI calls.[/bold]")

@@ -1476,6 +1476,7 @@ def _execute_lua_launch(
     
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
+        cwd=runtime_path,
     )
 
     # Poll for result file (primary success signal) or process exit

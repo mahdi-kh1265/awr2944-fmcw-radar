@@ -1,0 +1,67 @@
+GM: Constructor
+GM: Sat Jul 04 03:30:29 2026
+RSTD.Transmit("/Settings")
+[03:30:30]  
+[03:30:30]  ### Running Startup script: "C:\ti\mmwave_studio_03_01_04_04\mmWaveStudio\Scripts\Startup.lua" ###
+[03:30:30]  RSTD.SetAndTransmit ("/Settings/Scripter/Display DateTime" , "1")
+[03:30:30]  RSTD.SetAndTransmit ("/Settings/Scripter/DateTime Format" , "HH:mm:ss")
+[03:30:30]  Scripter ignored: Attempt to UnBuild() again or before Build.
+[03:30:30]  RSTD.SetVar ("/Settings/Clients/Client 0/Dll" , "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\Clients\\\\LabClient.dll")
+[03:30:30]  RSTD.SetVar ("/Settings/Clients/Client 0/Use" , "TRUE")
+[03:30:30]  RSTD.SetVar ("/Settings/Clients/Client 1/Use" , "FALSE")
+[03:30:30]  RSTD.SetVar ("/Settings/Clients/Client 2/Use" , "FALSE")
+[03:30:30]  RSTD.SetVar ("/Settings/Clients/Client 3/Use" , "FALSE")
+[03:30:30]  RSTD.SetVar ("/Settings/Clients/Client 4/Use" , "FALSE")
+[03:30:30]  RSTD.SetVar ("/Settings/AL Client/AL Dll" , "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\RunTime\\SAL.dll")
+[03:30:30]  RSTD.SetVar ("/Settings/Clients/Client 0/GuiDll" , "")
+[03:30:30]  RSTD.SetVar ("/Settings/AutoUpdate/Enabled" , "TRUE")
+[03:30:30]  RSTD.SetVar ("/Settings/AutoUpdate/Interval" , "1")
+[03:30:30]  RSTD.SetVar ("/Settings/Monitors/UpdateDisplay" , "TRUE")
+[03:30:30]  RSTD.SetVar ("/Settings/Monitors/OneClickStart" , "TRUE")
+[03:30:30]  RSTD.SetVar ("/Settings/Automation/Automation Mode" , "false")
+[03:30:30]  RSTD.Transmit("/")
+[03:30:30]  RSTD.SaveSettings(): Settings saved to "C:\Users\khams008\AppData\Roaming\RSTD\config.xml"
+[03:30:30]  RSTD.Build()
+[03:30:30]  RSTD.SaveSettings(): Settings saved to "C:\Users\khams008\AppData\Roaming\RSTD\config.xml"
+[03:30:30]  RSTD.Transmit("/")
+[03:30:30]  RSTD.AL_Build()
+[03:30:30]  RSTD.AL_LoadXml()
+[03:30:30]  RSTD.Transmit("/")
+[03:30:30]  RSTD.AL_Init()
+[03:30:30]  RSTD.Clients_Build()
+[03:30:30]  GM: Init
+[03:30:30]  GM: Loaded 'C:\ti\mmwave_studio_03_01_04_04\mmWaveStudio\Clients\\LabClient.dll'
+[03:30:30]  GM: 1 Guest (s) init
+[03:30:30]  GM: 1 Module(s) init
+[03:30:30]  GM: 2 Tab   (s) init
+[03:30:30]  RSTD.Client_LoadXml()
+[03:30:30]  [RadarAPI]: ar1.GuiVersion()
+[03:30:30]  [RadarAPI]: ar1.selectRadarMode(0)
+[03:30:30]  [RadarAPI]: Status: Passed
+[03:30:30]  Matlab Runtime Engine is installed
+[03:30:30]  [RadarAPI]: Starting Matlab Engine..
+[03:30:32]  [RadarAPI]: Matlab Engine Started!
+[03:30:33]  [RadarAPI]: ar1.selectCascadeMode(0)
+[03:30:33]  [RadarAPI]: Status: Passed
+[03:30:33]  [RadarAPI]: ar1.LoadSettings('C:\Users\khams008\AppData\Roaming\RSTD\ar1gui.ini')
+[03:30:34]  TESTING = false
+[03:30:34]  RstdNet: Port 2777: Listening..
+[03:30:34]  
+[03:30:34]  ***Script completed successfully.***
+[03:30:46]  [RadarAPI]: ar1.frequencyBandSelection("77G")
+[03:30:48]  [RadarAPI]: ar1.SelectChipVersion("AR1642")
+[03:30:48]  [RadarAPI]: Status: Passed
+[03:30:48]  [RadarAPI]: ar1.deviceVariantSelection("XWR2944")
+[03:30:48]  [RadarAPI]: Status: Passed
+[03:30:49]  [RadarAPI]: Opening Gpio Control Port()
+[03:30:49]  [RadarAPI]: Status: Passed
+[03:30:50]  [RadarAPI]: Opening Board Control Port()
+[03:30:50]  [RadarAPI]: Status: Passed
+[03:30:51]  [RadarAPI]: ar1.FullReset()
+[03:30:51]  [RadarAPI]: Status: Passed
+[03:30:52]  [RadarAPI]: Closing Board Control Port()
+[03:30:52]  [RadarAPI]: Status: Passed
+[03:30:52]  [RadarAPI]: Closing Gpio Control Port()
+[03:30:52]  [RadarAPI]: Status: Passed
+[03:30:52]  [RadarAPI]: ar1.SOPControl(2)
+[03:30:52]  [RadarAPI]: Status: Passed
