@@ -67,3 +67,18 @@ class TestInspectConfig:
     def test_inspect_nonexistent_config(self) -> None:
         result = runner.invoke(app, ["inspect-config", "nonexistent.yaml"])
         assert result.exit_code != 0
+
+class TestMmwsConnectionDiag:
+    """Test mmws connection diag command."""
+
+    def test_mmws_connection_diag_imports_re(self, tmp_path, monkeypatch):
+        # We just want to ensure it parses --com COM6 --execute without throwing NameError (for re).
+        # We can run it in a dummy directory so Experiment.open(".") fails or passes.
+        import os
+        monkeypatch.chdir(tmp_path)
+        
+        # We expect it to fail gracefully with "Not inside an experiment directory." or similar,
+        # but NOT with a NameError for 're'.
+        result = runner.invoke(app, ["mmws", "connection", "diag", "--com", "COM6", "--execute"])
+        assert "NameError" not in str(result.exception) if result.exception else True
+        assert "NameError" not in result.output

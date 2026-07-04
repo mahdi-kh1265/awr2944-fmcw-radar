@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import platform
 import sys
+import re
 from pathlib import Path
 
 import numpy as np
@@ -47,6 +48,16 @@ mmws_app = typer.Typer(help="mmWave Studio backend controller")
 app.add_typer(mmws_app, name="mmws")
 mmws_conn_app = typer.Typer(help="Connection-tab control")
 mmws_app.add_typer(mmws_conn_app, name="connection")
+mmws_studio_app = typer.Typer(help="mmWave Studio process management")
+mmws_app.add_typer(mmws_studio_app, name="studio")
+mmws_bridge_app = typer.Typer(help="C# RSTD bridge management")
+mmws_app.add_typer(mmws_bridge_app, name="csharp-bridge")
+mmws_matlab_bridge_app = typer.Typer(help="MATLAB-to-Studio bridge diagnostics")
+mmws_app.add_typer(mmws_matlab_bridge_app, name="matlab-bridge")
+
+mmws_lua_launch_app = typer.Typer(help="Official Studio Lua Launch diagnostics")
+mmws_app.add_typer(mmws_lua_launch_app, name="lua-launch")
+
 console = Console()
 
 
@@ -1578,7 +1589,9 @@ def ti_run_lua(
 
 
 @ports_app.command("scan")
-def ports_scan() -> None:
+def ports_scan(
+    verbose: bool = typer.Option(False, "--verbose", help="Show detailed port heuristics reasoning"),
+) -> None:
     """Enumerate Windows COM ports and classify likely TI radar roles."""
     from awr2944_dca.hardware.ports import scan_ports
     
@@ -1595,11 +1608,19 @@ def ports_scan() -> None:
     table = Table(title="Discovered COM Ports", show_lines=True)
     table.add_column("COM")
     table.add_column("Friendly Name")
+    if verbose:
+        table.add_column("Manufacturer")
+        table.add_column("HWID (VID/PID)")
     table.add_column("Role", style="cyan")
     table.add_column("Confidence")
+    if verbose:
+        table.add_column("Reason")
     
     for p in ports:
-        table.add_row(p.com, p.friendly_name, p.likely_role, p.confidence)
+        if verbose:
+            table.add_row(p.com, p.friendly_name, p.manufacturer, p.hwid, p.likely_role, p.confidence, p.reason)
+        else:
+            table.add_row(p.com, p.friendly_name, p.likely_role, p.confidence)
         
     console.print(table)
 
@@ -1660,7 +1681,7 @@ def ti_connection_probe(
 ) -> None:
     """[DEPRECATED] Use 'awr mmws connection script' instead."""
     console.print("[yellow]DEPRECATED: Use 'awr mmws connection script' instead.[/yellow]")
-    mmws_connection_script(com=com, baud=baud, timeout_ms=timeout_ms)
+    mmws_connection_script_cmd(com=com, baud=baud, timeout_ms=timeout_ms)
 
 
 @ti_app.command("connection-status", deprecated=True)
@@ -1772,14 +1793,24 @@ def mmws_connection_plan() -> None:
 
 
 @mmws_conn_app.command("script")
-def mmws_connection_script(
+def mmws_connection_script_cmd(
     com: str = typer.Option(None, "--com", help="COM port (e.g., COM6)"),
     baud: int = typer.Option(921600, "--baud", help="Baud rate"),
     timeout_ms: int = typer.Option(1000, "--timeout-ms", help="Connect timeout in ms"),
+    execute: bool = typer.Option(False, "--execute", help="Auto-execute in mmWave Studio"),
+    mode: str = typer.Option("auto", "--mode", help="Execution mode (auto, csharp-rstd, rstd, pywinauto, manual)"),
+    manual: bool = typer.Option(False, "--manual", help="Print dofile command (debug fallback)"),
+    timeout: float = typer.Option(30.0, "--timeout", help="Seconds to wait for result JSON"),
+    verbose: bool = typer.Option(False, "--verbose", help="Print detailed diagnostic info"),
 ) -> None:
-    """Generate a connection-only Lua script for mmWave Studio."""
+    """Generate a connection-only Lua script for mmWave Studio.
+
+    With --execute: auto-run via RSTD/.NET Remoting or pywinauto.
+    With --manual: print the dofile command only (debug/fallback).
+    Without either: generate script and print next-step instructions.
+    """
     from awr2944_dca.api.experiment import Experiment
-    from awr2944_dca.mmws.bridge import ManualOneShotBridge
+    from awr2944_dca.mmws.bridge import StudioBridge, StageStatus
     import re
 
     try:
@@ -1804,20 +1835,60 @@ def mmws_connection_script(
 
     com_num = int(m.group(0))
     log_dir = exp.root_dir / "ti" / "probe_logs"
-    bridge = ManualOneShotBridge(log_dir)
+    bridge = StudioBridge(log_dir)
     script = bridge.generate_connection_script(com_num, baud, timeout_ms)
 
     console.print(f"[green]Generated {script.name}[/green] (COM{com_num}, baud={baud})")
-    console.print("Run it in mmWave Studio Lua Shell:")
-    console.print(f"  [cyan]awr ti lua-command {script} --copy[/cyan]")
-    console.print("Then check: [cyan]awr mmws connection status[/cyan]")
+
+    if manual:
+        from awr2944_dca.mmws.executor import build_dofile_command
+        console.print(f"\n[cyan]{build_dofile_command(script)}[/cyan]")
+        return
+
+    if execute:
+        console.print("Executing in mmWave Studio...")
+        try:
+            result = bridge.execute(script, mode=mode, timeout=timeout, verbose=verbose)
+        except RuntimeError as e:
+            console.print(f"[red]ERROR: {e}[/red]")
+            raise typer.Exit(1)
+
+        status = result["status"]
+        exec_result = result["exec_result"]
+        stage_result = result["stage_result"]
+
+        console.print(f"Transport: {exec_result.mode.value} ({exec_result.elapsed_seconds:.1f}s)")
+
+        if status == StageStatus.TIMEOUT:
+            console.print(f"[red]STATUS: TIMEOUT[/red] (no result JSON after {timeout}s)")
+            raise typer.Exit(1)
+        elif status == StageStatus.SUCCESS:
+            com_display = stage_result.get("com_display", "?")
+            console.print(f"[green]STATUS: SUCCESS[/green] (Connected on {com_display})")
+        else:
+            console.print("[red]STATUS: ERROR[/red]")
+            err = stage_result.get("error")
+            if err:
+                console.print(f"  Error: {err}")
+            ret = stage_result.get("connect_return")
+            if ret is not None:
+                console.print(f"  Connect returned: {ret}")
+            raise typer.Exit(1)
+        return
+
+    # Default: print instructions
+    console.print("Next steps:")
+    console.print(f"  [cyan]awr mmws connection script --com {resolved} --execute[/cyan]  (auto-run)")
+    console.print(f"  [cyan]awr mmws connection script --com {resolved} --manual[/cyan]  (print dofile)")
+    console.print("  [cyan]awr mmws connection status[/cyan]  (check result)")
+
 
 
 @mmws_conn_app.command("status")
 def mmws_connection_status() -> None:
     """Check the result of the connection-only stage."""
     from awr2944_dca.api.experiment import Experiment
-    from awr2944_dca.mmws.bridge import ManualOneShotBridge, StageStatus
+    from awr2944_dca.mmws.bridge import StudioBridge, StageStatus
     from awr2944_dca.mmws.stages import StageName
 
     try:
@@ -1827,7 +1898,7 @@ def mmws_connection_status() -> None:
         raise typer.Exit(code=1)
 
     log_dir = exp.root_dir / "ti" / "probe_logs"
-    bridge = ManualOneShotBridge(log_dir)
+    bridge = StudioBridge(log_dir)
     status, result = bridge.check_status(StageName.CONNECTION_ONLY)
 
     if status == StageStatus.NOT_RUN:
@@ -1850,6 +1921,231 @@ def mmws_connection_status() -> None:
 # ---------------------------------------------------------------------------
 # awr mmws static plan
 # ---------------------------------------------------------------------------
+
+
+
+# (Assume this gets injected inside cli.py where mmws_conn_app commands are defined)
+
+@mmws_conn_app.command("preflight")
+def mmws_connection_preflight() -> None:
+    """Run pre-flight checks before attempting connection."""
+    from awr2944_dca.api.experiment import Experiment
+    from awr2944_dca.mmws.executor import _is_mmws_running, _find_csharp_bridge
+    from awr2944_dca.hardware.ports import get_local_hardware_config, scan_ports
+    
+    try:
+        exp = Experiment.open(".")
+        console.print(f"[green]✓[/green] Inside experiment: {exp.root_dir.name}")
+    except FileNotFoundError:
+        console.print("[red]✗[/red] Not inside an experiment directory.")
+        raise typer.Exit(1)
+        
+    if _is_mmws_running():
+        console.print("[green]✓[/green] mmWave Studio is running.")
+    else:
+        console.print("[red]✗[/red] mmWave Studio is NOT running.")
+        
+    if _find_csharp_bridge():
+        console.print("[green]✓[/green] C# Bridge is built.")
+    else:
+        console.print("[red]✗[/red] C# Bridge not found. Run: awr mmws csharp-bridge build")
+        
+    hw = get_local_hardware_config(exp.root_dir)
+    com = hw.get("hardware", {}).get("awr_rs232_com")
+    if com:
+        console.print(f"[green]✓[/green] Local hardware config has awr_rs232_com: {com}")
+        
+        # Check heuristics
+        ports = scan_ports()
+        p_info = next((p for p in ports if p.com.upper() == com.upper()), None)
+        if p_info:
+            if p_info.likely_role == "dca_ftdi_candidate":
+                console.print(f"[red]✗[/red] WARNING: {com} is identified as the DCA1000 FTDI port. This is usually wrong for AWR RS232.")
+            elif p_info.likely_role == "awr_xds_uart_candidate":
+                console.print(f"[yellow]![/yellow] WARNING: {com} is an XDS110 port. AWR2944 usually uses the FTDI port for mmWave Studio RS232.")
+            else:
+                console.print(f"[green]✓[/green] Port role seems acceptable: {p_info.likely_role}")
+        else:
+            console.print(f"[yellow]![/yellow] Port {com} is not currently visible in Windows Device Manager.")
+            
+    else:
+        console.print("[red]✗[/red] Local hardware config missing awr_rs232_com. Run: awr ports scan")
+
+
+def _run_diag_step(com_num: int, baud: int, mode: str, timeout: float, verbose: bool, steps: list[str], script_name: str) -> None:
+    from awr2944_dca.api.experiment import Experiment
+    from awr2944_dca.mmws.lua_builder import write_connection_diag_script
+    from awr2944_dca.mmws.executor import execute_script
+    import uuid
+    
+    exp = Experiment.open(".")
+    log_dir = exp.root_dir / "ti" / "probe_logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    
+    run_id = str(uuid.uuid4())
+    script_path = log_dir / script_name
+    
+    write_connection_diag_script(
+        out_path=script_path,
+        run_id=run_id,
+        com_num=com_num,
+        baud=baud,
+        steps=steps,
+    )
+    console.print(f"[cyan]Generated diagnostic script: {script_path.name}[/cyan]")
+    
+    # Execute
+    result = execute_script(script_path, mode=mode, timeout=timeout, verbose=verbose, allow_fallback=False)
+    
+    if not result.success:
+        if result.error and "HARDWARE_SCRIPT_TIMEOUT" in result.error:
+            console.print(f"[red]STATUS: HARDWARE_SCRIPT_TIMEOUT[/red]")
+            # Parse jsonl
+            jsonl = log_dir / "connection_progress.jsonl"
+            last_step = "unknown"
+            if jsonl.exists():
+                try:
+                    for line in jsonl.read_text().splitlines():
+                        data = json.loads(line)
+                        last_step = data.get("step", last_step)
+                except Exception:
+                    pass
+            console.print(f"[red]HUNG_AT_STEP: {last_step}[/red]")
+            console.print("Please restart mmWave Studio and reset the board before retrying.")
+        else:
+            console.print(f"[red]ERROR: {result.error}[/red]")
+        raise typer.Exit(1)
+        
+    # Check result json
+    res_json = log_dir / "connection_result.json"
+    if res_json.exists():
+        data = json.loads(res_json.read_text())
+        err = data.get("error")
+        if err:
+            console.print(f"[red]STATUS: ERROR[/red]")
+            console.print(f"  {err}")
+            raise typer.Exit(1)
+        else:
+            console.print(f"[green]STATUS: SUCCESS[/green] (completed without error)")
+    else:
+        console.print("[red]STATUS: ERROR (Result JSON not found)[/red]")
+        raise typer.Exit(1)
+
+
+@mmws_conn_app.command("diag")
+def mmws_connection_diag(
+    com: str = typer.Option(..., "--com", help="COM port (e.g., COM6)"),
+    baud: int = typer.Option(115200, "--baud", help="Baud rate"),
+    execute: bool = typer.Option(False, "--execute", help="Auto-execute in mmWave Studio"),
+    mode: str = typer.Option("csharp-rstd", "--mode", help="Execution mode (csharp-rstd, manual)"),
+    verbose: bool = typer.Option(False, "--verbose", help="Print detailed diagnostic info"),
+) -> None:
+    """Run full diagnostic connection with step logging."""
+    if not execute:
+        console.print("Use --execute to run the diagnostics.")
+        return
+    m = re.search(r"\d+", com)
+    if not m:
+        console.print(f"[red]Could not parse numeric port from '{com}'.[/red]")
+        raise typer.Exit(1)
+    com_num = int(m.group(0))
+    _run_diag_step(com_num, baud, mode, 30.0, verbose, ["is_connected_initial", "sop", "connect", "is_connected_final"], "connection_diag.lua")
+
+
+@mmws_conn_app.command("diag-status")
+def mmws_connection_diag_status() -> None:
+    """Check the status of the last connection diagnostic run."""
+    from awr2944_dca.api.experiment import Experiment
+    try:
+        exp = Experiment.open(".")
+    except Exception:
+        raise typer.Exit(1)
+        
+    log_dir = exp.root_dir / "ti" / "probe_logs"
+    res_json = log_dir / "connection_result.json"
+    prog_jsonl = log_dir / "connection_progress.jsonl"
+    
+    if not res_json.exists() and not prog_jsonl.exists():
+        console.print("[yellow]STATUS: NOT RUN[/yellow]")
+        return
+        
+    # Check if hung
+    if prog_jsonl.exists() and not res_json.exists():
+        last_step = "unknown"
+        try:
+            for line in prog_jsonl.read_text().splitlines():
+                last_step = json.loads(line).get("step", last_step)
+        except Exception:
+            pass
+        console.print(f"[red]STATUS: HUNG_AT_STEP={last_step}[/red]")
+        return
+        
+    if res_json.exists():
+        data = json.loads(res_json.read_text())
+        if data.get("error"):
+            console.print(f"[red]STATUS: ERROR[/red] - {data['error']}")
+        else:
+            console.print("[green]STATUS: SUCCESS[/green]")
+
+
+@mmws_conn_app.command("is-connected")
+def mmws_connection_is_connected(
+    execute: bool = typer.Option(False, "--execute", help="Auto-execute in mmWave Studio"),
+    mode: str = typer.Option("csharp-rstd", "--mode", help="Execution mode (csharp-rstd, manual)"),
+    verbose: bool = typer.Option(False, "--verbose", help="Print detailed diagnostic info"),
+) -> None:
+    """Run ONLY the IsConnected check."""
+    if not execute:
+        console.print("Use --execute to run the script.")
+        return
+    _run_diag_step(0, 115200, mode, 10.0, verbose, ["is_connected_initial"], "is_connected_only.lua")
+
+
+@mmws_conn_app.command("sop")
+def mmws_connection_sop(
+    execute: bool = typer.Option(False, "--execute", help="Auto-execute in mmWave Studio"),
+    mode: str = typer.Option("csharp-rstd", "--mode", help="Execution mode (csharp-rstd, manual)"),
+    verbose: bool = typer.Option(False, "--verbose", help="Print detailed diagnostic info"),
+) -> None:
+    """Run ONLY the SOPControl(2) check."""
+    if not execute:
+        console.print("Use --execute to run the script.")
+        return
+    _run_diag_step(0, 115200, mode, 10.0, verbose, ["sop"], "sop_only.lua")
+
+
+@mmws_conn_app.command("disconnect")
+def mmws_connection_disconnect(
+    execute: bool = typer.Option(False, "--execute", help="Auto-execute in mmWave Studio"),
+    mode: str = typer.Option("csharp-rstd", "--mode", help="Execution mode (csharp-rstd, manual)"),
+    verbose: bool = typer.Option(False, "--verbose", help="Print detailed diagnostic info"),
+) -> None:
+    """Run ONLY the Disconnect check."""
+    if not execute:
+        console.print("Use --execute to run the script.")
+        return
+    _run_diag_step(0, 115200, mode, 10.0, verbose, ["disconnect"], "disconnect_only.lua")
+
+
+@mmws_conn_app.command("connect-only")
+def mmws_connection_connect_only(
+    com: str = typer.Option(..., "--com", help="COM port (e.g., COM6)"),
+    baud: int = typer.Option(115200, "--baud", help="Baud rate"),
+    execute: bool = typer.Option(False, "--execute", help="Auto-execute in mmWave Studio"),
+    mode: str = typer.Option("csharp-rstd", "--mode", help="Execution mode (csharp-rstd, manual)"),
+    verbose: bool = typer.Option(False, "--verbose", help="Print detailed diagnostic info"),
+) -> None:
+    """Run ONLY the ar1.Connect check."""
+    if not execute:
+        console.print("Use --execute to run the script.")
+        return
+    m = re.search(r"\d+", com)
+    if not m:
+        console.print(f"[red]Could not parse numeric port from '{com}'.[/red]")
+        raise typer.Exit(1)
+    com_num = int(m.group(0))
+    _run_diag_step(com_num, baud, mode, 15.0, verbose, ["connect"], "connect_only_diag.lua")
+
 
 
 @mmws_app.command("static-plan")
@@ -1921,4 +2217,1288 @@ def mmws_static_plan(
     console.print(table)
     console.print("\n[yellow]This is a dry-run plan. No Lua script is generated.[/yellow]")
     console.print("Static config execution is not yet enabled.")
+
+
+# ---------------------------------------------------------------------------
+# awr mmws inspect-execution (no experiment needed)
+# ---------------------------------------------------------------------------
+
+
+@mmws_app.command("inspect-execution")
+def mmws_inspect_execution() -> None:
+    """Discover available mmWave Studio execution transports.
+
+    Does NOT require an experiment context (.awr-experiment).
+    """
+    from awr2944_dca.mmws.executor import detect_available_modes
+
+    modes = detect_available_modes()
+
+    table = Table(title="Execution Transports", show_lines=True)
+    table.add_column("Mode")
+    table.add_column("Available")
+    table.add_column("Confidence")
+    table.add_column("Detail")
+
+    for m in modes:
+        avail_str = "[green]Yes[/green]" if m.available else "[red]No[/red]"
+        table.add_row(m.mode.value, avail_str, m.confidence, m.detail)
+
+    console.print(table)
+
+    available = [m for m in modes if m.available and m.mode.value != "manual_one_shot"]
+    if available:
+        console.print(f"\n[green]{len(available)} automatic transport(s) available.[/green]")
+    else:
+        console.print("\n[yellow]No automatic transports available.[/yellow]")
+        console.print("Install: [cyan]python -m pip install -e \".[automation]\"[/cyan]")
+        console.print("Then start mmWave Studio and try again.")
+
+
+# ---------------------------------------------------------------------------
+# awr mmws run-script
+# ---------------------------------------------------------------------------
+
+
+@mmws_app.command("run-script")
+def mmws_run_script(
+    script: Path = typer.Argument(..., help="Path to Lua script"),
+    mode: str = typer.Option("auto", "--mode", help="Transport: auto, rstd, pywinauto, manual"),
+    timeout: float = typer.Option(30.0, "--timeout", help="Seconds to wait for result JSON"),
+    verbose: bool = typer.Option(False, "--verbose", help="Print detailed diagnostic info"),
+) -> None:
+    """Execute a Lua script in mmWave Studio.
+
+    With --mode auto (default): tries RSTD, then pywinauto. Errors if none available.
+    With --mode manual: prints dofile command only.
+    """
+    from awr2944_dca.mmws.executor import execute_script, build_dofile_command, wait_for_result_json
+
+    if not script.exists():
+        console.print(f"[red]Script not found: {script}[/red]")
+        raise typer.Exit(1)
+
+    if mode == "manual":
+        console.print(f"\n[cyan]{build_dofile_command(script)}[/cyan]")
+        return
+
+    console.print(f"Executing {script.name} in mmWave Studio (mode={mode})...")
+    try:
+        exec_result = execute_script(script, mode=mode, verbose=verbose)
+    except RuntimeError as e:
+        console.print(f"[red]ERROR: {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"Transport: {exec_result.mode.value}")
+    if exec_result.return_code is not None:
+        console.print(f"SendCommand return code: {exec_result.return_code}")
+    if exec_result.lua_command_sent:
+        console.print(f"Command sent: {exec_result.lua_command_sent}")
+
+    if verbose and exec_result.verbose_log:
+        console.print("[dim]Verbose log:[/dim]")
+        for line in exec_result.verbose_log:
+            console.print(f"  [dim]{line}[/dim]")
+
+    if exec_result.success:
+        console.print(f"[green]Command submitted[/green] (return code: {exec_result.return_code})")
+        console.print("[dim]Waiting for result JSON is the caller's responsibility.[/dim]")
+    else:
+        console.print(f"[red]FAILED: {exec_result.error}[/red]")
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# awr mmws smoke
+# ---------------------------------------------------------------------------
+
+
+@mmws_app.command("smoke")
+def mmws_smoke(
+    execute: bool = typer.Option(False, "--execute", help="Auto-execute in mmWave Studio"),
+    manual: bool = typer.Option(False, "--manual", help="Print dofile command only"),
+    timeout: float = typer.Option(30.0, "--timeout", help="Seconds to wait for result"),
+    verbose: bool = typer.Option(False, "--verbose", help="Print detailed diagnostic info"),
+    mode: str = typer.Option("auto", "--mode", help="Execution mode: auto, csharp-rstd, matlab-rstd, rstd, pywinauto, manual"),
+    apartment: str = typer.Option("mta", "--apartment", help="ApartmentState for C# RSTD bridge (mta or sta)"),
+) -> None:
+    """Generate and optionally execute a harmless smoke test.
+
+    Proves: Python -> mmWave Studio -> Lua -> JSON -> Python works.
+    Contains NO ar1 hardware calls.
+    """
+    from awr2944_dca.api.experiment import Experiment
+    from awr2944_dca.mmws.bridge import StudioBridge, StageStatus
+
+    try:
+        exp = Experiment.open(".")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+
+    log_dir = exp.root_dir / "ti" / "probe_logs"
+    bridge = StudioBridge(log_dir)
+    script = bridge.generate_smoke_script()
+
+    console.print(f"[green]Generated {script.name}[/green] (no ar1 hardware calls)")
+
+    if manual:
+        from awr2944_dca.mmws.executor import build_dofile_command
+        console.print(f"\n[cyan]{build_dofile_command(script)}[/cyan]")
+        return
+
+    if execute:
+        console.print("Executing smoke test in mmWave Studio...")
+        try:
+            result = bridge.execute(script, mode=mode, timeout=timeout, verbose=verbose, apartment=apartment)
+        except RuntimeError as e:
+            console.print(f"[red]ERROR: {e}[/red]")
+            raise typer.Exit(1)
+
+        status = result["status"]
+        exec_result = result["exec_result"]
+        stage_result = result["stage_result"]
+        execution_status = result.get("execution_status")
+
+        console.print(f"Transport: {exec_result.mode.value} ({exec_result.elapsed_seconds:.1f}s)")
+        if exec_result.return_code is not None:
+            console.print(f"SendCommand return code: {exec_result.return_code}")
+        if execution_status:
+            console.print(f"Execution status: {execution_status.value}")
+        if exec_result.lua_command_sent:
+            console.print(f"Command sent: {exec_result.lua_command_sent}")
+
+        if verbose and exec_result.verbose_log:
+            console.print("[dim]Verbose log:[/dim]")
+            for line in exec_result.verbose_log:
+                console.print(f"  [dim]{line}[/dim]")
+
+        expected_result = log_dir / "smoke_result.json"
+        console.print(f"Expected result: {expected_result}")
+        console.print(f"Result file exists: {expected_result.exists()}")
+
+        if status == StageStatus.TIMEOUT:
+            console.print(f"[red]STATUS: SUBMITTED_BUT_NO_RESULT[/red] (no result JSON after {timeout}s)")
+            console.print("The Lua script probably did not execute in Studio.")
+            console.print("Run [cyan]awr mmws rstd-ping --execute[/cyan] to diagnose.")
+            raise typer.Exit(1)
+        elif status == StageStatus.SUCCESS:
+            log_ok = stage_result.get("log_available", False)
+            console.print(f"[green]STATUS: SUCCESS[/green]")
+            console.print(f"  WriteToLog available: {log_ok}")
+            console.print("  Python -> mmWave Studio -> Lua -> JSON -> Python: [green]WORKING[/green]")
+        else:
+            console.print("[red]STATUS: LUA_REPORTED_ERROR[/red]")
+            err = stage_result.get("error")
+            if err:
+                console.print(f"  Error: {err}")
+            raise typer.Exit(1)
+        return
+
+    # Default: instructions
+    console.print("Next steps:")
+    console.print("  [cyan]awr mmws smoke --execute[/cyan]           (auto-run)")
+    console.print("  [cyan]awr mmws smoke --execute --verbose[/cyan] (auto-run with diagnostics)")
+    console.print("  [cyan]awr mmws smoke --manual[/cyan]            (print dofile)")
+
+
+# ---------------------------------------------------------------------------
+# awr mmws rstd-ping (diagnostic, no experiment needed)
+# ---------------------------------------------------------------------------
+
+
+@mmws_app.command("rstd-ping")
+def mmws_rstd_ping(
+    execute: bool = typer.Option(False, "--execute", help="Actually send commands through RSTD"),
+    verbose: bool = typer.Option(False, "--verbose", help="Print detailed diagnostic info"),
+    per_variant_timeout: float = typer.Option(5.0, "--per-variant-timeout", help="Max seconds to wait per variant"),
+) -> None:
+    """Diagnostic: test RSTD .NET Remoting with inline Lua.
+
+    Sends minimal inline Lua through RSTD SendCommand (no dofile).
+    Tries multiple command formats and reports which ones work.
+
+    Does NOT require an experiment context.
+    """
+    import json
+    from awr2944_dca.mmws.executor import (
+        _is_rstd_port_open, _find_rtttnet_dll, _RSTD_PORT,
+        _HAVE_PYTHONNET, rstd_ping_diagnostic,
+    )
+
+    console.print("[bold]RSTD Ping Diagnostic[/bold]")
+    console.print()
+
+    # Pre-checks
+    dll = _find_rtttnet_dll()
+    port_open = _is_rstd_port_open()
+
+    console.print(f"pythonnet installed: {'[green]Yes[/green]' if _HAVE_PYTHONNET else '[red]No[/red]'}")
+    console.print(f"RtttNetClientAPI.dll: {'[green]' + str(dll) + '[/green]' if dll else '[red]Not found[/red]'}")
+    console.print(f"TCP {_RSTD_PORT}: {'[green]Open[/green]' if port_open else '[red]Closed[/red]'}")
+
+    if not _HAVE_PYTHONNET:
+        console.print("\n[red]Cannot proceed: pythonnet not installed[/red]")
+        console.print("Install: [cyan]python -m pip install -e \".[automation]\"[/cyan]")
+        raise typer.Exit(1)
+
+    if not port_open:
+        console.print(f"\n[red]Cannot proceed: RSTD port {_RSTD_PORT} not open[/red]")
+        console.print("Is mmWave Studio running with RSTD.NetStart()?")
+        raise typer.Exit(1)
+
+    if not execute:
+        console.print("\nAdd [cyan]--execute[/cyan] to actually send commands through RSTD.")
+        return
+
+    # Find a writable directory (use experiment if available, else temp)
+    from awr2944_dca.api.experiment import Experiment
+    try:
+        exp = Experiment.open(".")
+        result_dir = exp.root_dir / "ti" / "probe_logs"
+    except FileNotFoundError:
+        result_dir = Path.cwd() / "ti" / "probe_logs"
+
+    result_dir.mkdir(parents=True, exist_ok=True)
+
+    console.print(f"\nResult directory: {result_dir}")
+    console.print("Running diagnostic variants...")
+
+    results = rstd_ping_diagnostic(
+        result_dir, 
+        verbose=verbose, 
+        per_variant_timeout=per_variant_timeout,
+        print_fn=console.print
+    )
+
+    # Display results
+    console.print("\n[bold]Summary[/bold]")
+    table = Table(title="RSTD Ping Variants", show_lines=True)
+    table.add_column("Variant")
+    table.add_column("Send Return")
+    table.add_column("Result Exists")
+    table.add_column("Status")
+    table.add_column("Elapsed")
+
+    for v in results["variants_tried"]:
+        file_str = "N/A"
+        if v.get("file_appeared") is True:
+            file_str = "[green]Yes[/green]"
+        elif v.get("file_appeared") is False:
+            file_str = "[red]No[/red]"
+            
+        status_str = "[red]FAILED[/red]"
+        if v.get("success_submit") and (v.get("file_appeared") or v.get("file_appeared") is None):
+            status_str = "[green]SUCCESS[/green]"
+        if v.get("error"):
+            status_str += f"\n{v['error']}"
+            
+        elapsed_str = f"{v.get('elapsed', 0.0):.2f}s"
+
+        table.add_row(
+            v["name"],
+            str(v.get("return_code", "?")),
+            file_str,
+            status_str,
+            elapsed_str,
+        )
+
+    console.print(table)
+
+    if verbose:
+        for v in results["variants_tried"]:
+            if v.get("verbose_log"):
+                console.print(f"\n[dim]Verbose log for {v['name']}:[/dim]")
+                for line in v["verbose_log"]:
+                    console.print(f"  [dim]{line}[/dim]")
+            console.print(f"  [dim]Lua: {v.get('lua', '')!r}[/dim]")
+
+    if results["working_variant"]:
+        console.print(f"\n[green]Working variant: {results['working_variant']}[/green]")
+        console.print("RSTD execution channel is functional.")
+
+        # Check if it was a file-writing variant
+        for v in results["variants_tried"]:
+            if v.get("result_json"):
+                console.print(f"Result JSON: {json.dumps(v['result_json'])}")
+                break
+    else:
+        console.print("\n[red]All variants failed.[/red]")
+        console.print("Run step-level diagnostics to identify the exact hang point:")
+        console.print("  [cyan]awr mmws rstd-env[/cyan]")
+        console.print("  [cyan]awr mmws rstd-methods --verbose[/cyan]")
+        console.print("  [cyan]awr mmws rstd-worker-test --step import-clr --verbose[/cyan]")
+        console.print("  [cyan]awr mmws rstd-worker-test --step init --verbose[/cyan]")
+        console.print("  [cyan]awr mmws rstd-worker-test --step connect --verbose[/cyan]")
+        console.print("  [cyan]awr mmws rstd-worker-test --step send-log --verbose[/cyan]")
+
+    # Write diagnostic report
+    report_path = result_dir / "rstd_execution_notes.md"
+    _write_rstd_report(report_path, results, dll, port_open)
+    console.print(f"\nDiagnostic report: {report_path}")
+
+
+def _write_rstd_report(path: Path, results: dict, dll: Path | None, port_open: bool) -> None:
+    """Write RSTD execution diagnostic report."""
+    lines = [
+        "# RSTD Execution Diagnostic Report",
+        "",
+        "## Environment",
+        f"- RtttNetClientAPI.dll: {dll}",
+        f"- TCP 2777 open: {port_open}",
+        f"- pythonnet available: True",
+        "",
+        "## Known-Good API Sequence (from TI MATLAB example)",
+        "",
+        "Source: `C:\\ti\\mmwave_studio_03_00_00_14\\mmWaveStudio\\MatlabExamples\\",
+        "4chip_cascade_TxBF_example\\RSTD\\Init_RSTD_Connection.m`",
+        "",
+        "```matlab",
+        "% 1. Load DLL",
+        "RSTD_Assembly = NET.addAssembly(RSTD_DLL_Path);",
+        "",
+        "% 2. Init client",
+        "ErrStatus = RtttNetClientAPI.RtttNetClient.Init();",
+        "",
+        "% 3. Connect to localhost:2777",
+        "ErrStatus = RtttNetClientAPI.RtttNetClient.Connect('127.0.0.1', 2777);",
+        "",
+        "% 4. Send Lua command string",
+        "Lua_String = 'WriteToLog(\"Running script from MATLAB\\n\", \"green\")';",
+        "ErrStatus = RtttNetClientAPI.RtttNetClient.SendCommand(Lua_String);",
+        "% Returns 30000 if no error",
+        "```",
+        "",
+        "## Key Notes",
+        "",
+        "- `SendCommand` takes raw Lua strings, not file paths",
+        "- TI MATLAB examples send `ar1.ProfileConfig(...)` directly as strings",
+        "- For scripts, use `dofile([[C:/path/to/script.lua]])`",
+        "- Return code 30000 = command submitted, NOT proof of Lua success",
+        "- `Init()` alone is NOT enough — `Connect('127.0.0.1', 2777)` is required",
+        "",
+        "## Variant Results",
+        "",
+    ]
+    for v in results["variants_tried"]:
+        lines.append(f"### {v['name']}")
+        lines.append(f"- Submit OK: {v.get('success_submit')}")
+        lines.append(f"- Return code: {v.get('return_code')}")
+        lines.append(f"- File appeared: {v.get('file_appeared')}")
+        lines.append(f"- Error: {v.get('error')}")
+        lines.append(f"- Lua: `{v.get('lua', '')}`")
+        lines.append("")
+
+    if results["working_variant"]:
+        lines.append(f"## Conclusion: **{results['working_variant']}** worked")
+    else:
+        lines.append("## Conclusion: **All variants failed**")
+
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# awr mmws rstd-env (environment diagnostics, no experiment needed)
+# ---------------------------------------------------------------------------
+
+
+@mmws_app.command("rstd-env")
+def mmws_rstd_env() -> None:
+    """Print RSTD environment diagnostics: bitness, runtime, paths.
+
+    Does NOT require an experiment context.
+    """
+    import platform
+    import struct
+    from awr2944_dca.mmws.executor import (
+        _is_rstd_port_open, _find_rtttnet_dll, _find_mmws_dir,
+        _RSTD_PORT, _HAVE_PYTHONNET,
+    )
+
+    console.print("[bold]RSTD Environment Diagnostics[/bold]\n")
+
+    # Python info
+    console.print(f"Python executable: {sys.executable}")
+    console.print(f"Python version:    {platform.python_version()}")
+    bits = struct.calcsize("P") * 8
+    console.print(f"Python architecture: [{'green' if bits == 64 else 'yellow'}]{bits}-bit[/{'green' if bits == 64 else 'yellow'}]")
+
+    # pythonnet
+    if _HAVE_PYTHONNET:
+        try:
+            import clr  # type: ignore
+            pn_ver = getattr(clr, "__version__", "unknown")
+            console.print(f"pythonnet version: [green]{pn_ver}[/green]")
+        except Exception:
+            console.print("pythonnet version: [green]installed (version unknown)[/green]")
+
+        # .NET runtime
+        try:
+            import clr  # type: ignore
+            from System import Environment  # type: ignore
+            console.print(f".NET CLR version:  {Environment.Version}")
+        except Exception:
+            console.print(".NET CLR version:  [yellow]could not determine[/yellow]")
+    else:
+        console.print("pythonnet: [red]not installed[/red]")
+
+    # DLL
+    dll = _find_rtttnet_dll()
+    console.print(f"\nRtttNetClientAPI.dll: {'[green]' + str(dll) + '[/green]' if dll else '[red]Not found[/red]'}")
+
+    # mmWave Studio dir
+    mmws_dir = _find_mmws_dir()
+    console.print(f"mmWave Studio dir:   {'[green]' + str(mmws_dir) + '[/green]' if mmws_dir else '[red]Not found[/red]'}")
+
+    # CWD
+    console.print(f"Current directory:   {Path.cwd()}")
+
+    # TCP 2777
+    port_open = _is_rstd_port_open()
+    console.print(f"\nTCP {_RSTD_PORT}: {'[green]Open[/green]' if port_open else '[red]Closed[/red]'}")
+
+    if bits == 32:
+        console.print("\n[yellow]Warning: 32-bit Python detected. TI DLLs may require 64-bit.[/yellow]")
+
+
+# ---------------------------------------------------------------------------
+# awr mmws rstd-methods (DLL method introspection via isolated subprocess)
+# ---------------------------------------------------------------------------
+
+
+@mmws_app.command("rstd-methods")
+def mmws_rstd_methods(
+    timeout: float = typer.Option(10.0, "--timeout", help="Max seconds for introspection subprocess"),
+    verbose: bool = typer.Option(False, "--verbose", help="Print detailed diagnostic info"),
+) -> None:
+    """Introspect RtttNetClientAPI.dll public methods via isolated subprocess.
+
+    Does NOT require an experiment context.
+    Runs introspection in a separate process so hangs are safely killed.
+    """
+    from awr2944_dca.mmws.executor import run_rstd_introspect, _find_rtttnet_dll
+
+    dll = _find_rtttnet_dll()
+    if not dll:
+        console.print("[red]RtttNetClientAPI.dll not found[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[bold]RSTD DLL Method Introspection[/bold]")
+    console.print(f"DLL: {dll}")
+    console.print(f"Timeout: {timeout}s\n")
+
+    result = run_rstd_introspect(timeout=timeout, verbose=verbose)
+
+    if not result["success"]:
+        error = result.get("error", "Unknown error")
+        last_step = result.get("last_worker_step")
+        console.print(f"[red]Introspection failed: {error}[/red]")
+        if last_step:
+            console.print(f"[yellow]Last worker step: {last_step}[/yellow]")
+        raise typer.Exit(1)
+
+    methods = result.get("methods", [])
+    properties = result.get("properties", [])
+
+    console.print(f"[green]Found {len(methods)} methods, {len(properties)} properties[/green]\n")
+
+    if methods:
+        console.print("[bold]Methods:[/bold]")
+        for m in methods:
+            console.print(f"  - {m}")
+
+    if properties:
+        console.print("\n[bold]Properties:[/bold]")
+        for p in properties:
+            console.print(f"  - {p}")
+
+    # Highlight key methods
+    console.print("\n[bold]Key methods available:[/bold]")
+    for key in ["Init", "Connect", "IsConnected", "SendCommand", "RunScript", "Disconnect"]:
+        present = key in methods
+        console.print(f"  {key}: {'[green]Yes[/green]' if present else '[red]No[/red]'}")
+
+
+# ---------------------------------------------------------------------------
+# awr mmws rstd-worker-test (step-level diagnostic, no experiment needed)
+# ---------------------------------------------------------------------------
+
+
+@mmws_app.command("rstd-worker-test")
+def mmws_rstd_worker_test(
+    step: str = typer.Option(..., "--step", help="Step to stop at: import-clr, add-reference, import-api, init, connect, send-log"),
+    verbose: bool = typer.Option(False, "--verbose", help="Print detailed diagnostic info"),
+    timeout: float = typer.Option(10.0, "--timeout", help="Max seconds for worker subprocess"),
+    cwd_mode: str = typer.Option("default", "--cwd-mode", help="Worker CWD: default or mmwave-studio"),
+    method: str = typer.Option("SendCommand", "--method", help="RtttNetClient method: SendCommand or RunScript"),
+) -> None:
+    """Test RSTD worker subprocess up to a specific step.
+
+    Isolates exactly which .NET API call hangs.
+    Does NOT require an experiment context.
+
+    Steps (in order):
+      import-clr        - import pythonnet/clr
+      add-reference     - clr.AddReference(dll)
+      import-api        - from RtttNetClientAPI import RtttNetClient
+      init              - RtttNetClient.Init()
+      connect           - RtttNetClient.Connect(host, port)
+      send-log          - RtttNetClient.SendCommand(WriteToLog)
+      runscript-file    - RtttNetClient.RunScript(lua_file_path)
+      sendcommand-dofile - RtttNetClient.SendCommand('dofile([[path]])')
+    """
+    from awr2944_dca.mmws.executor import run_rstd_worker_test as _run_test
+
+    valid_steps = [
+        "import-clr", "add-reference", "import-api", "init", "connect",
+        "send-log", "runscript-file", "sendcommand-dofile",
+    ]
+    if step not in valid_steps:
+        console.print(f"[red]Invalid step '{step}'. Valid: {', '.join(valid_steps)}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[bold]RSTD Worker Test[/bold]")
+    console.print(f"Step:     {step}")
+    console.print(f"Timeout:  {timeout}s")
+    console.print(f"CWD mode: {cwd_mode}")
+    console.print(f"Method:   {method}\n")
+
+    result = _run_test(
+        step=step,
+        timeout=timeout,
+        verbose=verbose,
+        cwd_mode=cwd_mode,
+        method=method,
+    )
+
+    if result["success"]:
+        console.print(f"[green]Step '{step}' completed successfully.[/green]")
+        worker_data = result.get("worker_result", {})
+        if worker_data.get("init_return") is not None:
+            console.print(f"  Init return:    {worker_data['init_return']}")
+        if worker_data.get("connect_return") is not None:
+            console.print(f"  Connect return: {worker_data['connect_return']}")
+        if worker_data.get("send_return") is not None:
+            console.print(f"  Send return:    {worker_data['send_return']}")
+        if worker_data.get("elapsed_seconds") is not None:
+            console.print(f"  Elapsed:        {worker_data['elapsed_seconds']:.2f}s")
+        # Check Lua-side result
+        lua_result = result.get("lua_result")
+        if lua_result:
+            import json
+            console.print(f"  [green]Lua result JSON: {json.dumps(lua_result)}[/green]")
+        elif step in ("runscript-file", "sendcommand-dofile"):
+            console.print(f"  [yellow]No Lua result file appeared (script may not have executed)[/yellow]")
+    else:
+        error = result.get("error", "Unknown error")
+        last_step = result.get("last_worker_step")
+        console.print(f"[red]Step '{step}' FAILED: {error}[/red]")
+        if last_step:
+            console.print(f"[yellow]Last completed worker step: {last_step}[/yellow]")
+
+    # Print progress log
+    progress_text = result.get("progress", "")
+    if progress_text and verbose:
+        console.print(f"\n[dim]Progress log:[/dim]")
+        for line in progress_text.strip().splitlines():
+            console.print(f"  [dim]{line}[/dim]")
+
+    # Print stderr
+    stderr = result.get("stderr", "")
+    if stderr and verbose:
+        console.print(f"\n[dim]Worker stderr:[/dim]")
+        for line in stderr.strip().splitlines():
+            console.print(f"  [dim]{line}[/dim]")
+
+    if not result["success"]:
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# awr mmws rstd-last-error (diagnostic, no experiment needed)
+# ---------------------------------------------------------------------------
+
+
+@mmws_app.command("rstd-last-error")
+def mmws_rstd_last_error(
+    verbose: bool = typer.Option(False, "--verbose", help="Print detailed diagnostic info"),
+    timeout: float = typer.Option(10.0, "--timeout", help="Max seconds for subprocess"),
+) -> None:
+    """Query RSTD GetLastError() and GetErrMsg() via isolated subprocess.
+
+    Runs Init + Connect (no Send), then calls GetLastError/GetErrMsg.
+    Does NOT require an experiment context.
+    """
+    from awr2944_dca.mmws.executor import run_rstd_get_last_error, _find_rtttnet_dll
+
+    dll = _find_rtttnet_dll()
+    if not dll:
+        console.print("[red]RtttNetClientAPI.dll not found[/red]")
+        raise typer.Exit(1)
+
+    console.print("[bold]RSTD Last Error Diagnostic[/bold]")
+    console.print(f"DLL: {dll}")
+    console.print(f"Timeout: {timeout}s\n")
+
+    result = run_rstd_get_last_error(timeout=timeout, verbose=verbose)
+
+    if not result["success"]:
+        error = result.get("error", "Unknown error")
+        last_step = result.get("last_worker_step")
+        console.print(f"[red]Failed: {error}[/red]")
+        if last_step:
+            console.print(f"[yellow]Last worker step: {last_step}[/yellow]")
+        raise typer.Exit(1)
+
+    console.print(f"GetLastError(): {result.get('last_error', 'N/A')}")
+    console.print(f"GetErrMsg():    {result.get('error_msg', 'N/A')}")
+    console.print(f"Elapsed:        {result.get('elapsed_seconds', 0):.2f}s")
+
+
+# ---------------------------------------------------------------------------
+# awr mmws studio launch / attach / status (no experiment needed)
+# ---------------------------------------------------------------------------
+
+
+@mmws_studio_app.command("launch")
+def mmws_studio_launch() -> None:
+    """Launch mmWave Studio from the discovered installation."""
+    from awr2944_dca.mmws.executor import _find_mmws_exe
+    import subprocess
+
+    exe = _find_mmws_exe()
+    if not exe:
+        console.print("[red]mmWaveStudio.exe not found under C:\\ti[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"Launching {exe}...")
+    subprocess.Popen([str(exe)], cwd=str(exe.parent))
+    console.print("[green]mmWave Studio launch initiated.[/green]")
+    console.print("Wait for it to fully load before running commands.")
+
+
+@mmws_studio_app.command("attach")
+def mmws_studio_attach() -> None:
+    """Check if Python can reach a running mmWave Studio instance."""
+    from awr2944_dca.mmws.executor import (
+        _is_mmws_running, _is_rstd_port_open, _RSTD_PORT,
+        _HAVE_PYTHONNET, _HAVE_PYWINAUTO,
+    )
+
+    running = _is_mmws_running()
+    port_open = _is_rstd_port_open()
+
+    if running:
+        console.print("[green]mmWave Studio is running.[/green]")
+    else:
+        console.print("[red]mmWave Studio is NOT running.[/red]")
+        console.print("Launch it: [cyan]awr mmws studio launch[/cyan]")
+
+    if port_open:
+        console.print(f"[green]RSTD port {_RSTD_PORT} is open.[/green]")
+    else:
+        console.print(f"[yellow]RSTD port {_RSTD_PORT} is closed.[/yellow]")
+        if running:
+            console.print("Check if RSTD.NetStart() was called (it should be in Startup.lua).")
+
+    if _HAVE_PYTHONNET:
+        console.print("[green]pythonnet is installed.[/green]")
+    else:
+        console.print("[yellow]pythonnet not installed.[/yellow]")
+    if _HAVE_PYWINAUTO:
+        console.print("[green]pywinauto is installed.[/green]")
+    else:
+        console.print("[yellow]pywinauto not installed.[/yellow]")
+
+    if not _HAVE_PYTHONNET and not _HAVE_PYWINAUTO:
+        console.print("\nInstall automation deps:")
+        console.print("  [cyan]python -m pip install -e \".[automation]\"[/cyan]")
+
+
+@mmws_studio_app.command("status")
+def mmws_studio_status(
+    verbose: bool = typer.Option(False, "--verbose", help="Show detailed path/version info"),
+) -> None:
+    """Report mmWave Studio process and RSTD remoting status.
+
+    With --verbose, checks if the running process and selected DLL
+    come from the same mmwave_studio_* installation.
+    Does NOT require an experiment context (.awr-experiment).
+    """
+    from awr2944_dca.mmws.executor import (
+        _is_mmws_running, _is_rstd_port_open, _find_mmws_exe,
+        _find_rtttnet_dll, _find_mmws_dir, _get_mmws_process_path,
+        _extract_version_from_path, _RSTD_PORT,
+        _HAVE_PYTHONNET, _HAVE_PYWINAUTO,
+    )
+
+    table = Table(title="mmWave Studio Status", show_lines=True)
+    table.add_column("Check")
+    table.add_column("Result")
+
+    exe = _find_mmws_exe()
+    running = _is_mmws_running()
+    port_open = _is_rstd_port_open()
+    dll = _find_rtttnet_dll()
+    mmws_dir = _find_mmws_dir()
+
+    table.add_row("mmWaveStudio.exe found", "[green]Yes[/green]" if exe else "[red]No[/red]")
+    table.add_row("Process running", "[green]Yes[/green]" if running else "[red]No[/red]")
+    table.add_row(f"RSTD port {_RSTD_PORT}", "[green]Open[/green]" if port_open else "[red]Closed[/red]")
+    table.add_row("RtttNetClientAPI.dll", "[green]Found[/green]" if dll else "[red]Not found[/red]")
+    table.add_row("pythonnet installed", "[green]Yes[/green]" if _HAVE_PYTHONNET else "[yellow]No[/yellow]")
+    table.add_row("pywinauto installed", "[green]Yes[/green]" if _HAVE_PYWINAUTO else "[yellow]No[/yellow]")
+
+    console.print(table)
+
+    if verbose:
+        console.print()
+        # Process path
+        process_path = _get_mmws_process_path()
+        if process_path:
+            console.print(f"Running process path: [green]{process_path}[/green]")
+        elif running:
+            console.print("[yellow]Process running but path could not be determined.[/yellow]")
+            console.print("  mmWave Studio likely runs elevated (Run as administrator).")
+            console.print("  From an [bold]elevated[/bold] PowerShell, run:")
+            console.print("    [cyan]Get-Process mmWaveStudio | Select-Object Id, Path[/cyan]")
+        else:
+            console.print("[yellow]mmWave Studio is not running.[/yellow]")
+
+        # DLL path
+        if dll:
+            console.print(f"RtttNetClientAPI.dll: [green]{dll}[/green]")
+        if mmws_dir:
+            console.print(f"mmWave Studio dir:   [green]{mmws_dir}[/green]")
+
+        # Version matching
+        if process_path and dll:
+            proc_ver = _extract_version_from_path(process_path)
+            dll_ver = _extract_version_from_path(dll)
+            console.print(f"\nProcess version: {proc_ver or 'unknown'}")
+            console.print(f"DLL version:     {dll_ver or 'unknown'}")
+
+            if proc_ver and dll_ver:
+                if proc_ver == dll_ver:
+                    console.print(f"[green]Version match: both from mmwave_studio_{proc_ver}[/green]")
+                else:
+                    console.print(f"\n[red]VERSION MISMATCH![/red]")
+                    console.print(f"  Running process: mmwave_studio_{proc_ver}")
+                    console.print(f"  Selected DLL:    mmwave_studio_{dll_ver}")
+                    console.print(f"\n[red]RSTD auto-execution may fail when process and DLL are from different versions.[/red]")
+                    console.print(f"[yellow]Close the mismatched mmWave Studio and launch the correct one.[/yellow]")
+        elif running:
+            console.print("\n[yellow]Could not determine process path for version comparison.[/yellow]")
+            console.print("Run manually: [cyan]Get-Process mmWaveStudio | Select-Object Id, Path[/cyan]")
+
+
+# ---------------------------------------------------------------------------
+# awr mmws lua-command (manual dofile helper)
+# ---------------------------------------------------------------------------
+
+
+@mmws_app.command("lua-command")
+def mmws_lua_command(
+    script: Path = typer.Argument(..., help="Path to Lua script"),
+    copy: bool = typer.Option(False, "--copy", help="Copy dofile command to clipboard (Windows)"),
+) -> None:
+    """Print or copy the dofile([[...]]) command for manual use."""
+    from awr2944_dca.mmws.executor import build_dofile_command
+
+    if not script.exists():
+        console.print(f"[red]Script not found: {script}[/red]")
+        raise typer.Exit(1)
+
+    cmd = build_dofile_command(script)
+    console.print(f"\n[cyan]{cmd}[/cyan]")
+
+    if copy:
+        try:
+            import subprocess
+            proc = subprocess.run(
+                ["clip.exe"],
+                input=cmd.encode("utf-8"),
+                capture_output=True,
+                timeout=5,
+            )
+            if proc.returncode == 0:
+                console.print("[green]Copied to clipboard.[/green]")
+            else:
+                console.print("[yellow]clip.exe failed. Copy the command manually.[/yellow]")
+        except Exception as e:
+            console.print(f"[yellow]Could not copy to clipboard: {e}[/yellow]")
+
+
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# awr mmws matlab-bridge *
+# ---------------------------------------------------------------------------
+
+@mmws_matlab_bridge_app.command("locate")
+def mmws_matlab_bridge_locate(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Locate MATLAB installations and runtimes."""
+    from .mmws.matlab_bridge import locate_matlab
+    
+    console.print("[cyan]Locating MATLAB...[/cyan]")
+    info = locate_matlab()
+    
+    if info["where_matlab"]:
+        console.print("[green]Found via `where matlab`:[/green]")
+        for p in info["where_matlab"]:
+            console.print(f"  {p}")
+    else:
+        console.print("[yellow]Not found via `where matlab`.[/yellow]")
+        
+    if info["full_matlab"]:
+        console.print("[green]Found Full MATLAB:[/green]")
+        for p in info["full_matlab"]:
+            console.print(f"  {p}")
+    else:
+        console.print("[red]Full MATLAB not found in Program Files.[/red]")
+        
+    if info["matlab_runtime"]:
+        console.print("[yellow]Found MATLAB Runtime:[/yellow]")
+        for p in info["matlab_runtime"]:
+            console.print(f"  {p}")
+        console.print("[yellow]Note: MATLAB Runtime is not enough for `matlab -batch`.[/yellow]")
+    else:
+        console.print("[dim]No MATLAB Runtime found.[/dim]")
+
+@mmws_matlab_bridge_app.command("ping")
+def mmws_matlab_bridge_ping(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Test MATLAB-to-Studio connection (Init + Connect)."""
+    from .mmws.executor import _execute_matlab_bridge
+    import tempfile
+    from pathlib import Path
+    
+    console.print("[cyan]Testing MATLAB bridge (ping)...[/cyan]")
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "dummy.lua"
+        p.touch()
+        res = _execute_matlab_bridge(p, verbose=verbose, timeout=30.0, bridge_mode="ping")
+        
+    if res.success:
+        console.print("[green]✓ MATLAB bridge ping successful![/green]")
+    else:
+        console.print(f"[red]✗ MATLAB bridge ping failed: {res.error}[/red]")
+        if res.verbose_log:
+            for line in res.verbose_log:
+                console.print(line)
+        raise typer.Exit(1)
+
+@mmws_matlab_bridge_app.command("send-inline")
+def mmws_matlab_bridge_send_inline(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Test MATLAB-to-Studio send-inline command."""
+    from .mmws.executor import _execute_matlab_bridge
+    import tempfile
+    from pathlib import Path
+    
+    console.print("[cyan]Testing MATLAB bridge (send-inline)...[/cyan]")
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "dummy.lua"
+        p.touch()
+        res = _execute_matlab_bridge(p, verbose=verbose, timeout=30.0, bridge_mode="send-inline")
+        
+    if res.success:
+        console.print("[green]✓ MATLAB bridge send-inline successful![/green]")
+    else:
+        console.print(f"[red]✗ MATLAB bridge send-inline failed: {res.error}[/red]")
+        if res.verbose_log:
+            for line in res.verbose_log:
+                console.print(line)
+        raise typer.Exit(1)
+
+@mmws_matlab_bridge_app.command("smoke")
+def mmws_matlab_bridge_smoke(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Test MATLAB-to-Studio RunScript via smoke script."""
+    from .mmws.executor import _execute_matlab_bridge
+    import tempfile
+    from pathlib import Path
+    
+    console.print("[cyan]Testing MATLAB bridge (smoke)...[/cyan]")
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "smoke.lua"
+        p.write_text("WriteToLog(\"SMOKE\\n\")", encoding="utf-8")
+        res = _execute_matlab_bridge(p, verbose=verbose, timeout=30.0, bridge_mode="send-command")
+        
+    if res.success:
+        console.print("[green]✓ MATLAB bridge smoke successful![/green]")
+    else:
+        console.print(f"[red]✗ MATLAB bridge smoke failed: {res.error}[/red]")
+        if res.verbose_log:
+            for line in res.verbose_log:
+                console.print(line)
+        raise typer.Exit(1)
+
+
+@mmws_matlab_bridge_app.command("dofile-test")
+def mmws_matlab_bridge_dofile_test(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Test MATLAB-to-Studio dofile command."""
+    from .mmws.executor import _execute_matlab_bridge
+    import tempfile
+    from pathlib import Path
+    
+    console.print("[cyan]Testing MATLAB bridge (dofile-test)...[/cyan]")
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "dofile_test.lua"
+        res_file = Path(d) / "matlab_dofile_test_result.json"
+        p.write_text(f"WriteToLog(\"DOFILE_TEST\\\\n\")\nres_file=io.open([[{str(res_file).replace('\\\\', '/')}笑]], 'w')\nres_file:write('{{\"success\":true}}')\nres_file:close()", encoding="utf-8")
+        # Wait, just write the result file properly
+        lua_code = f"""
+WriteToLog("DOFILE_TEST\\n")
+local f = io.open([[{str(res_file).replace("\\", "/")}笑]], "w")
+f:write('{{"success":true}}')
+f:close()
+""".replace("笑", "")
+        p.write_text(lua_code, encoding="utf-8")
+        if res_file.exists():
+            res_file.unlink()
+        res = _execute_matlab_bridge(p, verbose=verbose, timeout=30.0, bridge_mode="dofile-test")
+        
+    if res.success:
+        import json
+        if res_file.exists():
+            try:
+                data = json.loads(res_file.read_text())
+                if data.get("success"):
+                    console.print("[green]✓ MATLAB bridge dofile-test successful![/green]")
+                    return
+                else:
+                    console.print(f"[red]✗ MATLAB bridge dofile-test Lua result failed: {data}[/red]")
+            except Exception as e:
+                console.print(f"[red]✗ MATLAB bridge dofile-test JSON error: {e}[/red]")
+        else:
+            console.print("[red]✗ MATLAB bridge dofile-test failed: lua result json not found[/red]")
+    else:
+        console.print(f"[red]✗ MATLAB bridge dofile-test failed: {res.error}[/red]")
+    
+    if res.verbose_log:
+        for line in res.verbose_log:
+            console.print(line)
+    raise typer.Exit(1)
+
+# awr mmws lua-launch *
+# ---------------------------------------------------------------------------
+
+@mmws_lua_launch_app.command("smoke")
+def mmws_lua_launch_smoke(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Self-contained smoke test via mmWaveStudio.exe /lua.
+
+    No WriteToLog, no ar1, no Startup.lua dependency.
+    Verifies io.open writes a result JSON and the process exits cleanly.
+    """
+    from .mmws.executor import _execute_lua_launch
+    from .mmws.lua_builder import build_lua_launch_smoke
+    import tempfile
+    import uuid
+    from pathlib import Path
+    
+    run_id = str(uuid.uuid4())[:8]
+    console.print(f"[cyan]lua-launch smoke (run_id={run_id})...[/cyan]")
+    
+    with tempfile.TemporaryDirectory() as d:
+        result_path = Path(d) / "smoke_result.json"
+        script_path = Path(d) / "smoke.lua"
+        script = build_lua_launch_smoke(run_id, str(result_path))
+        script_path.write_text(script, encoding="utf-8")
+        
+        if verbose:
+            console.print("[dim]Generated Lua:[/dim]")
+            for line in script.splitlines():
+                console.print(f"  [dim]{line}[/dim]")
+        
+        res = _execute_lua_launch(
+            script_path, verbose=verbose, timeout=30.0, result_path=result_path,
+        )
+        
+    if res.success:
+        console.print("[green]✓ lua-launch smoke successful![/green]")
+    else:
+        console.print(f"[red]✗ lua-launch smoke failed: {res.error}[/red]")
+    
+    if res.verbose_log:
+        for line in res.verbose_log:
+            console.print(line)
+    
+    if not res.success:
+        raise typer.Exit(1)
+
+
+@mmws_lua_launch_app.command("env-probe")
+def mmws_lua_launch_env_probe(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Probe the mmWaveStudio /lua environment.
+
+    Reports: _VERSION, type(ar1), type(WriteToLog), type(writeToLog),
+    package.path, whether io.open works.  Useful to determine what is
+    available before Startup.lua finishes.
+    """
+    from .mmws.executor import _execute_lua_launch
+    from .mmws.lua_builder import build_lua_launch_env_probe
+    import tempfile
+    import uuid
+    import json
+    from pathlib import Path
+    
+    run_id = str(uuid.uuid4())[:8]
+    console.print(f"[cyan]lua-launch env-probe (run_id={run_id})...[/cyan]")
+    
+    with tempfile.TemporaryDirectory() as d:
+        result_path = Path(d) / "env_probe_result.json"
+        script_path = Path(d) / "env_probe.lua"
+        script = build_lua_launch_env_probe(run_id, str(result_path))
+        script_path.write_text(script, encoding="utf-8")
+        
+        if verbose:
+            console.print("[dim]Generated Lua:[/dim]")
+            for line in script.splitlines():
+                console.print(f"  [dim]{line}[/dim]")
+        
+        res = _execute_lua_launch(
+            script_path, verbose=verbose, timeout=30.0, result_path=result_path,
+        )
+    
+    if not res.success:
+        console.print(f"[red]✗ env-probe failed: {res.error}[/red]")
+        if res.verbose_log:
+            for line in res.verbose_log:
+                console.print(line)
+        raise typer.Exit(1)
+    
+    # Parse and display the probe results
+    try:
+        data = json.loads(result_path.read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    
+    console.print("[green]✓ env-probe completed[/green]")
+    console.print(f"  _VERSION:        {data.get('_VERSION', '?')}")
+    console.print(f"  type(ar1):       {data.get('type_ar1', '?')}")
+    ar1_connect = data.get("ar1_connect_exists", False)
+    console.print(f"  ar1.Connect:     {'exists' if ar1_connect else '[red]missing[/red]'}")
+    console.print(f"  type(WriteToLog): {data.get('type_WriteToLog', '?')}")
+    console.print(f"  type(writeToLog): {data.get('type_writeToLog', '?')}")
+    console.print(f"  io.open works:   {data.get('io_open_works', '?')}")
+    console.print(f"  package.path:    {data.get('package_path', '?')}")
+    
+    if data.get("type_ar1") == "nil":
+        console.print(
+            "\n[yellow]ar1 is nil — /lua runs before Startup.lua initializes RadarAPI.\n"
+            "lua-launch is useful only for standalone scripts unless we learn\n"
+            "how to initialize RadarAPI/Startup safely.[/yellow]"
+        )
+    
+    if not ar1_connect:
+        console.print(
+            "[yellow]Do NOT run hardware connection under lua-launch until\n"
+            "env-probe proves type(ar1)==\"table\" and ar1.Connect exists.[/yellow]"
+        )
+
+# awr mmws csharp-bridge *
+# ---------------------------------------------------------------------------
+
+
+@mmws_bridge_app.command("build")
+def mmws_bridge_build(
+    verbose: bool = typer.Option(False, "--verbose", help="Print detailed build info"),
+) -> None:
+    """Build the C# RSTD bridge (MmwsRstdBridge.exe).
+
+    Compiles the C# source using .NET Framework csc.exe (x86).
+    Requires RtttNetClientAPI.dll from mmWave Studio installation.
+    """
+    from awr2944_dca.mmws.executor import build_csharp_bridge
+
+    console.print("[cyan]Building C# RSTD bridge...[/cyan]")
+    success, message = build_csharp_bridge(verbose=verbose)
+
+    for line in message.splitlines():
+        if "SUCCESS" in line:
+            console.print(f"[green]{line}[/green]")
+        elif "FAILED" in line or "WARNING" in line or "ERROR" in line:
+            console.print(f"[red]{line}[/red]")
+        else:
+            console.print(f"  {line}")
+
+    if not success:
+        raise typer.Exit(1)
+
+
+
+@mmws_bridge_app.command("send-inline")
+def mmws_csharp_bridge_send_inline(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose bridge output"),
+    apartment: str = typer.Option("mta", "--apartment", help="ApartmentState (mta or sta)"),
+) -> None:
+    """Test C# bridge send-inline command."""
+    from .mmws.executor import _execute_via_csharp_bridge
+    import tempfile
+    from pathlib import Path
+    
+    console.print(f"[cyan]Testing C# bridge (send-inline, apartment={apartment})...[/cyan]")
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "dummy.lua"
+        p.touch()
+        res = _execute_via_csharp_bridge(
+            script_path=p,
+            verbose=verbose,
+            timeout=10.0,
+            bridge_mode="send-inline",
+            apartment=apartment,
+        )
+        
+    if res.success:
+        console.print("[green]✓ C# bridge send-inline successful![/green]")
+    else:
+        console.print(f"[red]✗ C# bridge send-inline failed: {res.error}[/red]")
+        if res.verbose_log:
+            for line in res.verbose_log:
+                console.print(line)
+        raise typer.Exit(1)
+
+@mmws_bridge_app.command("ping")
+def mmws_bridge_ping(
+    verbose: bool = typer.Option(False, "--verbose", help="Print verbose bridge output"),
+    timeout: float = typer.Option(10.0, "--timeout", help="Seconds to wait"),
+) -> None:
+    """Ping mmWave Studio via the C# RSTD bridge.
+
+    Tests: Init + Connect + IsConnected + GetLastError.
+    Does NOT send any Lua commands.
+    """
+    import json
+    import subprocess
+    import tempfile
+    from awr2944_dca.mmws.executor import _find_csharp_bridge, _find_rtttnet_dll, _RSTD_HOST, _RSTD_PORT
+
+    bridge = _find_csharp_bridge()
+    if bridge is None:
+        console.print("[red]MmwsRstdBridge.exe not found.[/red]")
+        console.print("Run: [cyan]awr mmws csharp-bridge build[/cyan]")
+        raise typer.Exit(1)
+
+    console.print(f"[cyan]Bridge:[/cyan] {bridge}")
+
+    # Find DLL directory for AssemblyResolve
+    dll_path = _find_rtttnet_dll()
+    dll_dir = str(Path(dll_path).parent) if dll_path else None
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        result_path = Path(tmpdir) / "ping_result.json"
+        cmd = [
+            str(bridge), "--mode", "ping",
+            "--host", _RSTD_HOST, "--port", str(_RSTD_PORT),
+            "--result", str(result_path),
+        ]
+        if dll_dir:
+            cmd.extend(["--dll-dir", dll_dir])
+        if verbose:
+            cmd.append("--verbose")
+
+        try:
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=timeout,
+                cwd=dll_dir if dll_dir else None,
+            )
+            if verbose and proc.stderr:
+                for line in proc.stderr.strip().splitlines():
+                    console.print(f"[dim]  {line}[/dim]")
+
+            if result_path.exists():
+                data = json.loads(result_path.read_text())
+                console.print(f"  Init return:    {data.get('init_return')}")
+                console.print(f"  Connect return: {data.get('connect_return')}")
+                console.print(f"  IsConnected:    {data.get('is_connected')}")
+                console.print(f"  GetLastError:   {data.get('last_error')}")
+                console.print(f"  Elapsed:        {data.get('elapsed_ms')}ms")
+                exc = data.get("exception")
+                if exc is not None:
+                    console.print(f"  [red]Exception: {exc}[/red]")
+                elif data.get("is_connected"):
+                    console.print("[green]PING SUCCESS[/green]")
+                else:
+                    console.print("[yellow]Connected but IsConnected=false[/yellow]")
+            else:
+                console.print("[red]Bridge did not write result file[/red]")
+                if proc.stdout:
+                    console.print(proc.stdout)
+                raise typer.Exit(1)
+
+        except subprocess.TimeoutExpired:
+            console.print(f"[red]Bridge timed out after {timeout}s[/red]")
+            raise typer.Exit(1)
+
+
+@mmws_bridge_app.command("introspect")
+def mmws_bridge_introspect(
+    verbose: bool = typer.Option(False, "--verbose", help="Print verbose output"),
+    timeout: float = typer.Option(10.0, "--timeout", help="Seconds to wait"),
+) -> None:
+    """List public methods on RtttNetClient via the C# bridge."""
+    import json
+    import subprocess
+    import tempfile
+    from awr2944_dca.mmws.executor import _find_csharp_bridge, _find_rtttnet_dll
+
+    bridge = _find_csharp_bridge()
+    if bridge is None:
+        console.print("[red]MmwsRstdBridge.exe not found. Run: awr mmws csharp-bridge build[/red]")
+        raise typer.Exit(1)
+
+    # Find DLL directory for AssemblyResolve
+    dll_path = _find_rtttnet_dll()
+    dll_dir = str(Path(dll_path).parent) if dll_path else None
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        result_path = Path(tmpdir) / "introspect_result.json"
+        cmd = [
+            str(bridge), "--mode", "introspect",
+            "--result", str(result_path),
+        ]
+        if dll_dir:
+            cmd.extend(["--dll-dir", dll_dir])
+        if verbose:
+            cmd.append("--verbose")
+
+        try:
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=timeout,
+                cwd=dll_dir if dll_dir else None,
+            )
+            if verbose and proc.stderr:
+                for line in proc.stderr.strip().splitlines():
+                    console.print(f"[dim]  {line}[/dim]")
+
+            if result_path.exists():
+                data = json.loads(result_path.read_text())
+                methods = data.get("methods")
+                if methods:
+                    methods_list = json.loads(methods) if isinstance(methods, str) else methods
+                    console.print(f"[green]RtttNetClient public static methods ({len(methods_list)}):[/green]")
+                    for m in methods_list:
+                        console.print(f"  {m.get('signature', m)}")
+                exc = data.get("exception")
+                if exc:
+                    console.print(f"[red]Exception: {exc}[/red]")
+            else:
+                console.print("[red]No result file[/red]")
+                raise typer.Exit(1)
+
+        except subprocess.TimeoutExpired:
+            console.print(f"[red]Introspection timed out after {timeout}s[/red]")
+            raise typer.Exit(1)
 

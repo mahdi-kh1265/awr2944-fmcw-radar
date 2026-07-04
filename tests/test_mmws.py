@@ -9,7 +9,7 @@ from awr2944_dca.mmws.stages import (
     STAGES, ALL_KNOWN_CALLS, STATIC_CONFIG_FIELD_MAP,
 )
 from awr2944_dca.mmws.lua_builder import (
-    build_connection_script, validate_script_safety, write_connection_script,
+    build_connection_diag_script, validate_script_safety, write_connection_diag_script,
 )
 from awr2944_dca.mmws.bridge import ManualOneShotBridge, StageStatus
 from awr2944_dca.mmws.models import ConnectionTabConfig, StaticConfig
@@ -55,7 +55,7 @@ def test_forbidden_calls_excludes_own_stage():
 
 
 def test_connection_script_contains_allowed_calls():
-    script = build_connection_script("test-run-id", 6, 921600, 1000)
+    script = build_connection_diag_script("test-run-id", 6, 921600, 1000)
     assert "ar1.SOPControl(2)" in script
     assert "ar1.Connect(6, 921600, 1000)" in script
     assert "ar1.IsConnected()" in script
@@ -63,7 +63,7 @@ def test_connection_script_contains_allowed_calls():
 
 def test_connection_script_forbidden_calls_absent():
     """Static safety test: generated Lua must not contain any forbidden ar1 calls."""
-    script = build_connection_script("test-run-id", 8, 921600, 1000)
+    script = build_connection_diag_script("test-run-id", 8, 921600, 1000)
     forbidden = [
         "DownloadBSSFw", "DownloadMSSFw", "PowerOn", "RfEnable", "RfInit",
         "ChanNAdcConfig", "LPModConfig", "DataPathConfig", "LvdsClkConfig",
@@ -76,7 +76,7 @@ def test_connection_script_forbidden_calls_absent():
 
 
 def test_validate_script_safety_clean():
-    script = build_connection_script("test", 6, 921600, 1000)
+    script = build_connection_diag_script("test", 6, 921600, 1000)
     violations = validate_script_safety(script, StageName.CONNECTION_ONLY)
     assert violations == []
 
@@ -88,9 +88,9 @@ def test_validate_script_safety_catches_violation():
     assert any("PowerOn" in v for v in violations)
 
 
-def test_write_connection_script_creates_file(tmp_path):
+def test_write_connection_diag_script_creates_file(tmp_path):
     out = tmp_path / "connection_only.lua"
-    write_connection_script(out, "run-123", 6, 921600, 1000)
+    write_connection_diag_script(out, "run-123", 6, 921600, 1000)
     assert out.exists()
     content = out.read_text()
     assert "ar1.Connect(6, 921600, 1000)" in content

@@ -159,3 +159,6 @@ data/
 *.h5
 *.hdf5
 *.mat
+
+# C# RSTD bridge build artifacts
+tools/MmwsRstdBridge/MmwsRstdBridge.exe

@@ -39,22 +39,22 @@ def scan_ports() -> list[PortInfo]:
         reason = "No matches"
         
         # Heuristics
-        if "application/user" in name_lower or "user uart" in name_lower:
-            role = "awr-rs232"
+        if "dca1000" in name_lower or "dca" in name_lower or (hwid and "VID:PID=0403:6010" in hwid):
+            role = "dca_ftdi_candidate"
+            conf = "high"
+            reason = "Matches DCA1000 FTDI signature. Do not use for AWR RS232."
+        elif "ar-devpack" in name_lower or "ftdi" in name_lower or "ftdi" in mfg_lower:
+            role = "awr_ftdi_control_candidate"
+            conf = "medium"
+            reason = "Matches AWR2944 J10 FTDI (radar UART/SPI/I2C/RS232/SOP)."
+        elif "application/user" in name_lower or "user uart" in name_lower:
+            role = "awr_rs232_candidate"
             conf = "high"
             reason = "Matches standard TI mmWave Application/User UART signature."
         elif "xds110" in name_lower:
-            role = "ti-debug-uart"
-            conf = "medium"
-            reason = "Matches XDS110 debugger, might be Application or Data port."
-        elif "ftdi" in name_lower or "ftdi" in mfg_lower:
-            role = "possible_ftdi"
-            conf = "low"
-            reason = "FTDI chip found, could be DCA1000 or DevPack."
-        elif any(x in name_lower for x in ["dca", "devpack", "capture", "dca1000", "ar-devpack"]):
-            role = "capture_control"
-            conf = "medium"
-            reason = "Name indicates capture or DevPack control port."
+            role = "awr_xds_uart_candidate"
+            conf = "high"
+            reason = "Matches AWR2944 J8 XDS (JTAG/MSS UART). Not typically used for mmWave Studio RS232 on this board."
             
         results.append(PortInfo(
             com=p.device,

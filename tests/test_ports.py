@@ -28,21 +28,21 @@ def test_ports_heuristics(monkeypatch):
     assert len(ports) == 5
     
     assert ports[0].com == "COM3"
-    assert ports[0].likely_role == "awr-rs232"
+    assert ports[0].likely_role == "awr_rs232_candidate"
     assert ports[0].confidence == "high"
     
     assert ports[1].com == "COM4"
-    assert ports[1].likely_role == "ti-debug-uart"
-    assert ports[1].confidence == "medium"
+    assert ports[1].likely_role == "awr_xds_uart_candidate"
+    assert ports[1].confidence == "high"
     
     assert ports[2].com == "COM5"
-    assert ports[2].likely_role == "possible_ftdi"
+    assert ports[2].likely_role == "awr_ftdi_control_candidate"
     
     assert ports[3].com == "COM6"
     assert ports[3].likely_role == "unknown"
     
     assert ports[4].com == "COM7"
-    assert ports[4].likely_role == "capture_control"
+    assert ports[4].likely_role == "awr_ftdi_control_candidate"
 
 def test_ports_resolve(monkeypatch):
     import awr2944_dca.hardware.ports
@@ -57,7 +57,7 @@ def test_ports_resolve(monkeypatch):
     ]
     monkeypatch.setattr(awr2944_dca.hardware.ports, "serial", mock_serial, raising=False)
     
-    candidates = resolve_port("awr-rs232")
+    candidates = resolve_port("awr_rs232_candidate")
     assert candidates[0].com == "COM3"  # Ranks higher because confidence is high
 
 def test_save_local_hardware(tmp_path):

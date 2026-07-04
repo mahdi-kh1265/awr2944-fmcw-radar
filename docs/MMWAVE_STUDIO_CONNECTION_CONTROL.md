@@ -2,77 +2,82 @@
 
 ## Overview
 
-This document describes the full workflow for establishing an RS232 connection
-to the AWR2944EVM through mmWave Studio's Lua Shell.
+This document describes the workflow for establishing an RS232 connection
+to the AWR2944EVM through mmWave Studio.
 
-## Workflow
+**Normal workflow:** Python generates and automatically executes Lua scripts
+in mmWave Studio. Manual dofile paste is debug-only.
 
-### 1. Discover COM Ports
+## Quick Start
+
+### 1. Install automation dependencies
+
+```bash
+python -m pip install -e ".[automation]"
+```
+
+### 2. Verify mmWave Studio is reachable
+
+```bash
+awr mmws studio status
+awr mmws inspect-execution
+```
+
+These commands do NOT require an experiment context.
+
+### 3. Run smoke test
+
+```bash
+awr mmws smoke --execute
+```
+
+Proves Python → mmWave Studio → Lua → JSON → Python works. No hardware calls.
+
+### 4. Discover and save COM port
 
 ```bash
 awr ports scan
-```
-
-COM numbers vary between PCs. The scanner classifies ports by role:
-- `awr-rs232`: The Application/User UART port (high confidence)
-- `ti-debug-uart`: XDS110 debug ports
-- `possible_ftdi`: FTDI-based ports (could be DCA1000 or DevPack)
-- `capture_control`: DCA1000 or DevPack control ports
-
-### 2. Resolve the RS232 Port
-
-```bash
 awr ports resolve --role awr-rs232
-```
-
-This ranks candidates by confidence. It does not silently save — you must
-explicitly confirm your choice.
-
-### 3. Save Your Choice
-
-```bash
 awr ports save --role awr-rs232 --com COM6
 ```
 
-This writes `local_hardware.yaml` in your experiment root. The file is
-machine-specific and gitignored.
-
-### 4. Review the Connection Plan
+### 5. Connect
 
 ```bash
-awr mmws connection plan
+awr mmws connection script --com COM6 --execute
 ```
 
-Shows the ar1 calls that will be generated (SOPControl, Connect, IsConnected).
+With `--execute`:
+1. Generates connection Lua script
+2. Auto-executes in mmWave Studio via RSTD .NET Remoting
+3. Waits for `connection_result.json`
+4. Prints connection status
 
-### 5. Generate the Connection Script
-
-```bash
-awr mmws connection script
-```
-
-Or with explicit COM:
-```bash
-awr mmws connection script --com COM6 --baud 921600
-```
-
-This generates `ti/probe_logs/connection_only.lua` and a manifest JSON.
-
-### 6. Execute in mmWave Studio
-
-```bash
-awr ti lua-command ti/probe_logs/connection_only.lua --copy
-```
-
-Paste the `dofile([[...]])` command into the mmWave Studio Lua Shell.
-
-### 7. Check Status
+### 6. Check status (if needed)
 
 ```bash
 awr mmws connection status
 ```
 
-Reports: `NOT RUN`, `STALE RESULT`, `SUCCESS`, or `ERROR`.
+## Execution Modes
+
+| Flag | Behavior |
+|------|----------|
+| `--execute` | Auto-run via RSTD or pywinauto. **ERRORS** if no transport available. |
+| `--manual` | Print dofile command only (debug fallback). |
+| (neither) | Generate script, print instructions. |
+
+**`--execute` never silently falls back to manual.** If no automatic transport
+works, it returns ERROR with install/help instructions.
+
+## Studio Management (no experiment needed)
+
+```bash
+awr mmws studio launch     # Start mmWave Studio
+awr mmws studio attach     # Check if Python can reach Studio
+awr mmws studio status     # Process + RSTD port status table
+awr mmws inspect-execution # Discover available transports
+```
 
 ## COM Port Normalization
 
@@ -90,3 +95,7 @@ The generated script contains **only**:
 
 It does **not** contain firmware loading, PowerOn, RF init, static config,
 DCA setup, capture trigger, or post-processing calls.
+
+The executor is **transport only** — it does not bypass stage whitelists.
+RSTD `SendCommand` return code only means the command was submitted.
+The result JSON is the source of truth for stage success.

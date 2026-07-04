@@ -1,0 +1,11 @@
+[bridge] mode=send-command
+[bridge] host=127.0.0.1 port=2777
+[bridge] script=C:\Users\khams008\Documents\awr2944-fmcw-radar\ti\probe_logs\bridge_send_test.lua
+[bridge] result=C:\Users\khams008\Documents\awr2944-fmcw-radar\ti\probe_logs\bridge_sc_result.json
+[bridge] dll-dir=C:\ti\mmwave_studio_03_01_04_04\mmWaveStudio\Clients\RtttNetClientController
+[bridge] Init()...
+[bridge] Init() = 0 (0ms)
+[bridge] Connect(127.0.0.1, 2777)...
+[bridge] Connect() = 0 (9ms)
+[bridge] IsConnected() = True (0ms)
+[bridge] SendCommand: dofile([[C:/Users/khams008/Documents/awr2944-fmcw-radar/ti/probe_logs/bridge_send_test.lua]])
