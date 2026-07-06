@@ -1,7 +1,7 @@
-local run_id = "65f0dda2"
+local run_id = "ecc03ca3"
 local out_path = [[C:/Users/khams008/Documents/awr2944-fmcw-radar/exp_lau_probe/ti/probe_logs/connection_connect_gui_result.json]]
 local jsonl_path = [[C:/Users/khams008/Documents/awr2944-fmcw-radar/exp_lau_probe/ti/probe_logs/connection_connect_gui_progress.jsonl]]
-local sequence = "select-set-connect"
+local sequence = "gui-set1-fullreset-connect"
 
 local function esc(s)
     if s == nil then return "null" end
@@ -122,20 +122,41 @@ RSTD.LoadExpose(registers_xml)
     progress("after_ShowGui", tostring(sg_ok) .. " " .. tostring(sg_err))
     if not sg_ok then status = "SHOWGUI_FAILED"; error("SHOWGUI_FAILED") end
 
+    progress("before_selectRadarMode", "0")
+    local sr_ok, sr_ret = pcall(function() return ar1.selectRadarMode(0) end)
+    progress("after_selectRadarMode", tostring(sr_ret))
+
+    progress("before_selectCascadeMode", "0")
+    local sc_ok, sc_ret = pcall(function() return ar1.selectCascadeMode(0) end)
+    progress("after_selectCascadeMode", tostring(sc_ret))
+
+    progress("before_LoadSettings")
+    local ls_ok, ls_ret = pcall(function() return ar1.LoadSettings([[C:/Users/khams008/AppData/Roaming/RSTD/ar1gui.ini]]) end)
+    progress("after_LoadSettings", tostring(ls_ret))
+
     progress("before_frequencyBandSelection", "77G")
     local fb_ok, fb_ret = pcall(function() return ar1.frequencyBandSelection("77G") end)
     progress("after_frequencyBandSelection", tostring(fb_ret))
     fb_ret_str = esc(fb_ret)
+
+    progress("before_SelectChipVersion", "AR1642")
+    local cv_ok, cv_ret = pcall(function() return ar1.SelectChipVersion("AR1642") end)
+    progress("after_SelectChipVersion", tostring(cv_ret))
+    cv_ret_str = esc(cv_ret)
 
     progress("before_deviceVariantSelection", "XWR2944")
     local dv_ok, dv_ret = pcall(function() return ar1.deviceVariantSelection("XWR2944") end)
     progress("after_deviceVariantSelection", tostring(dv_ret))
     dv_ret_str = esc(dv_ret)
 
-    progress("before_SelectChipVersion", "AWR2944")
-    local cv_ok, cv_ret = pcall(function() return ar1.SelectChipVersion("AWR2944") end)
-    progress("after_SelectChipVersion", tostring(cv_ret))
-    cv_ret_str = esc(cv_ret)
+    progress("before_FullReset")
+    local fr_ok, fr_ret = pcall(function() return ar1.FullReset() end)
+    progress("after_FullReset", tostring(fr_ret))
+    fr_ret_str = esc(fr_ret)
+
+    progress("before_Sleep", "1000 ms")
+    RSTD.Sleep(1000)
+    progress("after_Sleep")
 
     progress("before_SOPControl", "mode=2")
     local sop_ok, sop_ret = pcall(function() return ar1.SOPControl(2) end)
@@ -181,10 +202,11 @@ RSTD.LoadExpose(registers_xml)
     end
 
     if c_ret == 0 then
-        -- Mark success only if selection and SOP steps (if executed) also passed
+        -- Mark success only if selection, reset and SOP steps (if executed) also passed
         if (fb_ret_str == "null" or fb_ret_str == '"0"') and
            (dv_ret_str == "null" or dv_ret_str == '"0"') and
            (cv_ret_str == "null" or cv_ret_str == '"0"') and
+           (fr_ret_str == "null" or fr_ret_str == '"0"') and
            (sop_ret_str == "null" or sop_ret_str == '"0"') then
             status = "CONNECTION_GUI_SUCCESS"
         else
@@ -235,6 +257,7 @@ RSTD.LoadExpose(registers_xml)
         line(f, '  "device_variant_selection_return": ' .. dv_ret_str .. ',')
         line(f, '  "frequency_band_selection_return": ' .. fb_ret_str .. ',')
         line(f, '  "chip_version_selection_return": ' .. cv_ret_str .. ',')
+        line(f, '  "full_reset_return": ' .. fr_ret_str .. ',')
         line(f, '  "gui_version": ' .. esc(gui_ver) .. ',')
         line(f, '  "error": null')
         line(f, "}")

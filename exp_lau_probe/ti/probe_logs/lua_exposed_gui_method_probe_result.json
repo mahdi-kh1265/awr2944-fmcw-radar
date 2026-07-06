@@ -1,0 +1,33 @@
+{
+  "type_ar1": "table",
+  "methods": {
+    "Connect": "userdata",
+    "Connect_Gui": "nil",
+    "Connect_Ext": "nil",
+    "ConnectEx": "nil",
+    "iConnect": "nil",
+    "iConnectSeq": "nil",
+    "iConnect_Invoke": "nil",
+    "iRs232ConnectDisconnect": "nil",
+    "iRs232ConnectDisconnect_internal": "nil",
+    "m_btnRS232Conct_Click": "nil",
+    "m_btnRS232": "nil",
+    "m_btnConnect_Click": "nil",
+    "m_btnSetSop_Click": "nil",
+    "iSopChangeInvoke": "nil",
+    "setCOMport": "nil",
+    "setBaudRate": "nil",
+    "UpdateGuiFrRs232": "nil",
+    "UpdateGuiFrSopCmd": "nil",
+    "iPostConnect": "nil",
+    "ConnectBegin": "nil",
+    "ConnectEnd": "nil",
+    "SetRS232ConnectReadyState": "nil",
+    "GetBoardInfo": "nil",
+    "GetBoardInfoAsLuaTable": "nil",
+    "GetDeviceVariant": "nil",
+    "GetSelectChipVersion": "nil",
+    "GetPortNames": "nil",
+    "SetSOPModeinGui": "nil"
+  }
+}

@@ -1,16 +1,26 @@
 {"step": "script_started"}
-{"step": "sequence", "detail": "select-set-connect"}
+{"step": "sequence", "detail": "gui-set1-fullreset-connect"}
 {"step": "before_startup_lite_v3"}
 {"step": "after_startup_lite_v3", "detail": "true nil"}
 {"step": "check_ar1_type", "detail": "table"}
 {"step": "before_ShowGui"}
 {"step": "after_ShowGui", "detail": "true nil"}
+{"step": "before_selectRadarMode", "detail": "0"}
+{"step": "after_selectRadarMode", "detail": "0"}
+{"step": "before_selectCascadeMode", "detail": "0"}
+{"step": "after_selectCascadeMode", "detail": "-1"}
+{"step": "before_LoadSettings"}
+{"step": "after_LoadSettings", "detail": "...p_lau_probe\\ti\\probe_logs\\connection_connect_gui.lua:134: attempt to call field 'LoadSettings' (a nil value)"}
 {"step": "before_frequencyBandSelection", "detail": "77G"}
 {"step": "after_frequencyBandSelection", "detail": "0"}
+{"step": "before_SelectChipVersion", "detail": "AR1642"}
+{"step": "after_SelectChipVersion", "detail": "0"}
 {"step": "before_deviceVariantSelection", "detail": "XWR2944"}
 {"step": "after_deviceVariantSelection", "detail": "0"}
-{"step": "before_SelectChipVersion", "detail": "AWR2944"}
-{"step": "after_SelectChipVersion", "detail": "0"}
+{"step": "before_FullReset"}
+{"step": "after_FullReset", "detail": "-7"}
+{"step": "before_Sleep", "detail": "1000 ms"}
+{"step": "after_Sleep"}
 {"step": "before_SOPControl", "detail": "mode=2"}
 {"step": "after_SOPControl", "detail": "0"}
 {"step": "before_Sleep", "detail": "3000 ms"}
@@ -19,4 +29,4 @@
 {"step": "after_Connect", "detail": "3"}
 {"step": "connect_returned_3_retry", "detail": "waiting 3000ms then retrying once"}
 {"step": "before_Connect_retry"}
-{"step": "after_Connect_retry", "detail": "1"}
+{"step": "after_Connect_retry", "detail": "3"}

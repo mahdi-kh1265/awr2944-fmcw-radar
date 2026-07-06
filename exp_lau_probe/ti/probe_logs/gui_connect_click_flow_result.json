@@ -1,0 +1,13 @@
+{
+  "status": "DEVICE_STATUS_NOT_VALID",
+  "device_status_text": "FTDI Connectivity Status:",
+  "details": {
+    "raw_text": "FTDI Connectivity Status:",
+    "valid": false,
+    "device": null,
+    "type": null,
+    "sop": null,
+    "es": null
+  },
+  "error": "Device Status does not contain expected AWR2944/GP/SOP:2: 'FTDI Connectivity Status:'"
+}

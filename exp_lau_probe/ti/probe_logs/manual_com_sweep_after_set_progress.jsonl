@@ -1,0 +1,8 @@
+{"step": "before_Connect", "detail": "COM3"}
+{"step": "after_Connect", "detail": "COM3 ret=3"}
+{"step": "before_Connect", "detail": "COM4"}
+{"step": "after_Connect", "detail": "COM4 ret=3"}
+{"step": "before_Connect", "detail": "COM5"}
+{"step": "after_Connect", "detail": "COM5 ret=3"}
+{"step": "before_Connect", "detail": "COM6"}
+{"step": "after_Connect", "detail": "COM6 ret=3"}

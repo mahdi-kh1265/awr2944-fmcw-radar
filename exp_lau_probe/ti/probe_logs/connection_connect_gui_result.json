@@ -1,15 +1,16 @@
 {
-  "run_id": "65f0dda2",
+  "run_id": "ecc03ca3",
   "executed": true,
-  "sequence": "select-set-connect",
-  "status": "CONNECT_RETURNED_ERROR",
+  "sequence": "gui-set1-fullreset-connect",
+  "status": "CONNECT_RETURNED_3",
   "connect_return": "3",
   "connect_return_1": "3",
-  "connect_return_2": "1",
+  "connect_return_2": "3",
   "sop_return": "0",
   "device_variant_selection_return": "0",
   "frequency_band_selection_return": "0",
   "chip_version_selection_return": "0",
+  "full_reset_return": "-7",
   "gui_version": "unknown",
   "error": null
 }

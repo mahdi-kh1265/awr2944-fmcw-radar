@@ -46,8 +46,10 @@ ports_app = typer.Typer(help="Hardware COM port discovery and management")
 app.add_typer(ports_app, name="ports")
 mmws_app = typer.Typer(help="mmWave Studio backend controller")
 app.add_typer(mmws_app, name="mmws")
-mmws_conn_app = typer.Typer(help="Connection-tab control")
+mmws_conn_app = typer.Typer(help="Connection-tab control (Lua-based, DIAGNOSTIC ONLY)")
 mmws_app.add_typer(mmws_conn_app, name="connection")
+mmws_guiconn_app = typer.Typer(help="GUI-button automation for Connection tab (pywinauto) — OFFICIAL")
+mmws_app.add_typer(mmws_guiconn_app, name="gui-connect")
 mmws_studio_app = typer.Typer(help="mmWave Studio process management")
 mmws_app.add_typer(mmws_studio_app, name="studio")
 mmws_bridge_app = typer.Typer(help="C# RSTD bridge management")
@@ -4557,15 +4559,22 @@ def mmws_connection_connect_gui(
     force: bool = typer.Option(False, "--force", help="Kill existing mmWaveStudio instances first"),
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
-    """Official connection backend: startup-lite-v3 + ShowGui + Connect.
+    """[DIAGNOSTIC ONLY] Lua ar1.Connect connection backend.
 
-    Uses the verified /lua transport with startup-lite-v3 environment.
-    ar1.ShowGui() is required -- v3-no-showgui still fails with NullReferenceException.
-    If Connect returns 3, one automatic retry is attempted after a 3s wait.
+    WARNING: Lua ar1.Connect is unreliable for AWR2944 RS232 connection.
+    It can return 0 with invalid device identity or return 3 after valid
+    GUI Set. Use 'awr mmws gui-connect click-flow' instead.
     """
     from .mmws.executor import _execute_lua_launch
     from .mmws.lua_builder import build_lua_launch_connection_sequenced, CONNECT_SEQUENCES
     import uuid, json
+
+    console.print(
+        "[yellow][DIAGNOSTIC ONLY] Lua ar1.Connect is unreliable for AWR2944 "
+        "RS232 connection. It can return 0 with invalid device identity or "
+        "return 3 after valid GUI Set. Use 'awr mmws gui-connect click-flow' "
+        "instead.[/yellow]"
+    )
 
     com_upper = com.upper()
     try:
@@ -4661,11 +4670,11 @@ def mmws_connection_connect_return3_diag(
     force: bool = typer.Option(False, "--force", help="Kill existing mmWaveStudio instances first"),
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
-    """Diagnostic tool for ConnectTarget return code 3.
+    """[DIAGNOSTIC ONLY] Diagnostic tool for ConnectTarget return code 3.
 
-    Runs the same startup-lite-v3 + ShowGui + Connect sequence as connect-gui,
-    but with no retry and detailed diagnostics. Use to test different sequences
-    after a power-cycle or board reset.
+    WARNING: Lua ar1.Connect is unreliable for AWR2944 RS232 connection.
+    It can return 0 with invalid device identity or return 3 after valid
+    GUI Set. Use 'awr mmws gui-connect click-flow' instead.
     """
     from .mmws.executor import _execute_lua_launch
     from .mmws.lua_builder import build_lua_launch_connection_sequenced, CONNECT_SEQUENCES
@@ -4754,11 +4763,11 @@ def mmws_connection_sop_set_only(
     mode: int = typer.Option(2, "--mode", help="SOP mode (e.g. 2)"),
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
-    """Run SOPControl only (NOTE: not proven to be full Set(1) action) inside a /lua script sequence.
+    """[DIAGNOSTIC ONLY] Run SOPControl only (NOT full Set(1)) via /lua.
 
-    This generates a standalone /lua script that runs startup-lite-v3 + ShowGui + SOPControl.
-    It does NOT inject into a running mmWave Studio instance -- external RSTD SendCommand
-    transport has not been proven reliable.
+    WARNING: Lua ar1.Connect is unreliable for AWR2944 RS232 connection.
+    Use 'awr mmws gui-connect click-flow' for the official connection path.
+    SOPControl(2) alone does NOT reproduce the GUI Set(1) button behavior.
     """
     from .mmws.executor import _execute_lua_launch
     from .mmws.lua_builder import build_lua_launch_connection_sop_set_only
@@ -4905,3 +4914,266 @@ def mmws_connection_parse_manual_log(
         console.print("[yellow]No [RadarAPI] ar1. calls found in log.[/yellow]")
     else:
         console.print(f"[bold]Extracted {found} RadarAPI calls.[/bold]")
+
+
+# ---------------------------------------------------------------------------
+# gui-connect commands — pywinauto GUI-button automation (OFFICIAL)
+# ---------------------------------------------------------------------------
+
+_GUI_CONNECT_PRECONDITION = (
+    "[cyan]Expected precondition: mmWave Studio is open as admin, "
+    "Startup.lua completed, and AWR was power-cycled using "
+    "power-before-USB order.[/cyan]"
+)
+
+
+@mmws_guiconn_app.command("inspect")
+def mmws_gui_connect_inspect(
+    pid: int = typer.Option(None, "--pid", help="Attach directly by PID"),
+    title_regex: str = typer.Option(None, "--title-regex", help="Match window title by regex"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Attach to mmWave Studio and dump the Connection tab control tree.
+
+    Does NOT click anything. Identifies candidate controls for:
+    frequency, device, Set(1), COM, baud, RS232 Connect, Device Status.
+    """
+    from .mmws.gui_connect import (
+        attach_mmwave_studio, dump_control_tree, inspect_connection_tab,
+    )
+
+    vlog_lines: list[str] = []
+    def vlog(msg: str):
+        vlog_lines.append(msg)
+        if verbose:
+            console.print(f"  [dim]{msg}[/dim]")
+
+    probe_dir = _lua_launch_probe_dir()
+
+    try:
+        app, window = attach_mmwave_studio(
+            pid=pid, title_regex=title_regex,
+            probe_dir=probe_dir, verbose_log=vlog,
+        )
+    except RuntimeError as e:
+        console.print(f"[red][FAIL] {e}[/red]")
+        raise typer.Exit(1)
+
+    controls_path = probe_dir / "gui_connect_controls.txt"
+
+    count = dump_control_tree(window, controls_path, verbose_log=vlog)
+    console.print(f"[green]Dumped {count} controls to {controls_path}[/green]")
+
+    controls = inspect_connection_tab(window, verbose_log=vlog)
+
+    console.print("\n[bold]Connection Tab Controls:[/bold]")
+    _print_control_status("RadarAPI window", controls.radarapi_window)
+    _print_control_status("77 GHz radio (m_RadioBtn77GHzRadarDev)", controls.frequency_radio)
+    _print_control_status("Set(1) button (m_btnSetSop)", controls.set_button)
+    _print_control_status("Refresh Ports (m_btnRefreshPorts)", controls.refresh_ports_button)
+    _print_control_status("COM port (m_cboComPort)", controls.com_combo)
+    _print_control_status("Baud rate (m_cboBaudRate)", controls.baud_combo)
+    _print_control_status("RS232 Connect (m_btnConnect)", controls.rs232_connect_button)
+    _print_control_status("RS232 status (m_lblRS232UARTConnectivityStatus)", controls.rs232_status_label)
+    _print_control_status("SPI status (m_lblSPIConnectivityStatus)", controls.spi_status_label)
+    _print_control_status("Device Status label", controls.device_status_label)
+    _print_control_status("Output log", controls.output_log)
+    _print_control_status("Output document (m_ConsoleText)", controls.output_document)
+
+    if controls.missing:
+        console.print(f"\n[yellow]Missing/not found: {', '.join(controls.missing)}[/yellow]")
+
+    if controls.all_required_found:
+        console.print("\n[green][OK] All required controls (Set(1), RS232 Connect) found.[/green]")
+    else:
+        console.print("\n[red][FAIL] Required controls missing. Check control tree dump.[/red]")
+        raise typer.Exit(1)
+
+
+def _print_control_status(label: str, ctrl) -> None:
+    """Print a control status line."""
+    if ctrl is not None:
+        try:
+            text = ctrl.window_text()[:60]
+            auto_id = ctrl.automation_id() if hasattr(ctrl, "automation_id") else ""
+            console.print(f"  [green]✓[/green] {label}: text={text!r} auto_id={auto_id!r}")
+        except Exception:
+            console.print(f"  [green]✓[/green] {label}: [dim]present[/dim]")
+    else:
+        console.print(f"  [red]✗[/red] {label}: [red]not found[/red]")
+
+
+@mmws_guiconn_app.command("click-flow")
+def mmws_gui_connect_click_flow(
+    com: str = typer.Option("COM6", "--com", help="COM port (e.g. COM6)"),
+    baud: int = typer.Option(115200, "--baud", help="Baud rate"),
+    pid: int = typer.Option(None, "--pid", help="Attach directly by PID"),
+    title_regex: str = typer.Option(None, "--title-regex", help="Match window title by regex"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Identify controls and print planned actions without clicking"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Execute the full GUI click sequence: Set(1) + RS232 Connect.
+
+    Attaches to an already-open mmWave Studio instance and clicks the actual
+    GUI buttons to reproduce the manual connection flow:
+
+    1. Select 77 GHz frequency band
+    2. Select xWR2944/AWR29xx device variant
+    3. Click Set(1) button
+    4. Wait for SOP
+    5. Set COM port and baud rate
+    6. Click RS232 Connect button
+    7. Verify Device Status shows AWR2944/GP/SOP:2
+
+    Use --dry-run to preview what would be clicked without actually clicking.
+    """
+    from .mmws.gui_connect import (
+        attach_mmwave_studio, click_flow,
+    )
+    import json
+
+    console.print(_GUI_CONNECT_PRECONDITION)
+
+    vlog_lines: list[str] = []
+    def vlog(msg: str):
+        vlog_lines.append(msg)
+        if verbose:
+            console.print(f"  [dim]{msg}[/dim]")
+
+    probe_dir = _lua_launch_probe_dir()
+
+    try:
+        app, window = attach_mmwave_studio(
+            pid=pid, title_regex=title_regex,
+            probe_dir=probe_dir, verbose_log=vlog,
+        )
+    except RuntimeError as e:
+        console.print(f"[red][FAIL] {e}[/red]")
+        raise typer.Exit(1)
+
+    if dry_run:
+        console.print("[yellow]DRY RUN — identifying controls, no clicks.[/yellow]")
+
+    result = click_flow(
+        window,
+        com_port=com,
+        baud=baud,
+        probe_dir=probe_dir,
+        dry_run=dry_run,
+        verbose_log=vlog,
+    )
+
+    # Write result JSON
+    result_path = probe_dir / "gui_connect_click_flow_result.json"
+    result_data = {
+        "status": result.status,
+        "device_status_text": result.device_status_text,
+        "details": result.details,
+        "error": result.error,
+    }
+    result_path.write_text(json.dumps(result_data, indent=2), encoding="utf-8")
+
+    # Print progress log
+    jsonl_path = probe_dir / "gui_connect_click_flow_progress.jsonl"
+    if jsonl_path.exists():
+        console.print("\n[cyan]Progress Log:[/cyan]")
+        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            console.print(f"  [dim]{line}[/dim]")
+
+    # Print result
+    console.print(f"\n[bold]Status: {result.status}[/bold]")
+    if result.device_status_text:
+        console.print(f"  Device Status: {result.device_status_text}")
+    if result.error:
+        console.print(f"  [red]Error: {result.error}[/red]")
+
+    if result.status == "CONNECTION_GUI_BUTTON_SUCCESS":
+        console.print("[green][OK] Connection established via GUI buttons.[/green]")
+        console.print("[green]Ready for firmware loading stage.[/green]")
+    elif result.status == "DRY_RUN_COMPLETE":
+        console.print("[yellow]Dry run complete. No clicks were performed.[/yellow]")
+        if "planned_actions" in result.details:
+            console.print("\n[bold]Planned actions:[/bold]")
+            for action in result.details["planned_actions"]:
+                console.print(f"  → {action}")
+    elif result.status == "NEED_POWER_CYCLE":
+        console.print(
+            "[yellow]Power-cycle AWR using power-before-USB order, "
+            "restart mmWave Studio, and retry.[/yellow]"
+        )
+    elif result.status == "CONTROL_NOT_FOUND":
+        console.print(
+            "[red]Check ti/probe_logs/gui_connect_controls.txt for the "
+            "full control tree dump.[/red]"
+        )
+
+    if result.status not in ("CONNECTION_GUI_BUTTON_SUCCESS", "DRY_RUN_COMPLETE"):
+        raise typer.Exit(1)
+
+
+@mmws_guiconn_app.command("status")
+def mmws_gui_connect_status(
+    pid: int = typer.Option(None, "--pid", help="Attach directly by PID"),
+    title_regex: str = typer.Option(None, "--title-regex", help="Match window title by regex"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Read Device Status from mmWave Studio and verify valid AWR2944 connection.
+
+    Success requires Device Status containing AWR2944, GP, and SOP:2.
+    Does NOT use Connect_return == 0 as the success criterion.
+    """
+    from .mmws.gui_connect import (
+        attach_mmwave_studio, inspect_connection_tab, read_device_status,
+    )
+    import json
+
+    vlog_lines: list[str] = []
+    def vlog(msg: str):
+        vlog_lines.append(msg)
+        if verbose:
+            console.print(f"  [dim]{msg}[/dim]")
+
+    probe_dir = _lua_launch_probe_dir()
+
+    try:
+        app, window = attach_mmwave_studio(
+            pid=pid, title_regex=title_regex,
+            probe_dir=probe_dir, verbose_log=vlog,
+        )
+    except RuntimeError as e:
+        console.print(f"[red][FAIL] {e}[/red]")
+        raise typer.Exit(1)
+
+    controls = inspect_connection_tab(window, verbose_log=vlog)
+    status = read_device_status(window, controls, verbose_log=vlog)
+
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / "gui_connect_status_result.json"
+    result_path.write_text(json.dumps(status, indent=2), encoding="utf-8")
+
+    console.print(f"\n[bold]Device Status:[/bold]")
+    console.print(f"  Raw text: {status['raw_text']!r}")
+    console.print(f"  Device:   {status['device']}")
+    console.print(f"  Type:     {status['type']}")
+    console.print(f"  SOP:      {status['sop']}")
+    console.print(f"  ES:       {status['es']}")
+
+    if status["valid"]:
+        console.print(
+            "\n[green][OK] Valid AWR2944/GP/SOP:2 connection confirmed.[/green]"
+        )
+        console.print("[green]Ready for firmware loading stage.[/green]")
+    else:
+        console.print(
+            "\n[red][FAIL] Device Status does not show valid "
+            "AWR2944/GP/SOP:2.[/red]"
+        )
+        if not status["raw_text"]:
+            console.print(
+                "[yellow]Device Status label may not have been found. "
+                "Run 'awr mmws gui-connect inspect' to check the control tree.[/yellow]"
+            )
+        raise typer.Exit(1)
+
