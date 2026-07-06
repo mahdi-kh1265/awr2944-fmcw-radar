@@ -57,9 +57,136 @@ mmws_app.add_typer(mmws_bridge_app, name="csharp-bridge")
 mmws_matlab_bridge_app = typer.Typer(help="MATLAB-to-Studio bridge diagnostics")
 mmws_app.add_typer(mmws_matlab_bridge_app, name="matlab-bridge")
 
+mmws_win32_conn_app = typer.Typer(help="Win32 API backend for Connection tab (pywin32)")
+mmws_app.add_typer(mmws_win32_conn_app, name="win32-connect")
+
+mmws_internals_app = typer.Typer(help="Internal reflection and diagnostics (Lua/.NET)")
+mmws_app.add_typer(mmws_internals_app, name="internals")
 
 manual_app = typer.Typer(help="Manual Lua scripts for the mmWave Studio Lua Shell")
 mmws_app.add_typer(manual_app, name="manual")
+
+@mmws_internals_app.command("lua-dotnet-probe")
+def mmws_internals_lua_dotnet_probe(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Generate a Lua script to test luanet reflection in mmWave Studio."""
+    from .mmws.internals import build_lua_dotnet_probe_script
+    import uuid
+
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    script_path = probe_dir / f"lua_dotnet_probe_{run_id}.lua"
+    result_path = probe_dir / f"lua_dotnet_probe_result_{run_id}.json"
+
+    script = build_lua_dotnet_probe_script(run_id, str(result_path.resolve()))
+    script_path.write_text(script, encoding="utf-8")
+
+    console.print(f"[cyan]Generated lua-dotnet-probe script:[/cyan] {script_path}")
+    console.print(f"Paste this command into the mmWave Studio Lua Shell:")
+    console.print(f"[green]dofile([[{script_path.resolve()}]])[/green]")
+    console.print(f"\nResult will be written to: {result_path}")
+    console.print(f"\nAfter running, check ti/probe_logs/lua_dotnet_probe_result_*.json to see if luanet exists.")
+    
+    if verbose:
+        console.print("\n[dim]Preview of generated script (first 15 lines):[/dim]")
+        preview = "\n".join(script.splitlines()[:15])
+        console.print(f"[dim]{preview}[/dim]")
+
+@mmws_internals_app.command("lua-dotnet-connect-probe")
+def mmws_internals_lua_dotnet_connect_probe(
+    com: str = typer.Option("COM6", "--com", help="COM port"),
+    baud: int = typer.Option(115200, "--baud", help="Baud rate"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Generate a Lua script that connects via WinForms controls using luanet."""
+    from .mmws.internals import build_lua_dotnet_connect_script
+    import uuid
+
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    script_path = probe_dir / f"lua_dotnet_connect_{run_id}.lua"
+    result_path = probe_dir / f"lua_dotnet_connect_result_{run_id}.json"
+
+    script = build_lua_dotnet_connect_script(run_id, str(result_path.resolve()), com, baud)
+    script_path.write_text(script, encoding="utf-8")
+
+    console.print(f"[cyan]Generated lua-dotnet-connect script:[/cyan] {script_path}")
+    console.print(f"Paste this command into the mmWave Studio Lua Shell:")
+    console.print(f"[green]dofile([[{script_path.resolve()}]])[/green]")
+    console.print(f"\nResult will be written to: {result_path}")
+
+    if verbose:
+        console.print("\n[dim]Preview of generated script (first 15 lines):[/dim]")
+        preview = "\n".join(script.splitlines()[:15])
+        console.print(f"[dim]{preview}[/dim]")
+
+
+@mmws_win32_conn_app.command("inspect")
+def mmws_win32_conn_inspect(
+    pid: int = typer.Option(None, "--pid", help="Attach directly by PID"),
+    title_regex: str = typer.Option(None, "--title-regex", help="Match window title by regex"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Dump the Win32 HWND tree of mmWave Studio."""
+    from .mmws.win32_connect import inspect_win32
+    vlog_lines: list[str] = []
+    def vlog(msg: str):
+        vlog_lines.append(msg)
+        if verbose:
+            console.print(f"  [dim]{msg}[/dim]")
+            
+    probe_dir = _lua_launch_probe_dir()
+    
+    try:
+        inspect_win32(pid=pid, title_regex=title_regex, probe_dir=probe_dir, verbose_log=vlog)
+    except RuntimeError as e:
+        console.print(f"[red][FAIL] {e}[/red]")
+        raise typer.Exit(1)
+        
+    console.print(f"[green]Win32 inspection complete. Tree dumped to: {probe_dir / 'win32_inspect_tree.txt'}[/green]")
+
+
+@mmws_win32_conn_app.command("click-flow")
+def mmws_win32_conn_click_flow(
+    com: str = typer.Option("COM6", "--com", help="COM port (e.g. COM6)"),
+    baud: int = typer.Option(115200, "--baud", help="Baud rate"),
+    pid: int = typer.Option(None, "--pid", help="Attach directly by PID"),
+    title_regex: str = typer.Option(None, "--title-regex", help="Match window title by regex"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Execute the Connection tab flow using Win32 API messages."""
+    from .mmws.win32_connect import click_flow_win32
+    
+    vlog_lines: list[str] = []
+    def vlog(msg: str):
+        vlog_lines.append(msg)
+        if verbose:
+            console.print(f"  [dim]{msg}[/dim]")
+            
+    probe_dir = _lua_launch_probe_dir()
+    
+    try:
+        result = click_flow_win32(
+            pid=pid, title_regex=title_regex,
+            com_port=com, baud=baud,
+            probe_dir=probe_dir, verbose_log=vlog
+        )
+    except RuntimeError as e:
+        console.print(f"[red][FAIL] {e}[/red]")
+        raise typer.Exit(1)
+        
+    console.print(f"\n[bold]Status: {result.status}[/bold]")
+    if result.device_status_text:
+        console.print(f"  Device Status: {result.device_status_text}")
+    if result.error:
+        console.print(f"  [red]Error: {result.error}[/red]")
+        
+    if result.status == "CONNECTION_WIN32_SUCCESS":
+        console.print("\n[green][OK] Valid AWR2944/GP/SOP:2 connection confirmed via Win32 messages.[/green]")
+    else:
+        console.print("\n[red][FAIL] Win32 connection state not valid.[/red]")
+        raise typer.Exit(1)
 
 @manual_app.command("connect-script")
 def mmws_manual_connect_script(
@@ -5025,6 +5152,8 @@ def mmws_gui_connect_click_flow(
     title_regex: str = typer.Option(None, "--title-regex", help="Match window title by regex"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Identify controls and print planned actions without clicking"),
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+    slow: bool = typer.Option(False, "--slow", help="Wait longer after clicks for slow GUI"),
+    allow_keyboard_fallback: bool = typer.Option(False, "--allow-keyboard-fallback", help="Allow typing COM/Baud blindly if selection fails"),
 ) -> None:
     """Execute the full GUI click sequence: Set(1) + RS232 Connect.
 
@@ -5075,6 +5204,8 @@ def mmws_gui_connect_click_flow(
         probe_dir=probe_dir,
         dry_run=dry_run,
         verbose_log=vlog,
+        slow=slow,
+        allow_keyboard_fallback=allow_keyboard_fallback,
     )
 
     # Write result JSON
@@ -5189,5 +5320,54 @@ def mmws_gui_connect_status(
                 "[yellow]Device Status label may not have been found. "
                 "Run 'awr mmws gui-connect inspect' to check the control tree.[/yellow]"
             )
+        raise typer.Exit(1)
+
+
+@mmws_guiconn_app.command("manual-check")
+def mmws_gui_connect_manual_check(
+    pid: int = typer.Option(None, "--pid", help="Attach directly by PID"),
+    title_regex: str = typer.Option(None, "--title-regex", help="Match window title by regex"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Verify mmWave Studio Device Status after manual Connection tab usage.
+    
+    This reads the Output document and RS232 status label to verify a
+    valid AWR2944 connection (AWR2944/GP/SOP:2) established by human clicking.
+    """
+    from .mmws.gui_connect import (
+        attach_mmwave_studio, manual_check
+    )
+
+    vlog_lines: list[str] = []
+    def vlog(msg: str):
+        vlog_lines.append(msg)
+        if verbose:
+            console.print(f"  [dim]{msg}[/dim]")
+
+    probe_dir = _lua_launch_probe_dir()
+
+    try:
+        app, window = attach_mmwave_studio(
+            pid=pid, title_regex=title_regex,
+            probe_dir=probe_dir, verbose_log=vlog,
+        )
+    except RuntimeError as e:
+        console.print(f"[red][FAIL] {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print("[cyan]Reading mmWave Studio state...[/cyan]")
+    result = manual_check(window, probe_dir=probe_dir, verbose_log=vlog)
+
+    console.print(f"\n[bold]Status: {result.status}[/bold]")
+    if result.device_status_text:
+        console.print(f"  Device Status: {result.device_status_text}")
+    if result.error:
+        console.print(f"  [red]Error: {result.error}[/red]")
+
+    if result.status == "MANUAL_CONNECTION_VALID":
+        console.print("\n[green][OK] Valid AWR2944/GP/SOP:2 connection confirmed.[/green]")
+        console.print("[green]Ready for firmware loading stage.[/green]")
+    else:
+        console.print("\n[red][FAIL] Manual connection state not valid.[/red]")
         raise typer.Exit(1)
 

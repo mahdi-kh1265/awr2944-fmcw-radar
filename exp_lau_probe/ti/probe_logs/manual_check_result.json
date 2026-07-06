@@ -1,0 +1,15 @@
+{
+  "status": "MANUAL_CONNECTION_VALID",
+  "device_status_text": "[13:08:49]  Device Status : AWR2944/GP/ASIL-B/SOP:2/ES:2.0",
+  "details": {
+    "raw_text": "[13:08:49]  Device Status : AWR2944/GP/ASIL-B/SOP:2/ES:2.0",
+    "valid": true,
+    "device": "AWR2944",
+    "type": "GP",
+    "safety": "ASIL-B",
+    "sop": "2",
+    "es": "2.0",
+    "rs232_status": "Connected"
+  },
+  "error": null
+}

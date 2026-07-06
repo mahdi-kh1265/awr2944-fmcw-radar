@@ -1,48 +1,22 @@
-{"step": "click_flow_started", "timestamp": "19:20:30", "monotonic": 376069.171, "detail": "com=COM6 baud=115200 dry_run=False"}
-{"step": "discovering_controls", "timestamp": "19:20:30", "monotonic": 376069.25}
-{"step": "found_frequency_radio", "timestamp": "19:20:49", "monotonic": 376088.546, "detail": "text='77 GHz' auto_id='m_RadioBtn77GHzRadarDev'"}
-{"step": "found_device_variant_group", "timestamp": "19:20:49", "monotonic": 376088.546, "detail": "text='Device Variant' auto_id='m_grpDeviceVariantTypes'"}
-{"step": "found_device_variant_radio", "timestamp": "19:20:49", "monotonic": 376088.546, "detail": "text='xWR294x' auto_id='m_RadioBtnxWR294x'"}
-{"step": "found_set_button", "timestamp": "19:20:49", "monotonic": 376088.546, "detail": "text='Set (1)' auto_id='m_btnSetSop'"}
-{"step": "found_refresh_ports_button", "timestamp": "19:20:49", "monotonic": 376088.546, "detail": "text='' auto_id='m_btnRefreshPorts'"}
-{"step": "found_com_combo", "timestamp": "19:20:49", "monotonic": 376088.546, "detail": "text='Baud Rate' auto_id='m_cboComPort'"}
-{"step": "found_baud_combo", "timestamp": "19:20:49", "monotonic": 376088.546, "detail": "text='115200' auto_id='m_cboBaudRate'"}
-{"step": "found_rs232_connect_button", "timestamp": "19:20:49", "monotonic": 376088.546, "detail": "text='Connect (2)' auto_id='m_btnConnect'"}
-{"step": "found_rs232_status_label", "timestamp": "19:20:49", "monotonic": 376088.546, "detail": "text='Disconnected' auto_id='m_lblRS232UARTConnectivityStatus'"}
-{"step": "found_spi_status_label", "timestamp": "19:20:49", "monotonic": 376088.546, "detail": "text='Disconnected' auto_id='m_lblSPIConnectivityStatus'"}
-{"step": "missing_device_status_label", "timestamp": "19:20:49", "monotonic": 376088.546}
-{"step": "found_output_document", "timestamp": "19:20:49", "monotonic": 376088.546, "detail": "text='GM: Constructor\\rGM: Sun Jul 05 19:17:25 2026\\rRSTD.Transmit(\"/Settings\")\\r[19:17:2' auto_id='m_ConsoleText'"}
-{"step": "found_radarapi_window", "timestamp": "19:20:49", "monotonic": 376088.546, "detail": "text='RadarAPI' auto_id='frmAR1Main'"}
-{"step": "before_click_77ghz_radio", "timestamp": "19:20:49", "monotonic": 376088.546}
-{"step": "after_click_77ghz_radio", "timestamp": "19:20:49", "monotonic": 376088.671, "detail": "clicked"}
-{"step": "before_click_device_variant", "timestamp": "19:20:50", "monotonic": 376089.171}
-{"step": "after_click_device_variant", "timestamp": "19:20:50", "monotonic": 376089.281, "detail": "clicked auto_id='m_RadioBtnxWR294x' text='xWR294x'"}
-{"step": "before_click_set1", "timestamp": "19:20:50", "monotonic": 376089.781}
-{"step": "after_click_set1", "timestamp": "19:20:50", "monotonic": 376089.89, "detail": "clicked"}
-{"step": "waiting_after_set1", "timestamp": "19:20:50", "monotonic": 376089.89, "detail": "5000 ms"}
-{"step": "before_click_refresh_ports", "timestamp": "19:20:56", "monotonic": 376094.968}
-{"step": "after_click_refresh_ports", "timestamp": "19:20:56", "monotonic": 376095.062, "detail": "clicked"}
-{"step": "before_set_com", "timestamp": "19:20:57", "monotonic": 376096.062, "detail": "COM6"}
-{"step": "KEYBOARD_FALLBACK", "timestamp": "19:20:57", "monotonic": 376096.453, "detail": "typing 'COM6'"}
-{"step": "after_set_com", "timestamp": "19:20:58", "monotonic": 376096.968, "detail": "done via keyboard_fallback"}
-{"step": "before_set_baud", "timestamp": "19:20:58", "monotonic": 376097.265, "detail": "115200"}
-{"step": "after_set_baud", "timestamp": "19:20:59", "monotonic": 376098.171, "detail": "done via select()"}
-{"step": "before_click_rs232_connect", "timestamp": "19:20:59", "monotonic": 376098.468}
-{"step": "after_click_rs232_connect", "timestamp": "19:20:59", "monotonic": 376098.75, "detail": "clicked"}
-{"step": "polling_device_status", "timestamp": "19:20:59", "monotonic": 376098.75, "detail": "max 15 seconds"}
-{"step": "poll_device_status_1", "timestamp": "19:21:00", "monotonic": 376099.765, "detail": ""}
-{"step": "poll_device_status_2", "timestamp": "19:21:01", "monotonic": 376100.765, "detail": ""}
-{"step": "poll_device_status_3", "timestamp": "19:21:02", "monotonic": 376101.781, "detail": ""}
-{"step": "poll_device_status_4", "timestamp": "19:21:03", "monotonic": 376102.796, "detail": ""}
-{"step": "poll_device_status_5", "timestamp": "19:21:04", "monotonic": 376103.796, "detail": ""}
-{"step": "poll_device_status_6", "timestamp": "19:21:05", "monotonic": 376104.812, "detail": ""}
-{"step": "poll_device_status_7", "timestamp": "19:21:06", "monotonic": 376105.812, "detail": ""}
-{"step": "poll_device_status_8", "timestamp": "19:21:07", "monotonic": 376106.828, "detail": ""}
-{"step": "poll_device_status_9", "timestamp": "19:21:08", "monotonic": 376107.828, "detail": ""}
-{"step": "poll_device_status_10", "timestamp": "19:21:09", "monotonic": 376108.843, "detail": ""}
-{"step": "poll_device_status_11", "timestamp": "19:21:10", "monotonic": 376109.843, "detail": ""}
-{"step": "poll_device_status_12", "timestamp": "19:21:11", "monotonic": 376110.859, "detail": ""}
-{"step": "poll_device_status_13", "timestamp": "19:21:12", "monotonic": 376111.875, "detail": ""}
-{"step": "poll_device_status_14", "timestamp": "19:21:13", "monotonic": 376112.875, "detail": ""}
-{"step": "poll_device_status_15", "timestamp": "19:21:14", "monotonic": 376113.89, "detail": ""}
-{"step": "need_power_cycle", "timestamp": "19:21:14", "monotonic": 376113.953, "detail": ""}
+{"step": "click_flow_started", "timestamp": "10:59:05", "monotonic": 432384.703, "detail": "com=COM6 baud=115200 dry_run=False"}
+{"step": "discovering_controls", "timestamp": "10:59:05", "monotonic": 432384.781}
+{"step": "found_frequency_radio", "timestamp": "10:59:25", "monotonic": 432404.921, "detail": "text='77 GHz' auto_id='m_RadioBtn77GHzRadarDev'"}
+{"step": "found_device_variant_group", "timestamp": "10:59:25", "monotonic": 432404.921, "detail": "text='Device Variant' auto_id='m_grpDeviceVariantTypes'"}
+{"step": "found_device_variant_radio", "timestamp": "10:59:25", "monotonic": 432404.921, "detail": "text='xWR294x' auto_id='m_RadioBtnxWR294x'"}
+{"step": "found_set_button", "timestamp": "10:59:25", "monotonic": 432404.937, "detail": "text='Set (1)' auto_id='m_btnSetSop'"}
+{"step": "found_refresh_ports_button", "timestamp": "10:59:25", "monotonic": 432404.937, "detail": "text='' auto_id='m_btnRefreshPorts'"}
+{"step": "found_com_combo", "timestamp": "10:59:25", "monotonic": 432404.937, "detail": "text='Baud Rate' auto_id='m_cboComPort'"}
+{"step": "found_baud_combo", "timestamp": "10:59:25", "monotonic": 432404.937, "detail": "text='115200' auto_id='m_cboBaudRate'"}
+{"step": "found_rs232_connect_button", "timestamp": "10:59:25", "monotonic": 432404.937, "detail": "text='Connect (2)' auto_id='m_btnConnect'"}
+{"step": "found_rs232_status_label", "timestamp": "10:59:25", "monotonic": 432404.937, "detail": "text='Disconnected' auto_id='m_lblRS232UARTConnectivityStatus'"}
+{"step": "found_spi_status_label", "timestamp": "10:59:25", "monotonic": 432404.937, "detail": "text='Disconnected' auto_id='m_lblSPIConnectivityStatus'"}
+{"step": "missing_device_status_label", "timestamp": "10:59:25", "monotonic": 432404.937}
+{"step": "found_output_document", "timestamp": "10:59:25", "monotonic": 432404.937, "detail": "text='GM: Constructor\\rGM: Mon Jul 06 10:58:36 2026\\rRSTD.Transmit(\"/Settings\")\\r[10:58:3' auto_id='m_ConsoleText'"}
+{"step": "found_radarapi_window", "timestamp": "10:59:25", "monotonic": 432404.937, "detail": "text='RadarAPI' auto_id='frmAR1Main'"}
+{"step": "before_click_77ghz_radio", "timestamp": "10:59:25", "monotonic": 432404.937}
+{"step": "after_click_77ghz_radio", "timestamp": "10:59:25", "monotonic": 432405.062, "detail": "clicked"}
+{"step": "before_click_device_variant", "timestamp": "10:59:26", "monotonic": 432406.14}
+{"step": "after_click_device_variant", "timestamp": "10:59:27", "monotonic": 432406.25, "detail": "clicked auto_id='m_RadioBtnxWR294x' text='xWR294x'"}
+{"step": "before_click_set1", "timestamp": "10:59:28", "monotonic": 432407.375}
+{"step": "after_click_set1", "timestamp": "10:59:28", "monotonic": 432407.484, "detail": "clicked"}
+{"step": "waiting_after_set1", "timestamp": "10:59:28", "monotonic": 432407.578, "detail": "polling up to 30s for verification"}

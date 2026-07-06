@@ -675,6 +675,7 @@ def read_device_status(
     controls: ConnectionControls | None = None,
     verbose_log: Callable[[str], None] | None = None,
     after_monotonic: float | None = None,
+    output_log_path: Path | None = None,
 ) -> dict[str, Any]:
     """Read the Device Status from Output document text.
 
@@ -695,10 +696,21 @@ def read_device_status(
     raw = ""
 
     # Primary: Output document (m_ConsoleText)
-    if controls.output_document is not None:
+    # Re-find fresh wrapper to avoid stale state
+    output_doc = _find_by_auto_id(window, "m_ConsoleText", vlog)
+    if output_doc is None:
+        output_doc = controls.output_document
+
+    if output_doc is not None:
         vlog("Reading Output document (m_ConsoleText) for Device Status")
         try:
-            doc_text = controls.output_document.window_text()
+            doc_text = output_doc.window_text()
+            if output_log_path is not None:
+                try:
+                    with open(output_log_path, "w", encoding="utf-8", newline="") as f:
+                        f.write(doc_text[-8000:])
+                except Exception:
+                    pass
             # Search from bottom for most recent Device Status line
             for line in reversed(doc_text.splitlines()):
                 if "Device Status" in line and "/" in line:
@@ -737,6 +749,7 @@ def read_device_status(
         "valid": False,
         "device": None,
         "type": None,
+        "safety": None,
         "sop": None,
         "es": None,
         "rs232_status": rs232_status,
@@ -745,21 +758,35 @@ def read_device_status(
     if not raw:
         return result
 
-    # Parse: "AWR2944/GP/ASIL-B/SOP:2/ES:2.0" or "Device Status : AWR2944/..."
-    text = raw
-    if ":" in text and "Device Status" in text:
-        text = text.split(":", 1)[1].strip()
-
-    parts = [p.strip() for p in text.split("/")]
-    for p in parts:
-        if p.startswith("AWR") or p.startswith("XWR"):
-            result["device"] = p
-        elif p in ("GP", "QM"):
-            result["type"] = p
-        elif p.startswith("SOP:"):
-            result["sop"] = p.replace("SOP:", "")
-        elif p.startswith("ES:"):
-            result["es"] = p.replace("ES:", "")
+    import re
+    # Match strings like: "Device Status : AWR2944/GP/ASIL-B/SOP:2/ES:2.0"
+    # Also handles just the string without "Device Status :"
+    pattern = r"(?:Device Status\s*:\s*)?(?P<device>AWR2944|XWR2944)/(?P<type>GP|TEST|QM)/(?P<safety>[^/]+)/SOP:(?P<sop>\d+)/ES:(?P<es>[0-9.]+)"
+    match = re.search(pattern, raw)
+    
+    if match:
+        result["device"] = match.group("device")
+        result["type"] = match.group("type")
+        result["safety"] = match.group("safety")
+        result["sop"] = match.group("sop")
+        result["es"] = match.group("es")
+    else:
+        # Fallback split-based heuristic if regex fails
+        text = raw
+        if ":" in text and "Device Status" in text:
+            text = text.split(":", 1)[1].strip()
+        parts = [p.strip() for p in text.split("/")]
+        for p in parts:
+            if p.startswith("AWR") or p.startswith("XWR"):
+                result["device"] = p
+            elif p in ("GP", "QM", "TEST"):
+                result["type"] = p
+            elif p.startswith("SOP:"):
+                result["sop"] = p.replace("SOP:", "")
+            elif p.startswith("ES:"):
+                result["es"] = p.replace("ES:", "")
+            elif p in ("ASIL-B", "ASIL", "QM"):
+                result["safety"] = p
 
     # Valid = AWR2944 + GP + SOP:2
     result["valid"] = (
@@ -810,6 +837,8 @@ def click_flow(
     probe_dir: Path | None = None,
     dry_run: bool = False,
     verbose_log: Callable[[str], None] | None = None,
+    slow: bool = False,
+    allow_keyboard_fallback: bool = False,
 ) -> ClickFlowResult:
     """Execute the full GUI click sequence for Connection tab.
 
@@ -937,6 +966,8 @@ def click_flow(
 
     # --- LIVE CLICK FLOW ---
 
+    delay_after_click = 1.0 if slow else 0.5
+
     # Step 2: Click 77 GHz radio button
     if controls.frequency_radio is not None:
         progress.log("before_click_77ghz_radio")
@@ -949,7 +980,8 @@ def click_flow(
     else:
         progress.log("skip_77ghz_radio", "control not found")
 
-    time.sleep(0.5)
+    time.sleep(delay_after_click)
+    _take_screenshot(window, probe_dir / "gui_connect_after_77ghz.png", vlog)
 
     # Step 3: Click device variant AWR29xx/XWR2944
     progress.log("before_click_device_variant")
@@ -969,7 +1001,8 @@ def click_flow(
             error=f"Failed to click device variant: {e}",
         )
 
-    time.sleep(0.5)
+    time.sleep(delay_after_click)
+    _take_screenshot(window, probe_dir / "gui_connect_after_device_variant.png", vlog)
 
     # Step 4: Click Set(1)
     progress.log("before_click_set1")
@@ -978,65 +1011,139 @@ def click_flow(
         progress.log("after_click_set1", "clicked")
     except Exception as e:
         progress.log("after_click_set1", f"error: {e}")
-        _take_screenshot(window, probe_dir / "gui_connect_after_set1.png", vlog)
+        _take_screenshot(window, probe_dir / "gui_connect_after_set1_click.png", vlog)
         return ClickFlowResult(
             status="SET1_CLICK_FAILED",
             error=f"Failed to click Set(1): {e}",
         )
 
-    # Step 5: Wait for SOP
-    progress.log("waiting_after_set1", "5000 ms")
-    time.sleep(5.0)
-    _take_screenshot(window, probe_dir / "gui_connect_after_set1.png", vlog)
+    _take_screenshot(window, probe_dir / "gui_connect_after_set1_click.png", vlog)
 
-    # Step 6: Set COM port
+    # Step 5: Wait for SOP / Verification
+    progress.log("waiting_after_set1", "polling up to 30s for verification")
+    set1_verified = False
+    for i in range(30):
+        time.sleep(1.0)
+        # Check COM ports
+        if controls.com_combo is not None:
+            try:
+                items = controls.com_combo.texts()
+                if any(com_port.lower() in t.lower() for t in items):
+                    progress.log("set1_verified", f"COM port {com_port} populated")
+                    set1_verified = True
+                    break
+            except Exception:
+                pass
+        
+        # Check Output Document
+        try:
+            output_doc = _find_by_auto_id(window, "m_ConsoleText", vlog)
+            if output_doc is not None:
+                doc_text = output_doc.window_text()
+                if "SOPControl" in doc_text or "FullReset" in doc_text:
+                    progress.log("set1_verified", "Found SOPControl/FullReset in output")
+                    set1_verified = True
+                    break
+        except Exception:
+            pass
+
+    _take_screenshot(window, probe_dir / "gui_connect_after_set1_wait.png", vlog)
+    try:
+        out_doc = _find_by_auto_id(window, "m_ConsoleText", vlog)
+        if out_doc:
+            (probe_dir / "gui_connect_output_after_set1.txt").write_text(out_doc.window_text()[-4000:], encoding="utf-8")
+    except Exception:
+        pass
+
+    if not set1_verified:
+        progress.log("set1_not_confirmed", "Failed to verify Set(1) action")
+        return ClickFlowResult(
+            status="SET1_NOT_CONFIRMED",
+            error="Set(1) was clicked but neither SOPControl nor COM port population was detected within 30s.",
+        )
+
+    # Step 6: Refresh Ports and wait for COM
     if controls.com_combo is not None:
-        # Click Refresh Ports first if available
         if controls.refresh_ports_button is not None:
             progress.log("before_click_refresh_ports")
             try:
                 controls.refresh_ports_button.click_input()
                 progress.log("after_click_refresh_ports", "clicked")
-                time.sleep(1.0)  # wait for port list to populate
             except Exception as e:
                 progress.log("after_click_refresh_ports", f"error: {e}")
                 vlog(f"Refresh Ports click failed: {e}")
 
+        # Poll for COM port
+        progress.log("polling_com_ports", f"Waiting for {com_port} up to 10s")
+        com_found = False
+        for i in range(10):
+            time.sleep(1.0)
+            try:
+                items = controls.com_combo.texts()
+                if any(com_port.lower() in t.lower() for t in items):
+                    com_found = True
+                    break
+                else:
+                    progress.log(f"poll_com_ports_{i+1}", f"items: {items}")
+            except Exception:
+                pass
+        
+        _take_screenshot(window, probe_dir / "gui_connect_after_refresh_ports.png", vlog)
+        
+        if not com_found:
+            progress.log("com_port_not_available", f"{com_port} not found in dropdown")
+            return ClickFlowResult(
+                status="COM6_NOT_FOUND_IN_COMBO",
+                error=f"{com_port} not found in COM dropdown after refresh.",
+            )
+
         progress.log("before_set_com", com_port)
-        method_used = _select_combo_item_robust(
-            controls.com_combo, com_port, vlog, progress
-        )
-        progress.log("after_set_com", f"done via {method_used}")
+        try:
+            method_used = _select_combo_item_robust(
+                controls.com_combo, com_port, vlog, progress, allow_keyboard_fallback=allow_keyboard_fallback
+            )
+            progress.log("after_set_com", f"done via {method_used}")
+        except RuntimeError as e:
+            progress.log("after_set_com", f"failed: {e}")
+            return ClickFlowResult(status="COM_PORT_NOT_AVAILABLE", error=str(e))
     else:
         progress.log("skip_set_com", f"control not found, assume {com_port} pre-set")
 
-    time.sleep(0.3)
+    time.sleep(delay_after_click)
+    _take_screenshot(window, probe_dir / "gui_connect_after_com_select.png", vlog)
 
     # Step 7: Set baud rate
     if controls.baud_combo is not None:
         progress.log("before_set_baud", str(baud))
-        method_used = _select_combo_item_robust(
-            controls.baud_combo, str(baud), vlog, progress
-        )
-        progress.log("after_set_baud", f"done via {method_used}")
+        try:
+            method_used = _select_combo_item_robust(
+                controls.baud_combo, str(baud), vlog, progress, allow_keyboard_fallback=allow_keyboard_fallback
+            )
+            progress.log("after_set_baud", f"done via {method_used}")
+        except RuntimeError as e:
+            progress.log("after_set_baud", f"failed: {e}")
+            return ClickFlowResult(status="BAUD_RATE_NOT_AVAILABLE", error=str(e))
     else:
         progress.log("skip_set_baud", f"control not found, assume {baud} pre-set")
 
-    time.sleep(0.3)
+    time.sleep(delay_after_click)
+    _take_screenshot(window, probe_dir / "gui_connect_after_baud_select.png", vlog)
 
     # Step 8: Click RS232 Connect
     progress.log("before_click_rs232_connect")
-    connect_click_time = time.monotonic()
     try:
         controls.rs232_connect_button.click_input()
         progress.log("after_click_rs232_connect", "clicked")
     except Exception as e:
         progress.log("after_click_rs232_connect", f"error: {e}")
-        _take_screenshot(window, probe_dir / "gui_connect_after_rs232_connect.png", vlog)
+        _take_screenshot(window, probe_dir / "gui_connect_after_rs232_connect_error.png", vlog)
         return ClickFlowResult(
             status="RS232_CONNECT_CLICK_FAILED",
             error=f"Failed to click RS232 Connect: {e}",
         )
+    
+    time.sleep(delay_after_click)
+    _take_screenshot(window, probe_dir / "gui_connect_after_rs232_connect.png", vlog)
 
     # Step 9: Poll Device Status (up to 15 seconds)
     progress.log("polling_device_status", "max 15 seconds")
@@ -1044,7 +1151,10 @@ def click_flow(
 
     for i in range(15):
         time.sleep(1.0)
-        device_status = read_device_status(window, controls, verbose_log=vlog)
+        device_status = read_device_status(
+            window, controls, verbose_log=vlog, 
+            output_log_path=probe_dir / "gui_connect_output_after_rs232_connect.txt"
+        )
         progress.log(
             f"poll_device_status_{i+1}",
             device_status.get("raw_text", ""),
@@ -1052,7 +1162,7 @@ def click_flow(
         if device_status.get("valid"):
             break
 
-    _take_screenshot(window, probe_dir / "gui_connect_after_rs232_connect.png", vlog)
+    _take_screenshot(window, probe_dir / "gui_connect_after_rs232_poll.png", vlog)
 
     # Evaluate result
     if device_status.get("valid"):
@@ -1158,10 +1268,12 @@ def _select_combo_item_robust(
     value: str,
     verbose_log: Callable[[str], None] | None = None,
     progress: ProgressLogger | None = None,
+    allow_keyboard_fallback: bool = False,
 ) -> str:
     """Robust combo box selection with logged fallback chain.
 
     Returns a string describing which method was used.
+    Raises RuntimeError if all methods fail or keyboard fallback is disabled.
 
     Fallback order:
     1. select(value) — native pywinauto ComboBox method
@@ -1218,6 +1330,10 @@ def _select_combo_item_robust(
         vlog(f"  Direct set_edit_text failed: {e}")
 
     # Method 4: Keyboard fallback (logged loudly)
+    if not allow_keyboard_fallback:
+        vlog(f"  [KEYBOARD_FALLBACK] Denied by allow_keyboard_fallback=False")
+        raise RuntimeError(f"Combo item '{value}' not found in texts and keyboard fallback is disabled.")
+
     vlog(f"  [KEYBOARD_FALLBACK] Typing {value!r} into control via keyboard")
     if progress is not None:
         progress.log("KEYBOARD_FALLBACK", f"typing {value!r}")
@@ -1232,5 +1348,61 @@ def _select_combo_item_robust(
         return "keyboard_fallback"
     except Exception as e:
         vlog(f"  [KEYBOARD_FALLBACK FAILED] {e}")
-        return f"FAILED: {e}"
+        raise RuntimeError(f"Keyboard fallback failed: {e}")
 
+# ---------------------------------------------------------------------------
+# Manual check helper
+# ---------------------------------------------------------------------------
+
+def manual_check(
+    window,
+    probe_dir: Path | None = None,
+    verbose_log: Callable[[str], None] | None = None,
+) -> ClickFlowResult:
+    """Read the Device Status after a manual GUI connection."""
+    vlog = verbose_log or (lambda s: None)
+
+    if probe_dir is None:
+        probe_dir = Path("ti") / "probe_logs"
+    probe_dir.mkdir(parents=True, exist_ok=True)
+
+    progress = ProgressLogger(probe_dir / "manual_check_progress.jsonl")
+    progress.log("manual_check_started")
+
+    controls = inspect_connection_tab(window, verbose_log=vlog)
+    
+    device_status = read_device_status(
+        window, controls, verbose_log=vlog,
+        output_log_path=probe_dir / "manual_check_output_tail.txt"
+    )
+
+    result_path = probe_dir / "manual_check_result.json"
+
+    if device_status.get("valid"):
+        progress.log("manual_connection_valid", device_status.get("raw_text", ""))
+        res = ClickFlowResult(
+            status="MANUAL_CONNECTION_VALID",
+            device_status_text=device_status.get("raw_text", ""),
+            details=device_status,
+        )
+    else:
+        raw_text = device_status.get("raw_text", "")
+        progress.log("manual_connection_not_valid", raw_text)
+        res = ClickFlowResult(
+            status="MANUAL_CONNECTION_NOT_VALID",
+            device_status_text=raw_text,
+            details=device_status,
+            error=f"Expected Device Status containing AWR2944, GP, and SOP:2. Found: {raw_text!r}",
+        )
+    
+    result_data = {
+        "status": res.status,
+        "device_status_text": res.device_status_text,
+        "details": res.details,
+        "error": res.error,
+    }
+    
+    import json
+    result_path.write_text(json.dumps(result_data, indent=2), encoding="utf-8")
+    
+    return res
