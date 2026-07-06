@@ -93,7 +93,9 @@ class ControlInfo:
 class ConnectionControls:
     """References to key Connection tab controls."""
     frequency_radio: Any = None       # m_RadioBtn77GHzRadarDev
-    device_combo: Any = None
+    device_variant_group: Any = None  # m_grpDeviceVariantTypes
+    device_variant_radio: Any = None  # AWR29xx/XWR2944 radio/button inside group
+    device_variant_candidates: list[tuple[str, str]] = field(default_factory=list)  # [(auto_id, text), ...]
     set_button: Any = None            # m_btnSetSop
     com_combo: Any = None             # m_cboComPort
     baud_combo: Any = None            # m_cboBaudRate
@@ -107,18 +109,12 @@ class ConnectionControls:
     radarapi_window: Any = None       # frmAR1Main
     missing: list[str] = field(default_factory=list)
 
-    # Keep legacy alias for click_flow compatibility
-    @property
-    def frequency_combo(self) -> Any:
-        return self.frequency_radio
-
     @property
     def all_required_found(self) -> bool:
         """True if all controls needed for click-flow are present."""
         return (
             self.set_button is not None
             and self.rs232_connect_button is not None
-            # COM/baud may be pre-set, frequency/device may be pre-selected
         )
 
 
@@ -589,9 +585,39 @@ def inspect_connection_tab(
                 if ctrl is not None:
                     setattr(result, attr_name, ctrl)
 
-    # --- Also look for Device Status label (various auto_ids) ---
+    # --- Device Variant group discovery ---
+    vlog("Searching for Device Variant group (m_grpDeviceVariantTypes)")
+    dv_group = _find_by_auto_id(search_root, "m_grpDeviceVariantTypes", vlog)
+    if dv_group is None and search_root is not window:
+        dv_group = _find_by_auto_id(window, "m_grpDeviceVariantTypes", vlog)
+    if dv_group is not None:
+        result.device_variant_group = dv_group
+        vlog("Scanning Device Variant group children for AWR29xx/XWR2944...")
+        _AWR29_PATTERNS = ["awr29", "xwr29", "2944", "29xx"]
+        try:
+            for child in dv_group.descendants():
+                try:
+                    child_auto_id = child.automation_id() if hasattr(child, 'automation_id') else ""
+                    child_text = child.window_text()[:120] if child.window_text() else ""
+                except Exception:
+                    continue
+                combined = (child_auto_id + " " + child_text).lower()
+                result.device_variant_candidates.append((child_auto_id, child_text))
+                vlog(f"  Device Variant child: auto_id={child_auto_id!r} text={child_text!r}")
+                # Match AWR29xx / XWR2944 candidate
+                if result.device_variant_radio is None:
+                    if any(pat in combined for pat in _AWR29_PATTERNS):
+                        result.device_variant_radio = child
+                        vlog(f"  >>> MATCHED device variant: auto_id={child_auto_id!r} text={child_text!r}")
+        except Exception as e:
+            vlog(f"  Error scanning Device Variant group: {e}")
+    else:
+        vlog("  Device Variant group (m_grpDeviceVariantTypes) NOT FOUND")
+
+    # --- Device Status label (exclude m_lblStatus which is just a header) ---
+    # m_lblStatus contains 'FTDI Connectivity Status:' — NOT the device identity.
     for device_status_id in [
-        "m_lblDeviceStatus", "lblDeviceStatus", "m_lblStatus",
+        "m_lblDeviceStatus", "lblDeviceStatus",
         "m_txtDeviceStatus", "DeviceStatus",
     ]:
         if result.device_status_label is not None:
@@ -609,7 +635,9 @@ def inspect_connection_tab(
     if result.rs232_connect_button is None:
         result.missing.append("RS232 Connect button (m_btnConnect)")
     if result.frequency_radio is None:
-        result.missing.append("77 GHz radio button (m_RadioBtn77GHzRadarDev) (optional)")
+        result.missing.append("77 GHz radio button (m_RadioBtn77GHzRadarDev)")
+    if result.device_variant_radio is None:
+        result.missing.append("Device variant AWR29xx/XWR2944 (in m_grpDeviceVariantTypes)")
     if result.com_combo is None:
         result.missing.append("COM port selector (m_cboComPort) (optional)")
     if result.baud_combo is None:
@@ -646,14 +674,18 @@ def read_device_status(
     window,
     controls: ConnectionControls | None = None,
     verbose_log: Callable[[str], None] | None = None,
+    after_monotonic: float | None = None,
 ) -> dict[str, Any]:
-    """Read the Device Status label and parse it.
+    """Read the Device Status from Output document text.
 
-    Falls back to reading the Output document (m_ConsoleText) if the
-    Device Status label is not found.
+    Primary source: Output document (m_ConsoleText) — search for
+    'Device Status : AWR2944/GP/...' lines.
+
+    The GUI label m_lblStatus contains 'FTDI Connectivity Status:' which
+    is NOT the device identity.  Therefore we rely on Output text.
 
     Returns a dict with keys:
-      raw_text, valid, device, type, sop, es
+      raw_text, valid, device, type, sop, es, rs232_status
     """
     vlog = verbose_log or (lambda s: None)
 
@@ -661,18 +693,13 @@ def read_device_status(
         controls = inspect_connection_tab(window, verbose_log=vlog)
 
     raw = ""
-    if controls.device_status_label is not None:
-        try:
-            raw = controls.device_status_label.window_text()
-        except Exception:
-            pass
 
-    # Fallback: scan Output document for Device Status
-    if not raw and controls.output_document is not None:
-        vlog("Trying Output document (m_ConsoleText) as fallback for Device Status")
+    # Primary: Output document (m_ConsoleText)
+    if controls.output_document is not None:
+        vlog("Reading Output document (m_ConsoleText) for Device Status")
         try:
             doc_text = controls.output_document.window_text()
-            # Look for Device Status line
+            # Search from bottom for most recent Device Status line
             for line in reversed(doc_text.splitlines()):
                 if "Device Status" in line and "/" in line:
                     raw = line.strip()
@@ -681,21 +708,29 @@ def read_device_status(
         except Exception as e:
             vlog(f"Output document read failed: {e}")
 
-    if not raw:
-        # Try scanning all controls for status-like text
+    # Fallback: Device Status label (if it actually has device identity)
+    if not raw and controls.device_status_label is not None:
         try:
-            for ctrl in window.descendants():
-                try:
-                    t = ctrl.window_text()
-                    if t and ("AWR" in t or "Device Status" in t) and "/" in t:
-                        raw = t
-                        break
-                except Exception:
-                    continue
+            label_text = controls.device_status_label.window_text()
+            # Only use if it actually looks like a device status, not a header
+            if label_text and ("AWR" in label_text or "XWR" in label_text) and "/" in label_text:
+                raw = label_text
+                vlog(f"Found Device Status via label: {raw!r}")
+            else:
+                vlog(f"Device Status label text is not device identity: {label_text!r}")
+        except Exception:
+            pass
+
+    # Read RS232 status separately
+    rs232_status = ""
+    if controls.rs232_status_label is not None:
+        try:
+            rs232_status = controls.rs232_status_label.window_text()
         except Exception:
             pass
 
     vlog(f"Device Status raw text: {raw!r}")
+    vlog(f"RS232 status: {rs232_status!r}")
 
     result: dict[str, Any] = {
         "raw_text": raw,
@@ -704,6 +739,7 @@ def read_device_status(
         "type": None,
         "sop": None,
         "es": None,
+        "rs232_status": rs232_status,
     }
 
     if not raw:
@@ -812,7 +848,8 @@ def click_flow(
     controls = inspect_connection_tab(window, verbose_log=vlog)
 
     # Report findings
-    for attr in ["frequency_radio", "set_button", "refresh_ports_button",
+    for attr in ["frequency_radio", "device_variant_group", "device_variant_radio",
+                 "set_button", "refresh_ports_button",
                  "com_combo", "baud_combo", "rs232_connect_button",
                  "rs232_status_label", "spi_status_label",
                  "device_status_label", "output_document", "radarapi_window"]:
@@ -844,6 +881,18 @@ def click_flow(
                   "Check ti/probe_logs/gui_connect_controls.txt for the full dump.",
         )
 
+    # --- Check device variant is found (required for AWR2944) ---
+    if controls.device_variant_radio is None:
+        progress.log("CONTROL_NOT_FOUND", "Device variant AWR29xx/XWR2944 not found")
+        if controls.device_variant_candidates:
+            for aid, txt in controls.device_variant_candidates:
+                progress.log("device_variant_candidate", f"auto_id={aid!r} text={txt!r}")
+        return ClickFlowResult(
+            status="CONTROL_NOT_FOUND",
+            error="Device variant AWR29xx/XWR2944 not found in m_grpDeviceVariantTypes. "
+                  "Check ti/probe_logs/gui_connect_controls.txt and progress JSONL for candidates.",
+        )
+
     # --- DRY RUN ---
     if dry_run:
         actions = []
@@ -852,10 +901,13 @@ def click_flow(
         else:
             actions.append("WOULD SKIP 77 GHz selection (control not found)")
 
-        if controls.device_combo is not None:
-            actions.append("WOULD select 'xWR2944' in device combo")
-        else:
-            actions.append("WOULD SKIP device selection (control not found)")
+        try:
+            dv_text = controls.device_variant_radio.window_text()[:80]
+            dv_aid = controls.device_variant_radio.automation_id() if hasattr(controls.device_variant_radio, 'automation_id') else ''
+        except Exception:
+            dv_text = "?"
+            dv_aid = "?"
+        actions.append(f"WOULD click device variant AWR29xx/XWR2944 (auto_id={dv_aid!r} text={dv_text!r})")
 
         actions.append("WOULD click Set(1) button (m_btnSetSop)")
         actions.append("WOULD wait 5 seconds for SOP")
@@ -873,7 +925,7 @@ def click_flow(
             actions.append(f"WOULD SKIP baud rate selection (control not found, assume pre-set)")
 
         actions.append("WOULD click RS232 Connect button (m_btnConnect)")
-        actions.append("WOULD poll Device Status for AWR2944/GP/SOP:2 (up to 15s)")
+        actions.append("WOULD poll Output document for AWR2944/GP/SOP:2 (up to 15s)")
 
         for a in actions:
             progress.log("dry_run_action", a)
@@ -895,21 +947,27 @@ def click_flow(
             progress.log("after_click_77ghz_radio", f"error: {e}")
             vlog(f"77 GHz radio click failed: {e}")
     else:
-        progress.log("skip_77ghz_radio", "control not found, assume pre-set")
+        progress.log("skip_77ghz_radio", "control not found")
 
     time.sleep(0.5)
 
-    # Step 3: Select device variant (if combo found)
-    if controls.device_combo is not None:
-        progress.log("before_select_device", "xWR2944/AWR29xx")
+    # Step 3: Click device variant AWR29xx/XWR2944
+    progress.log("before_click_device_variant")
+    try:
+        dv_text = controls.device_variant_radio.window_text()[:80]
+        dv_aid = ""
         try:
-            _select_combo_item(controls.device_combo, "xWR2944", vlog, partial=True)
-            progress.log("after_select_device", "done")
-        except Exception as e:
-            progress.log("after_select_device", f"error: {e}")
-            vlog(f"Device selection failed: {e}")
-    else:
-        progress.log("skip_select_device", "control not found, assume pre-set")
+            dv_aid = controls.device_variant_radio.automation_id()
+        except Exception:
+            pass
+        controls.device_variant_radio.click_input()
+        progress.log("after_click_device_variant", f"clicked auto_id={dv_aid!r} text={dv_text!r}")
+    except Exception as e:
+        progress.log("after_click_device_variant", f"error: {e}")
+        return ClickFlowResult(
+            status="DEVICE_VARIANT_CLICK_FAILED",
+            error=f"Failed to click device variant: {e}",
+        )
 
     time.sleep(0.5)
 

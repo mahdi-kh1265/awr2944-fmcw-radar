@@ -1,13 +1,14 @@
 {
-  "status": "DEVICE_STATUS_NOT_VALID",
-  "device_status_text": "FTDI Connectivity Status:",
+  "status": "NEED_POWER_CYCLE",
+  "device_status_text": "",
   "details": {
-    "raw_text": "FTDI Connectivity Status:",
+    "raw_text": "",
     "valid": false,
     "device": null,
     "type": null,
     "sop": null,
-    "es": null
+    "es": null,
+    "rs232_status": "Disconnected"
   },
-  "error": "Device Status does not contain expected AWR2944/GP/SOP:2: 'FTDI Connectivity Status:'"
+  "error": "Device Status does not show valid AWR2944/GP/SOP:2. Power-cycle AWR using power-before-USB order and retry."
 }

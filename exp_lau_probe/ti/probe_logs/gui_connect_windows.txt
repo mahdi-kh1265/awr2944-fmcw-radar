@@ -1,13 +1,13 @@
 mmWave Studio Window Enumeration
-Timestamp: 2026-07-05 19:11:17
+Timestamp: 2026-07-05 19:21:15
 Python is admin: True
 ====================================================================================================
 
 PID=16924  title='Taskbar'  process=''  exe=''  rect=(L0,T1032,R1920,B1080)  matched=False  attach_ok=False  failure=''  
 PID=16924  title=''  process=''  exe=''  rect=(L-1920,T1032,R0,B1080)  matched=False  attach_ok=False  failure=''  
+PID=396  title='mmWave Studio 3.1.4.4'  process=''  exe=''  rect=(L-8,T-8,R1928,B1040)  matched=True  attach_ok=True  failure=''  >>> MATCH <<<
+PID=20084  title='Summer2026-Saeed - Radar Data Capture Setup - Google Chrome'  process=''  exe=''  rect=(L-8,T-8,R1928,B1040)  matched=False  attach_ok=False  failure=''  
 PID=20632  title='Administrator: Windows PowerShell'  process=''  exe=''  rect=(L-1591,T156,R-608,B745)  matched=False  attach_ok=False  failure=''  
-PID=32428  title='mmWave Studio 3.1.4.4'  process=''  exe=''  rect=(L-8,T-8,R1928,B1040)  matched=True  attach_ok=True  failure=''  >>> MATCH <<<
-PID=20084  title='Summer2026-Saeed - Radar Data Capture Setup - Google Chrome'  process=''  exe=''  rect=(L0,T0,R0,B0)  matched=False  attach_ok=False  failure=''  
 PID=5716  title='awr2944-fmcw-radar1 (Workspace) - Antigravity IDE - Task'  process=''  exe=''  rect=(L-1928,T-8,R8,B1040)  matched=False  attach_ok=False  failure=''  
 PID=20084  title='Summer2026-Saeed - Radar Data Capture Setup - Google Chrome'  process=''  exe=''  rect=(L0,T0,R0,B0)  matched=False  attach_ok=False  failure=''  
 PID=17580  title=''  process=''  exe=''  rect=(L-32000,T-32000,R-31984,B-31984)  matched=False  attach_ok=False  failure=''  

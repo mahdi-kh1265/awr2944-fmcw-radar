@@ -4969,6 +4969,8 @@ def mmws_gui_connect_inspect(
     console.print("\n[bold]Connection Tab Controls:[/bold]")
     _print_control_status("RadarAPI window", controls.radarapi_window)
     _print_control_status("77 GHz radio (m_RadioBtn77GHzRadarDev)", controls.frequency_radio)
+    _print_control_status("Device Variant group (m_grpDeviceVariantTypes)", controls.device_variant_group)
+    _print_control_status("Device Variant AWR29xx/XWR2944", controls.device_variant_radio)
     _print_control_status("Set(1) button (m_btnSetSop)", controls.set_button)
     _print_control_status("Refresh Ports (m_btnRefreshPorts)", controls.refresh_ports_button)
     _print_control_status("COM port (m_cboComPort)", controls.com_combo)
@@ -4977,8 +4979,20 @@ def mmws_gui_connect_inspect(
     _print_control_status("RS232 status (m_lblRS232UARTConnectivityStatus)", controls.rs232_status_label)
     _print_control_status("SPI status (m_lblSPIConnectivityStatus)", controls.spi_status_label)
     _print_control_status("Device Status label", controls.device_status_label)
-    _print_control_status("Output log", controls.output_log)
     _print_control_status("Output document (m_ConsoleText)", controls.output_document)
+
+    # Show Device Variant candidates (always, for debugging)
+    if controls.device_variant_candidates:
+        console.print(f"\n[bold]Device Variant candidates ({len(controls.device_variant_candidates)}):[/bold]")
+        for aid, txt in controls.device_variant_candidates:
+            matched = controls.device_variant_radio is not None and (
+                aid == (controls.device_variant_radio.automation_id()
+                        if hasattr(controls.device_variant_radio, 'automation_id') else "")
+            )
+            marker = " [green]<<< MATCHED[/green]" if matched else ""
+            console.print(f"  auto_id={aid!r} text={txt!r}{marker}")
+    elif controls.device_variant_group is not None:
+        console.print("\n[yellow]Device Variant group found but no children enumerated.[/yellow]")
 
     if controls.missing:
         console.print(f"\n[yellow]Missing/not found: {', '.join(controls.missing)}[/yellow]")
