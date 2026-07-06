@@ -1,0 +1,90 @@
+[
+  {
+    "line_number": 80,
+    "timestamp": "[13:08:49]",
+    "raw_line": "[13:08:49]  [RadarAPI]: ar1.SaveSettings('C:\\Users\\khams008\\AppData\\Roaming\\RSTD\\ar1gui.ini')",
+    "function_name": "SaveSettings",
+    "args_text": "'C:\\Users\\khams008\\AppData\\Roaming\\RSTD\\ar1gui.ini'",
+    "category": "connection"
+  },
+  {
+    "line_number": 81,
+    "timestamp": "[13:08:51]",
+    "raw_line": "[13:08:51]  [RadarAPI]: ar1.DownloadBSSFw(\"C:\\\\ti\\\\mmwave_studio_03_01_04_04\\\\rf_eval_firmware\\\\radarss\\\\xwr29xx_radarss_rprc.bin\")",
+    "function_name": "DownloadBSSFw",
+    "args_text": "\"C:\\\\ti\\\\mmwave_studio_03_01_04_04\\\\rf_eval_firmware\\\\radarss\\\\xwr29xx_radarss_rprc.bin\"",
+    "category": "firmware"
+  },
+  {
+    "line_number": 82,
+    "timestamp": "[13:08:56]",
+    "raw_line": "[13:08:56]  [RadarAPI]: ar1.GetBSSFwVersion()",
+    "function_name": "GetBSSFwVersion",
+    "args_text": "",
+    "category": "firmware"
+  },
+  {
+    "line_number": 84,
+    "timestamp": "[13:08:57]",
+    "raw_line": "[13:08:57]  [RadarAPI]: ar1.GetBSSPatchFwVersion()",
+    "function_name": "GetBSSPatchFwVersion",
+    "args_text": "",
+    "category": "firmware"
+  },
+  {
+    "line_number": 86,
+    "timestamp": "[13:08:58]",
+    "raw_line": "[13:08:58]  [RadarAPI]: ar1.DownloadMSSFw(\"C:\\\\ti\\\\mmwave_studio_03_01_04_04\\\\rf_eval_firmware\\\\masterss\\\\awr2xxx_mmwave_full_mss_rprc.bin\")",
+    "function_name": "DownloadMSSFw",
+    "args_text": "\"C:\\\\ti\\\\mmwave_studio_03_01_04_04\\\\rf_eval_firmware\\\\masterss\\\\awr2xxx_mmwave_full_mss_rprc.bin\"",
+    "category": "firmware"
+  },
+  {
+    "line_number": 88,
+    "timestamp": "[13:09:32]",
+    "raw_line": "[13:09:32]  [RadarAPI]: ar1.GetMSSFwVersion()",
+    "function_name": "GetMSSFwVersion",
+    "args_text": "",
+    "category": "firmware"
+  },
+  {
+    "line_number": 90,
+    "timestamp": "[13:09:35]",
+    "raw_line": "[13:09:35]  [RadarAPI]: ar1.PowerOn(0, 1000, 0, 0)",
+    "function_name": "PowerOn",
+    "args_text": "0, 1000, 0, 0",
+    "category": "power_rf"
+  },
+  {
+    "line_number": 93,
+    "timestamp": "[13:09:36]",
+    "raw_line": "[13:09:36]  [RadarAPI]: ar1.RfEnable()",
+    "function_name": "RfEnable",
+    "args_text": "",
+    "category": "power_rf"
+  },
+  {
+    "line_number": 96,
+    "timestamp": "[13:09:37]",
+    "raw_line": "[13:09:37]  [RadarAPI]: ar1.GetMSSFwVersion()",
+    "function_name": "GetMSSFwVersion",
+    "args_text": "",
+    "category": "firmware"
+  },
+  {
+    "line_number": 98,
+    "timestamp": "[13:09:37]",
+    "raw_line": "[13:09:37]  [RadarAPI]: ar1.GetBSSFwVersion()",
+    "function_name": "GetBSSFwVersion",
+    "args_text": "",
+    "category": "firmware"
+  },
+  {
+    "line_number": 100,
+    "timestamp": "[13:09:38]",
+    "raw_line": "[13:09:38]  [RadarAPI]: ar1.GetBSSPatchFwVersion()",
+    "function_name": "GetBSSPatchFwVersion",
+    "args_text": "",
+    "category": "firmware"
+  }
+]

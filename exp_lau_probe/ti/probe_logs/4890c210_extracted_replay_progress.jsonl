@@ -1,0 +1,7 @@
+{"cmd": "DownloadBSSFw", "args": "\"C:\\ti\\mmwave_studio_03_01_04_04\\rf_eval_firmware\\radarss\\xwr29xx_radarss_rprc.bin\"", "ret": 0, "ok": true}
+{"cmd": "GetBSSFwVersion", "args": "", "ret": 02.04.05.03 (20/04/22), "ok": true}
+{"cmd": "GetBSSPatchFwVersion", "args": "", "ret": 02.04.10.02 (12/06/24), "ok": true}
+{"cmd": "DownloadMSSFw", "args": "\"C:\\ti\\mmwave_studio_03_01_04_04\\rf_eval_firmware\\masterss\\awr2xxx_mmwave_full_mss_rprc.bin\"", "ret": 0, "ok": true}
+{"cmd": "GetMSSFwVersion", "args": "", "ret": 02.04.02.17 (08/07/24), "ok": true}
+{"cmd": "PowerOn", "args": "0, 1000, 0, 0", "ret": 0, "ok": true}
+{"cmd": "RfEnable", "args": "", "ret": -1, "ok": true}

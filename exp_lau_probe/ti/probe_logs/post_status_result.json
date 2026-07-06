@@ -1,0 +1,15 @@
+{
+  "rs232_valid": true,
+  "bss_downloaded": false,
+  "bss_version": "",
+  "bss_patch_version": "",
+  "mss_downloaded": false,
+  "mss_version": "",
+  "mss_powered": false,
+  "bss_powered": false,
+  "rf_enabled": false,
+  "spi_connected": false,
+  "ready_for_static_config": false,
+  "ready_for_capture": false,
+  "matched_lines": {}
+}

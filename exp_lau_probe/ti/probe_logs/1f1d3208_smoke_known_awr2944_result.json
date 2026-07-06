@@ -1,0 +1,80 @@
+{
+  "run_id": "1f1d3208",
+  "source": "gui_derived_awr2944",
+  "replay_validated": false,
+  "warnings": [
+    "ChanNAdcConfig: GUI-emitted; captured during dirty session; replay validation required"
+  ],
+  "commands": [
+    {
+      "function": "ChanNAdcConfig",
+      "args": "1, 1, 0, 0, 1, 1, 0, 0, 2, 0, 0",
+      "category": "static_config"
+    },
+    {
+      "function": "LPModConfig",
+      "args": "0, 0",
+      "category": "static_config"
+    },
+    {
+      "function": "RfLdoBypassConfig",
+      "args": "0x0",
+      "category": "rf_static_config"
+    },
+    {
+      "function": "SetCalMonFreqLimitConfig",
+      "args": "76,81,0",
+      "category": "rf_static_config"
+    },
+    {
+      "function": "SetRFDeviceConfig",
+      "args": "5, 0, 0, 0, 0, 0, 0",
+      "category": "rf_static_config"
+    },
+    {
+      "function": "RfSetCalMonFreqTxPowLimitConfig",
+      "args": "76, 76, 76, 76, 81, 81, 81, 81, 0, 0, 0, 0,0",
+      "category": "rf_static_config"
+    },
+    {
+      "function": "SetApllSynthBWCtlConfig",
+      "args": "1, 4, 3, 9, 18, 1, 4",
+      "category": "rf_static_config"
+    },
+    {
+      "function": "RfInit",
+      "args": "",
+      "category": "static_config"
+    },
+    {
+      "function": "DataPathConfig",
+      "args": "513, 1216644097, 0",
+      "category": "data_config"
+    },
+    {
+      "function": "LVDSLaneConfig",
+      "args": "0, 1, 0, 0, 0, 1, 0, 0",
+      "category": "data_config"
+    },
+    {
+      "function": "ProfileConfig",
+      "args": "0, 77, 100, 6, 60, 0, 0, 0, 0, 0, 0, 0, 0, 29.982, 0, 256, 10000, 2216755200, 0, 30, 0, 0, 0",
+      "category": "profile_chirp_frame"
+    },
+    {
+      "function": "ChirpConfig",
+      "args": "0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0",
+      "category": "profile_chirp_frame"
+    },
+    {
+      "function": "DisableTestSource",
+      "args": "0",
+      "category": "test_source"
+    },
+    {
+      "function": "FrameConfig",
+      "args": "0, 0, 8, 128, 40, 0, 1",
+      "category": "profile_chirp_frame"
+    }
+  ]
+}

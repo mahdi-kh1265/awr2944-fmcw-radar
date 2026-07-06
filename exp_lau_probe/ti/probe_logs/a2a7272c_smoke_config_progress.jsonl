@@ -1,0 +1,1 @@
+{"ts": "15:00:35", "cmd": "ChanNAdcConfig", "args": "1, 1, 1, 1, 1, 1, 1, 2, 1, 0", "ret": nil, "ok": false, "err": "invalid arguments to method call"}

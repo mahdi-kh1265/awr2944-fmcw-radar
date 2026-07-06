@@ -60,6 +60,9 @@ mmws_app.add_typer(mmws_matlab_bridge_app, name="matlab-bridge")
 mmws_win32_conn_app = typer.Typer(help="Win32 API backend for Connection tab (pywin32)")
 mmws_app.add_typer(mmws_win32_conn_app, name="win32-connect")
 
+mmws_post_app = typer.Typer(help="Post-connection automation (Firmware, RF, Static, Data)")
+mmws_app.add_typer(mmws_post_app, name="post")
+
 mmws_internals_app = typer.Typer(help="Internal reflection and diagnostics (Lua/.NET)")
 mmws_app.add_typer(mmws_internals_app, name="internals")
 
@@ -5371,3 +5374,518 @@ def mmws_gui_connect_manual_check(
         console.print("\n[red][FAIL] Manual connection state not valid.[/red]")
         raise typer.Exit(1)
 
+
+# ---------------------------------------------------------------------------
+# awr mmws post *
+# ---------------------------------------------------------------------------
+
+@mmws_post_app.command("status")
+def mmws_post_status(
+    pid: int = typer.Option(None, "--pid", help="Attach directly by PID"),
+    title_regex: str = typer.Option(r"^mmWave Studio", "--title-regex", help="Regex for mmWave Studio window title"),
+    fallback_latest_snapshot: bool = typer.Option(False, "--fallback-latest-snapshot", help="Use previous snapshot if live dump fails"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Print mmWave Studio's post-connection state using live snapshot dump."""
+    from .mmws.post_connect import get_post_status, parse_post_status_text
+    from .mmws.gui_connect import attach_mmwave_studio
+    import json
+    import uuid
+    import dataclasses
+    
+    probe_dir = _lua_launch_probe_dir()
+    vlog = console.print if verbose else lambda _: None
+    run_id = str(uuid.uuid4())[:8]
+
+    try:
+        app, window = attach_mmwave_studio(pid=pid, title_regex=title_regex, probe_dir=probe_dir, verbose_log=vlog)
+        device_status, status, source_info = get_post_status(window, vlog, run_id, probe_dir)
+    except RuntimeError as e:
+        console.print(f"[red][FAIL] {e}[/red]")
+        raise typer.Exit(1)
+        
+    if source_info.get("status_source") == "live_snapshot_failed" and fallback_latest_snapshot:
+        # try to find the latest snapshot
+        snapshots = list(probe_dir.glob("*_status_output_snapshot.txt"))
+        if snapshots:
+            latest = max(snapshots, key=lambda p: p.stat().st_mtime)
+            console.print(f"[yellow]Falling back to snapshot: {latest.name}[/yellow]")
+            doc_text = latest.read_text(encoding="utf-8")
+            status, source_info = parse_post_status_text(
+                doc_text,
+                rs232_valid=device_status.get("gate_passed", False),
+                spi_connected=status.spi_connected,
+                source_name="fallback_snapshot",
+                snapshot_path=str(latest)
+            )
+
+    status_dict = dataclasses.asdict(status)
+    status_dict.update(source_info)
+    
+    result_path = probe_dir / f"{run_id}_post_status_result.json"
+    result_path.write_text(json.dumps(status_dict, indent=2), encoding="utf-8")
+    
+    console.print(f"\n[bold]Post-Connection Status (run_id: {run_id}):[/bold]")
+    
+    chars = source_info.get("source_text_chars", 0)
+    if chars < 1000:
+        console.print(f"\n[red][WARNING] Output text is suspiciously short ({chars} chars). Parsing may be invalid![/red]")
+    
+    console.print(f"\n[bold]Post-Connection Status:[/bold]")
+    for k, v in status_dict.items():
+        color = "green" if v else ("red" if k in ("rs232_valid", "bss_downloaded", "mss_downloaded", "mss_powered", "bss_powered", "rf_enabled") and not v else "yellow")
+        console.print(f"  {k}: [{color}]{v}[/{color}]")
+        
+    console.print(f"\n[dim]Wrote full status to {result_path}[/dim]")
+    
+    if not status.rs232_valid:
+        console.print("\n[red][WARNING] Connection gate failed. Device identity or RS232 status is invalid.[/red]")
+
+
+@mmws_post_app.command("parser-test")
+def mmws_post_parser_test(
+    snapshot: str = typer.Option(..., "--snapshot", help="Path to mmws_output_snapshot.txt to test parse"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Test the post-status parser offline using a saved snapshot."""
+    from .mmws.post_connect import parse_post_status_text
+    import json
+    
+    snap_path = Path(snapshot)
+    if not snap_path.exists():
+        console.print(f"[red]Snapshot file not found: {snap_path}[/red]")
+        raise typer.Exit(1)
+        
+    doc_text = snap_path.read_text(encoding="utf-8")
+    status, source_info = parse_post_status_text(
+        doc_text, 
+        rs232_valid=True, 
+        spi_connected=True, 
+        source_name="parser_test_snapshot",
+        snapshot_path=str(snap_path)
+    )
+    
+    import dataclasses
+    import uuid
+    status_dict = dataclasses.asdict(status)
+    status_dict.update(source_info)
+    
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / f"{run_id}_parser_test_result.json"
+    result_path.write_text(json.dumps(status_dict, indent=2), encoding="utf-8")
+    
+    console.print(f"\n[bold]Offline Parse Result for {snap_path}:[/bold]")
+    console.print(json.dumps(status_dict, indent=2))
+    console.print(f"\n[green]Wrote parser result to: {result_path}[/green]")
+
+
+@mmws_post_app.command("output-snapshot")
+def mmws_post_output_snapshot(
+    pid: int = typer.Option(None, "--pid", help="Attach directly by PID"),
+    title_regex: str = typer.Option(None, "--title-regex", help="Match window title by regex"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Dump the full mmWave Studio Output document."""
+    from .mmws.gui_connect import attach_mmwave_studio
+    from .mmws.post_connect import dump_output_snapshot
+    
+    vlog_lines: list[str] = []
+    def vlog(msg: str):
+        vlog_lines.append(msg)
+        if verbose:
+            console.print(f"  [dim]{msg}[/dim]")
+
+    probe_dir = _lua_launch_probe_dir()
+    out_path = probe_dir / "mmws_output_snapshot.txt"
+
+    try:
+        app, window = attach_mmwave_studio(pid=pid, title_regex=title_regex, probe_dir=probe_dir, verbose_log=vlog)
+        dump_output_snapshot(window, vlog, out_path)
+        console.print(f"[green]Successfully dumped output snapshot to {out_path}[/green]")
+    except RuntimeError as e:
+        console.print(f"[red][FAIL] {e}[/red]")
+        raise typer.Exit(1)
+
+
+@mmws_post_app.command("extract-ar1")
+def mmws_post_extract_ar1(
+    after_device_status: bool = typer.Option(True, "--after-device-status/--all", help="Only extract after the last valid Device Status"),
+    pid: int = typer.Option(None, "--pid", help="Attach directly by PID"),
+    title_regex: str = typer.Option(None, "--title-regex", help="Match window title by regex"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Extract and classify ar1.* commands from the live Output document."""
+    from .mmws.gui_connect import attach_mmwave_studio
+    from .mmws.post_connect import connection_gate, dump_output_snapshot, extract_ar1_commands, generate_replay_lua
+    import uuid
+    import json
+    
+    vlog_lines: list[str] = []
+    def vlog(msg: str):
+        vlog_lines.append(msg)
+        if verbose:
+            console.print(f"  [dim]{msg}[/dim]")
+
+    probe_dir = _lua_launch_probe_dir()
+    run_id = str(uuid.uuid4())[:8]
+
+    try:
+        app, window = attach_mmwave_studio(pid=pid, title_regex=title_regex, probe_dir=probe_dir, verbose_log=vlog)
+        device_status = connection_gate(window, vlog)
+        if not device_status.get("gate_passed"):
+            console.print("[red][FAIL] POST_CONNECTION_NOT_VALID: Cannot reliably extract commands without valid RS232 connection state.[/red]")
+            raise typer.Exit(1)
+            
+        snap_path = probe_dir / f"{run_id}_output_snapshot.txt"
+        dump_output_snapshot(window, vlog, snap_path)
+        doc_text = snap_path.read_text(encoding="utf-8")
+        
+        commands = extract_ar1_commands(doc_text, after_device_status)
+        
+        import dataclasses
+        cmd_dicts = [dataclasses.asdict(c) for c in commands]
+        json_path = probe_dir / f"{run_id}_extracted_ar1_commands.json"
+        json_path.write_text(json.dumps(cmd_dicts, indent=2), encoding="utf-8")
+        
+        lua_path = probe_dir / f"{run_id}_extracted_replay.lua"
+        lua_script = generate_replay_lua(commands, run_id, lua_path)
+        lua_path.write_text(lua_script, encoding="utf-8")
+        
+        console.print(f"[green]Extracted {len(commands)} commands.[/green]")
+        console.print(f"JSON: {json_path}")
+        console.print(f"Replay Lua: {lua_path}")
+        console.print(f"To replay: [cyan]dofile([[{lua_path.resolve()}]])[/cyan]")
+        
+    except RuntimeError as e:
+        console.print(f"[red][FAIL] {e}[/red]")
+        raise typer.Exit(1)
+
+
+@mmws_post_app.command("firmware-power-script")
+def mmws_post_firmware_power_script(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Generate a deterministic AWR2944 firmware and power-on Lua script."""
+    from .mmws.post_connect import generate_firmware_power_script
+    import uuid
+    
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / f"{run_id}_firmware_power_result.json"
+    lua_path = probe_dir / f"{run_id}_firmware_power.lua"
+    
+    script = generate_firmware_power_script(run_id, result_path)
+    lua_path.write_text(script, encoding="utf-8")
+    
+    console.print(f"[cyan]Generated firmware-power script:[/cyan] {lua_path}")
+    console.print(f"Paste this command into the mmWave Studio Lua Shell:")
+    console.print(f"[green]dofile([[{lua_path.resolve()}]])[/green]")
+    
+    if verbose:
+        console.print("\n[dim]Preview of generated script (first 15 lines):[/dim]")
+        preview = "\n".join(script.splitlines()[:15])
+        console.print(f"[dim]{preview}[/dim]")
+
+
+@mmws_post_app.command("ar1-help-probe")
+def mmws_post_ar1_help_probe(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Generate a Lua script to probe types and help strings for ar1 commands."""
+    from .mmws.post_connect import generate_ar1_help_probe
+    import uuid
+    
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    result_path = probe_dir / f"{run_id}_ar1_help_result.txt"
+    lua_path = probe_dir / f"{run_id}_ar1_help_probe.lua"
+    
+    script = generate_ar1_help_probe(run_id, result_path)
+    lua_path.write_text(script, encoding="utf-8")
+    
+    console.print(f"[cyan]Generated ar1-help-probe script:[/cyan] {lua_path}")
+    console.print(f"Paste this command into the mmWave Studio Lua Shell:")
+    console.print(f"[green]dofile([[{lua_path.resolve()}]])[/green]")
+
+
+@mmws_post_app.command("replay-lua")
+def mmws_post_replay_lua(
+    script: str = typer.Option(..., "--script", help="Path to a generated replay Lua script"),
+    only_firmware: bool = typer.Option(False, "--only-firmware", help="Replay only firmware commands"),
+    only_power_rf: bool = typer.Option(False, "--only-power-rf", help="Replay only power/rf commands"),
+    only_static_config: bool = typer.Option(False, "--only-static-config", help="Replay only static config commands"),
+    only_data_config: bool = typer.Option(False, "--only-data-config", help="Replay only data config commands"),
+    only_profile_frame: bool = typer.Option(False, "--only-profile-frame", help="Replay only profile/chirp/frame commands"),
+    only_capture: bool = typer.Option(False, "--only-capture", help="Replay only capture commands"),
+    all_cmds: bool = typer.Option(False, "--all", help="Replay all non-connection commands"),
+) -> None:
+    """Print the dofile command for a replay script (filtering options coming soon)."""
+    # TODO: regenerate the script if filter flags are set, or just tell user what to paste
+    script_path = Path(script)
+    if not script_path.exists():
+        console.print(f"[red]Script not found: {script_path}[/red]")
+        raise typer.Exit(1)
+        
+    console.print(f"To replay this script, paste this into the mmWave Studio Lua Shell:")
+    console.print(f"[green]dofile([[{script_path.resolve()}]])[/green]")
+
+
+@mmws_post_app.command("check-lua-result")
+def mmws_post_check_lua_result(
+    result: str = typer.Option(..., "--result", help="Path to the JSON result file"),
+    progress: str = typer.Option(..., "--progress", help="Path to the JSONL progress file"),
+) -> None:
+    """Summarize the result of a generated Lua script execution."""
+    import json
+    
+    res_path = Path(result)
+    prog_path = Path(progress)
+    
+    if not res_path.exists():
+        console.print(f"[yellow]Result file not found: {res_path}[/yellow]")
+    else:
+        try:
+            res_data = json.loads(res_path.read_text(encoding="utf-8"))
+            if res_data.get("success"):
+                console.print(f"[green]Lua script execution SUCCESS (run_id: {res_data.get('run_id')})[/green]")
+            else:
+                console.print(f"[red]Lua script execution FAILED: {res_data.get('error')}[/red]")
+        except Exception as e:
+            console.print(f"[red]Failed to parse result JSON: {e}[/red]")
+
+    if not prog_path.exists():
+        console.print(f"[yellow]Progress file not found: {prog_path}[/yellow]")
+    else:
+        console.print("\n[bold]Progress Log:[/bold]")
+        lines = prog_path.read_text(encoding="utf-8").splitlines()
+        for line in lines:
+            if not line.strip(): continue
+            try:
+                p = json.loads(line)
+                ok_str = "[green]OK[/green]" if p.get("ok") else "[red]FAIL[/red]"
+                ret_str = f"ret={p.get('ret')}"
+                err_str = f" err={p.get('err')}" if p.get("err") else ""
+                console.print(f"  {p.get('ts')} | {p.get('cmd')} | {ok_str} | {ret_str}{err_str}")
+            except Exception:
+                console.print(f"  [dim]{line}[/dim]")
+
+
+@mmws_post_app.command("inspect-extracted")
+def mmws_post_inspect_extracted(
+    commands: str = typer.Option(..., "--commands", help="Path to the extracted ar1 commands JSON"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Inspect extracted ar1 commands: counts, signatures, failures, missing commands."""
+    from .mmws.post_connect import AR1Command, inspect_extracted_commands
+    import json
+    import dataclasses
+    
+    cmd_path = Path(commands)
+    if not cmd_path.exists():
+        console.print(f"[red]Commands file not found: {cmd_path}[/red]")
+        raise typer.Exit(1)
+    
+    cmd_dicts = json.loads(cmd_path.read_text(encoding="utf-8"))
+    cmd_list = [AR1Command(**d) for d in cmd_dicts]
+    
+    report = inspect_extracted_commands(cmd_list)
+    
+    console.print(f"\n[bold]Extracted Command Inspection ({len(cmd_list)} commands):[/bold]")
+    
+    console.print("\n[bold]Ordered Commands:[/bold]")
+    for i, f in enumerate(report["ordered_functions"]):
+        cmd = cmd_list[i]
+        status_tag = ""
+        if cmd.observed_status == "passed":
+            status_tag = " [green]✓[/green]"
+        elif cmd.observed_status == "failed":
+            err = f" ({cmd.observed_error_type})" if cmd.observed_error_type else ""
+            status_tag = f" [red]✗{err}[/red]"
+        console.print(f"  {i+1}. [{cmd.normalized_category}] {f}{status_tag}")
+    
+    console.print(f"\n[bold]Category Counts:[/bold]")
+    for cat, cnt in sorted(report["category_counts"].items()):
+        console.print(f"  {cat}: {cnt}")
+        
+    if report.get("reclassified_commands"):
+        console.print(f"\n[yellow]Reclassified {len(report['reclassified_commands'])} old commands to current taxonomy:[/yellow]")
+        for rc in report["reclassified_commands"]:
+            console.print(f"  {rc['function']}: {rc['original_category']} -> {rc['normalized_category']}")
+
+    
+    if report["unknown_functions"]:
+        console.print(f"\n[yellow]Unknown functions: {', '.join(report['unknown_functions'])}[/yellow]")
+    
+    if report["missing_required"]:
+        console.print(f"\n[red]Missing required commands: {', '.join(report['missing_required'])}[/red]")
+    
+    if report["failed_commands"]:
+        console.print(f"\n[red]Failed commands in source log:[/red]")
+        for fc in report["failed_commands"]:
+            console.print(f"  {fc['function']} (line {fc['line']}): {fc['observed_error_type']}")
+    
+    if report["signature_warnings"]:
+        console.print(f"\n[yellow]Signature warnings:[/yellow]")
+        for w in report["signature_warnings"]:
+            console.print(f"  {w}")
+    
+    if report["warnings"]:
+        for w in report["warnings"]:
+            console.print(f"[yellow]WARNING: {w}[/yellow]")
+    
+    # Write report JSON
+    probe_dir = _lua_launch_probe_dir()
+    import uuid
+    run_id = str(uuid.uuid4())[:8]
+    report_path = probe_dir / f"{run_id}_inspect_report.json"
+    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    console.print(f"\n[green]Wrote inspection report to: {report_path}[/green]")
+
+
+@mmws_post_app.command("generate-smoke-from-extracted")
+def mmws_post_generate_smoke_from_extracted(
+    commands: str = typer.Option(..., "--commands", help="Path to the extracted ar1 commands JSON"),
+    include_failed: bool = typer.Option(False, "--include-failed-source-commands", help="Include commands that failed in the source log"),
+    include_unknown: bool = typer.Option(False, "--include-unknown", help="Include commands with unknown category"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Generate Lua smoke config from exact extracted commands."""
+    from .mmws.post_connect import AR1Command, generate_smoke_from_extracted
+    import json
+    import uuid
+    
+    cmd_path = Path(commands)
+    if not cmd_path.exists():
+        console.print(f"[red]Commands file not found: {cmd_path}[/red]")
+        raise typer.Exit(1)
+    
+    cmd_dicts = json.loads(cmd_path.read_text(encoding="utf-8"))
+    cmd_list = [AR1Command(**d) for d in cmd_dicts]
+    
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    lua_path = probe_dir / f"{run_id}_smoke_from_extracted.lua"
+    
+    script, result = generate_smoke_from_extracted(
+        cmd_list, run_id, lua_path,
+        commands_json_path=str(cmd_path),
+        include_failed=include_failed,
+        include_unknown=include_unknown,
+    )
+    
+    lua_path.write_text(script, encoding="utf-8")
+    
+    result_path = probe_dir / f"{run_id}_smoke_from_extracted_result.json"
+    result_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    
+    if result.get("signature_warnings"):
+        for w in result["signature_warnings"]:
+            console.print(f"[yellow]SIGNATURE WARNING: {w}[/yellow]")
+    
+    console.print(f"\n[cyan]Generated smoke-from-extracted script:[/cyan] {lua_path}")
+    console.print(f"Included: {len(result['included_commands'])} commands")
+    console.print(f"Skipped: {len(result['skipped_commands'])} commands")
+    console.print(f"Paste this command into the mmWave Studio Lua Shell:")
+    console.print(f"[green]dofile([[{lua_path.resolve()}]])[/green]")
+
+
+@mmws_post_app.command("smoke-from-known-awr2944")
+def mmws_post_smoke_from_known_awr2944(
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Generate Lua smoke config using GUI-derived AWR2944 commands.
+    
+    These commands match mmWave Studio GUI emission for AWR2944 but are NOT
+    yet replay-validated on a clean session.
+    """
+    from .mmws.post_connect import generate_smoke_known_awr2944
+    import json
+    import uuid
+    
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    lua_path = probe_dir / f"{run_id}_smoke_known_awr2944.lua"
+    
+    script, result = generate_smoke_known_awr2944(run_id, lua_path)
+    lua_path.write_text(script, encoding="utf-8")
+    
+    result_path = probe_dir / f"{run_id}_smoke_known_awr2944_result.json"
+    result_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    
+    for w in result.get("warnings", []):
+        console.print(f"[yellow]WARNING: {w}[/yellow]")
+    
+    console.print(f"\n[bold]NOTE:[/bold] These commands are GUI-derived and NOT YET replay-validated.")
+    console.print(f"[cyan]Generated script:[/cyan] {lua_path}")
+    console.print(f"Paste this command into the mmWave Studio Lua Shell:")
+    console.print(f"[green]dofile([[{lua_path.resolve()}]])[/green]")
+
+
+@mmws_post_app.command("smoke-config-script")
+def mmws_post_smoke_config_script(
+    config: str = typer.Option(None, "--config", help="Path to capture.yaml to override TI baselines"),
+    write_template: str = typer.Option(None, "--write-template", help="Dump the resolved YAML to this path instead of generating Lua"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """[DEPRECATED] Generate smoke config using guessed TI baselines.
+    
+    WARNING: The guessed TI-baseline arguments have incorrect signatures for
+    AWR2944 (e.g. ChanNAdcConfig takes 11 args, not 10).
+    Use 'smoke-from-known-awr2944' or 'generate-smoke-from-extracted' instead.
+    """
+    from .mmws.post_connect import generate_smoke_config_script
+    import uuid
+    import yaml
+    
+    console.print("[red][DEPRECATED] This command uses experimental guessed baselines.[/red]")
+    console.print("[red]Not recommended for AWR2944 until validated.[/red]")
+    console.print("[yellow]Use 'smoke-from-known-awr2944' or 'generate-smoke-from-extracted' instead.[/yellow]\n")
+    
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir = _lua_launch_probe_dir()
+    
+    lua_path = probe_dir / f"{run_id}_smoke_config.lua"
+    
+    script, result = generate_smoke_config_script(run_id, config, lua_path)
+    
+    if write_template:
+        out_path = Path(write_template)
+        dump_data = {
+            "radar_device": "awr2944",
+            "profile": {
+                "freq_slope_const": 29.982,
+                "num_adc_samples": 256,
+                "adc_sample_rate": 10000
+            },
+            "_resolved_args": result["args"]
+        }
+        out_path.write_text(yaml.dump(dump_data, sort_keys=False), encoding="utf-8")
+        console.print(f"[green]Wrote resolved template to {out_path}[/green]")
+        return
+        
+    lua_path.write_text(script, encoding="utf-8")
+    
+    for w in result.get("warnings", []):
+        console.print(f"[yellow]WARNING: {w}[/yellow]")
+        
+    console.print(f"[cyan]Generated smoke config script:[/cyan] {lua_path}")
+    console.print(f"Source: {result['source']}")
+    console.print(f"Paste this command into the mmWave Studio Lua Shell:")
+    console.print(f"[green]dofile([[{lua_path.resolve()}]])[/green]")
+
+
+@mmws_post_app.command("dca-preflight")
+def mmws_post_dca_preflight() -> None:
+    """[STUB] Check DCA1000 network connectivity and configuration."""
+    console.print("[yellow]STUB: dca-preflight not yet implemented.[/yellow]")
+    
+@mmws_post_app.command("capture-smoke-script")
+def mmws_post_capture_smoke_script() -> None:
+    """[STUB] Generate Lua script for a minimal capture smoke test."""
+    console.print("[yellow]STUB: capture-smoke-script not yet implemented.[/yellow]")
+
+@mmws_post_app.command("parse-smoke-bin")
+def mmws_post_parse_smoke_bin() -> None:
+    """[STUB] Parse the raw .bin file from the smoke test capture."""
+    console.print("[yellow]STUB: parse-smoke-bin not yet implemented.[/yellow]")
