@@ -1,0 +1,13 @@
+{"ts": "12:12:00", "cmd": "ChanNAdcConfig", "ret": 0, "ok": true}
+{"ts": "12:12:00", "cmd": "LPModConfig", "ret": 0, "ok": true}
+{"ts": "12:12:00", "cmd": "RfLdoBypassConfig", "ret": 0, "ok": true}
+{"ts": "12:12:00", "cmd": "SetCalMonFreqLimitConfig", "ret": 0, "ok": true}
+{"ts": "12:12:00", "cmd": "SetRFDeviceConfig", "ret": 0, "ok": true}
+{"ts": "12:12:00", "cmd": "RfSetCalMonFreqTxPowLimitConfig", "ret": 0, "ok": true}
+{"ts": "12:12:00", "cmd": "SetApllSynthBWCtlConfig", "ret": 0, "ok": true}
+{"ts": "12:12:01", "cmd": "RfInit", "ret": 0, "ok": true}
+{"ts": "12:12:02", "cmd": "DataPathConfig", "ret": 0, "ok": true}
+{"ts": "12:12:02", "cmd": "LVDSLaneConfig", "ret": 0, "ok": true}
+{"ts": "12:12:02", "cmd": "ProfileConfig", "ret": 0, "ok": true}
+{"ts": "12:12:02", "cmd": "ChirpConfig", "ret": 0, "ok": true}
+{"ts": "12:12:02", "cmd": "FrameConfig", "ret": 0, "ok": true}

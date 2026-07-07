@@ -1,8 +1,8 @@
 {
   "status": "MANUAL_CONNECTION_VALID",
-  "device_status_text": "[16:06:32]  Device Status : AWR2944/GP/ASIL-B/SOP:2/ES:2.0",
+  "device_status_text": "[12:39:50]  Device Status : AWR2944/GP/ASIL-B/SOP:2/ES:2.0",
   "details": {
-    "raw_text": "[16:06:32]  Device Status : AWR2944/GP/ASIL-B/SOP:2/ES:2.0",
+    "raw_text": "[12:39:50]  Device Status : AWR2944/GP/ASIL-B/SOP:2/ES:2.0",
     "valid": true,
     "device": "AWR2944",
     "type": "GP",

@@ -1,0 +1,14 @@
+{
+  "rs232_valid": true,
+  "clean_for_firmware_power": true,
+  "firmware_power_already_attempted": false,
+  "firmware_power_success": false,
+  "rf_enable_failed": false,
+  "poweroff_seen": false,
+  "disconnect_seen": false,
+  "protocol_error_seen": false,
+  "static_config_attempted": false,
+  "static_config_failed": false,
+  "requires_power_cycle": false,
+  "reason": []
+}

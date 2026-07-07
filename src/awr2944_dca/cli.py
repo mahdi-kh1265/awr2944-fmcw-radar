@@ -5562,16 +5562,299 @@ def mmws_post_extract_ar1(
         raise typer.Exit(1)
 
 
-@mmws_post_app.command("firmware-power-script")
-def mmws_post_firmware_power_script(
+@mmws_post_app.command("session-audit")
+def mmws_post_session_audit(
+    pid: int = typer.Option(None, "--pid", help="Attach directly by PID"),
+    title_regex: str = typer.Option(None, "--title-regex", help="Match window title by regex"),
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
-    """Generate a deterministic AWR2944 firmware and power-on Lua script."""
+    """Audit the session state: detect dirty events and determine stage readiness."""
+    from .mmws.gui_connect import attach_mmwave_studio
+    from .mmws.post_connect import connection_gate, dump_output_snapshot, audit_session
+    import json
+    import uuid
+    import dataclasses
+    
+    vlog_lines: list[str] = []
+    def vlog(msg: str):
+        vlog_lines.append(msg)
+        if verbose:
+            console.print(f"  [dim]{msg}[/dim]")
+    
+    probe_dir = _lua_launch_probe_dir()
+    run_id = str(uuid.uuid4())[:8]
+    
+    try:
+        app, window = attach_mmwave_studio(pid=pid, title_regex=title_regex, probe_dir=probe_dir, verbose_log=vlog)
+        device_status = connection_gate(window, vlog)
+        rs232_valid = device_status.get("gate_passed", False)
+        
+        snap_path = probe_dir / f"{run_id}_session_audit_snapshot.txt"
+        dump_output_snapshot(window, vlog, snap_path)
+        
+        doc_text = ""
+        if snap_path.exists():
+            doc_text = snap_path.read_text(encoding="utf-8")
+        
+        audit = audit_session(doc_text, rs232_valid=rs232_valid)
+        
+        audit_dict = dataclasses.asdict(audit)
+        audit_path = probe_dir / f"{run_id}_session_audit.json"
+        audit_path.write_text(json.dumps(audit_dict, indent=2), encoding="utf-8")
+        
+        console.print(f"\n[bold]Session Audit (run_id: {run_id}):[/bold]")
+        for k, v in audit_dict.items():
+            if k == "reason":
+                continue
+            if isinstance(v, bool):
+                color = "green" if v else "red"
+                if k in ("requires_power_cycle", "rf_enable_failed", "poweroff_seen",
+                         "disconnect_seen", "protocol_error_seen", "static_config_failed"):
+                    color = "red" if v else "green"
+                elif k in ("clean_for_firmware_power", "firmware_power_success", "rs232_valid"):
+                    color = "green" if v else "red"
+                else:
+                    color = "yellow" if v else "dim"
+                console.print(f"  {k}: [{color}]{v}[/{color}]")
+            else:
+                console.print(f"  {k}: {v}")
+        
+        if audit.reason:
+            console.print(f"\n[bold]Reasons:[/bold]")
+            for r in audit.reason:
+                console.print(f"  [red]• {r}[/red]")
+        
+        if audit.requires_power_cycle:
+            console.print(f"\n[red][!] SESSION IS DIRTY. Power-cycle and reconnect required.[/red]")
+        elif audit.clean_for_firmware_power:
+            console.print(f"\n[green][OK] Session is clean for firmware-power-script.[/green]")
+        elif audit.firmware_power_success:
+            console.print(f"\n[green][OK] Firmware/power succeeded. Session is clean for config.[/green]")
+        
+        console.print(f"\n[dim]Wrote audit to {audit_path}[/dim]")
+        
+    except RuntimeError as e:
+        console.print(f"[red][FAIL] {e}[/red]")
+        raise typer.Exit(1)
+
+
+@mmws_post_app.command("preflight-firmware")
+def mmws_post_preflight_firmware(
+    pid: int = typer.Option(None, "--pid", help="Attach directly by PID"),
+    title_regex: str = typer.Option(None, "--title-regex", help="Match window title by regex"),
+    snapshot: str = typer.Option(None, "--snapshot", help="Use saved output snapshot text instead of dumping live UI"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Check if the session is clean enough for firmware-power-script."""
+    from .mmws.gui_connect import attach_mmwave_studio
+    from .mmws.post_connect import connection_gate, dump_output_snapshot, audit_session, preflight_firmware
+    import uuid
+    
+    vlog_lines: list[str] = []
+    def vlog(msg: str):
+        vlog_lines.append(msg)
+        if verbose:
+            console.print(f"  [dim]{msg}[/dim]")
+    
+    probe_dir = _lua_launch_probe_dir()
+    run_id = str(uuid.uuid4())[:8]
+    
+    try:
+        doc_text = ""
+        source_type = "live_uia"
+        source_path = ""
+        rs232_valid = False
+        
+        if snapshot:
+            snap_path = Path(snapshot)
+            if snap_path.exists():
+                doc_text = snap_path.read_text(encoding="utf-8")
+            source_type = "snapshot"
+            source_path = str(snap_path.resolve())
+            # Without UI, assume RS232 is valid for offline check, or leave False.
+            # Usually users rely on preflight-firmware online.
+            rs232_valid = True 
+        else:
+            app, window = attach_mmwave_studio(pid=pid, title_regex=title_regex, probe_dir=probe_dir, verbose_log=vlog)
+            device_status = connection_gate(window, vlog)
+            rs232_valid = device_status.get("gate_passed", False)
+            
+            snap_path = probe_dir / f"{run_id}_preflight_fw_snapshot.txt"
+            dump_output_snapshot(window, vlog, snap_path)
+            
+            if snap_path.exists():
+                doc_text = snap_path.read_text(encoding="utf-8")
+                source_path = str(snap_path)
+        
+        audit = audit_session(doc_text, rs232_valid=rs232_valid, source_type=source_type, source_path=source_path)
+        passed, reasons = preflight_firmware(audit)
+        
+        if passed:
+            console.print(f"\n[green]FIRMWARE_PREFLIGHT_PASSED[/green]")
+            console.print("[green]Session is clean for firmware-power-script.[/green]")
+        else:
+            console.print(f"\n[red]FIRMWARE_PREFLIGHT_FAILED_REQUIRES_CLEAN_SESSION[/red]")
+            for r in reasons:
+                console.print(f"  [red]• {r}[/red]")
+            raise typer.Exit(1)
+            
+    except RuntimeError as e:
+        console.print(f"[red][FAIL] {e}[/red]")
+        raise typer.Exit(1)
+
+
+@mmws_post_app.command("preflight-config")
+def mmws_post_preflight_config(
+    pid: int = typer.Option(None, "--pid", help="Attach directly by PID"),
+    title_regex: str = typer.Option(None, "--title-regex", help="Match window title by regex"),
+    snapshot: str = typer.Option(None, "--snapshot", help="Use saved output snapshot text instead of dumping live UI"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Check if the session is clean enough for config scripts."""
+    from .mmws.gui_connect import attach_mmwave_studio
+    from .mmws.post_connect import connection_gate, dump_output_snapshot, audit_session, preflight_config
+    import uuid
+    
+    vlog_lines: list[str] = []
+    def vlog(msg: str):
+        vlog_lines.append(msg)
+        if verbose:
+            console.print(f"  [dim]{msg}[/dim]")
+    
+    probe_dir = _lua_launch_probe_dir()
+    run_id = str(uuid.uuid4())[:8]
+    
+    try:
+        doc_text = ""
+        source_type = "live_uia"
+        source_path = ""
+        rs232_valid = False
+        
+        if snapshot:
+            snap_path = Path(snapshot)
+            if snap_path.exists():
+                doc_text = snap_path.read_text(encoding="utf-8")
+            source_type = "snapshot"
+            source_path = str(snap_path.resolve())
+            rs232_valid = True 
+        else:
+            app, window = attach_mmwave_studio(pid=pid, title_regex=title_regex, probe_dir=probe_dir, verbose_log=vlog)
+            device_status = connection_gate(window, vlog)
+            rs232_valid = device_status.get("gate_passed", False)
+            
+            snap_path = probe_dir / f"{run_id}_preflight_cfg_snapshot.txt"
+            dump_output_snapshot(window, vlog, snap_path)
+            
+            if snap_path.exists():
+                doc_text = snap_path.read_text(encoding="utf-8")
+                source_path = str(snap_path)
+        
+        audit = audit_session(doc_text, rs232_valid=rs232_valid, source_type=source_type, source_path=source_path)
+        passed, reasons = preflight_config(audit)
+        
+        if passed:
+            console.print(f"\n[green]CONFIG_PREFLIGHT_PASSED[/green]")
+            console.print("[green]Session is ready for config scripts.[/green]")
+        else:
+            console.print(f"\n[red]CONFIG_PREFLIGHT_FAILED_REQUIRES_CLEAN_SESSION[/red]")
+            for r in reasons:
+                console.print(f"  [red]• {r}[/red]")
+            raise typer.Exit(1)
+            
+    except RuntimeError as e:
+        console.print(f"[red][FAIL] {e}[/red]")
+        raise typer.Exit(1)
+
+
+@mmws_post_app.command("firmware-power-script")
+def mmws_post_firmware_power_script(
+    pid: int = typer.Option(None, "--pid", help="Attach to mmWave Studio by PID for preflight check"),
+    title_regex: str = typer.Option(None, "--title-regex", help="Match window title by regex"),
+    snapshot: str = typer.Option(None, "--snapshot", help="Use saved output snapshot text for preflight"),
+    audit: str = typer.Option(None, "--audit", help="Use saved audit JSON for preflight"),
+    force: bool = typer.Option(False, "--force", help="Generate even if preflight fails"),
+    verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
+) -> None:
+    """Generate a deterministic AWR2944 firmware and power-on Lua script.
+    
+    If --pid or --snapshot or --audit is provided, runs preflight-firmware before generating.
+    If preflight fails, refuses to generate unless --force is set.
+    """
     from .mmws.post_connect import generate_firmware_power_script
     import uuid
     
     run_id = str(uuid.uuid4())[:8]
     probe_dir = _lua_launch_probe_dir()
+    
+    # Preflight gate
+    if pid is not None or snapshot or audit:
+        from .mmws.gui_connect import attach_mmwave_studio
+        from .mmws.post_connect import connection_gate, dump_output_snapshot, audit_session, preflight_firmware, SessionAudit
+        import json
+        
+        vlog_lines: list[str] = []
+        def vlog(msg: str):
+            vlog_lines.append(msg)
+            if verbose:
+                console.print(f"  [dim]{msg}[/dim]")
+        
+        try:
+            if audit:
+                audit_path = Path(audit)
+                audit_dict = json.loads(audit_path.read_text(encoding="utf-8"))
+                audit_obj = SessionAudit(**audit_dict)
+                passed, reasons = preflight_firmware(audit_obj)
+            else:
+                doc_text = ""
+                source_type = "live_uia"
+                source_path = ""
+                rs232_valid = False
+                
+                if snapshot:
+                    snap_path = Path(snapshot)
+                    if snap_path.exists():
+                        doc_text = snap_path.read_text(encoding="utf-8")
+                    source_type = "snapshot"
+                    source_path = str(snap_path.resolve())
+                    rs232_valid = True
+                elif pid is not None:
+                    app, window = attach_mmwave_studio(pid=pid, title_regex=title_regex, probe_dir=probe_dir, verbose_log=vlog)
+                    device_status = connection_gate(window, vlog)
+                    rs232_valid = device_status.get("gate_passed", False)
+                    
+                    snap_path = probe_dir / f"{run_id}_preflight_fw_snapshot.txt"
+                    dump_output_snapshot(window, vlog, snap_path)
+                    
+                    if snap_path.exists():
+                        doc_text = snap_path.read_text(encoding="utf-8")
+                        source_path = str(snap_path)
+                
+                audit_obj = audit_session(doc_text, rs232_valid=rs232_valid, source_type=source_type, source_path=source_path)
+                passed, reasons = preflight_firmware(audit_obj)
+            
+            if not passed:
+                console.print(f"\n[red]FIRMWARE_PREFLIGHT_FAILED_REQUIRES_CLEAN_SESSION[/red]")
+                for r in reasons:
+                    console.print(f"  [red]• {r}[/red]")
+                if not force:
+                    console.print("[red]Refusing to generate script. Use --force to override.[/red]")
+                    raise typer.Exit(1)
+                else:
+                    console.print("[yellow]--force specified. Generating script despite failed preflight.[/yellow]")
+            else:
+                console.print(f"[green]FIRMWARE_PREFLIGHT_PASSED[/green]")
+                
+        except RuntimeError as e:
+            console.print(f"[red][FAIL] {e}[/red]")
+            if not force:
+                raise typer.Exit(1)
+    else:
+        console.print("[yellow]" + "=" * 70 + "[/yellow]")
+        console.print("[yellow]WARNING: NO PREFLIGHT WAS RUN.[/yellow]")
+        console.print("[yellow]Only use this immediately after a clean manual RS232 connection.[/yellow]")
+        console.print("[yellow]Use --pid <PID> for automatic session safety checks.[/yellow]")
+        console.print("[yellow]" + "=" * 70 + "[/yellow]\n")
+    
     result_path = probe_dir / f"{run_id}_firmware_power_result.json"
     lua_path = probe_dir / f"{run_id}_firmware_power.lua"
     
@@ -5792,12 +6075,17 @@ def mmws_post_generate_smoke_from_extracted(
 
 @mmws_post_app.command("smoke-from-known-awr2944")
 def mmws_post_smoke_from_known_awr2944(
+    pid: int = typer.Option(None, "--pid", help="Attach to mmWave Studio by PID for preflight check"),
+    title_regex: str = typer.Option(None, "--title-regex", help="Match window title by regex"),
+    snapshot: str = typer.Option(None, "--snapshot", help="Use saved output snapshot text for preflight"),
+    audit: str = typer.Option(None, "--audit", help="Use saved audit JSON for preflight"),
+    force: bool = typer.Option(False, "--force", help="Generate even if preflight fails"),
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Generate Lua smoke config using GUI-derived AWR2944 commands.
     
-    These commands match mmWave Studio GUI emission for AWR2944 but are NOT
-    yet replay-validated on a clean session.
+    If --pid or --snapshot or --audit is provided, runs preflight-config before generating.
+    If preflight fails, refuses to generate unless --force is set.
     """
     from .mmws.post_connect import generate_smoke_known_awr2944
     import json
@@ -5805,6 +6093,75 @@ def mmws_post_smoke_from_known_awr2944(
     
     run_id = str(uuid.uuid4())[:8]
     probe_dir = _lua_launch_probe_dir()
+    
+    # Preflight gate
+    if pid is not None or snapshot or audit:
+        from .mmws.gui_connect import attach_mmwave_studio
+        from .mmws.post_connect import connection_gate, dump_output_snapshot, audit_session, preflight_config, SessionAudit
+        
+        vlog_lines: list[str] = []
+        def vlog(msg: str):
+            vlog_lines.append(msg)
+            if verbose:
+                console.print(f"  [dim]{msg}[/dim]")
+        
+        try:
+            if audit:
+                audit_path = Path(audit)
+                audit_dict = json.loads(audit_path.read_text(encoding="utf-8"))
+                audit_obj = SessionAudit(**audit_dict)
+                passed, reasons = preflight_config(audit_obj)
+            else:
+                doc_text = ""
+                source_type = "live_uia"
+                source_path = ""
+                rs232_valid = False
+                
+                if snapshot:
+                    snap_path = Path(snapshot)
+                    if snap_path.exists():
+                        doc_text = snap_path.read_text(encoding="utf-8")
+                    source_type = "snapshot"
+                    source_path = str(snap_path.resolve())
+                    rs232_valid = True
+                elif pid is not None:
+                    app, window = attach_mmwave_studio(pid=pid, title_regex=title_regex, probe_dir=probe_dir, verbose_log=vlog)
+                    device_status = connection_gate(window, vlog)
+                    rs232_valid = device_status.get("gate_passed", False)
+                    
+                    snap_path = probe_dir / f"{run_id}_preflight_cfg_snapshot.txt"
+                    dump_output_snapshot(window, vlog, snap_path)
+                    
+                    if snap_path.exists():
+                        doc_text = snap_path.read_text(encoding="utf-8")
+                        source_path = str(snap_path)
+                
+                audit_obj = audit_session(doc_text, rs232_valid=rs232_valid, source_type=source_type, source_path=source_path)
+                passed, reasons = preflight_config(audit_obj)
+            
+            if not passed:
+                console.print(f"\n[red]CONFIG_PREFLIGHT_FAILED_REQUIRES_CLEAN_SESSION[/red]")
+                for r in reasons:
+                    console.print(f"  [red]• {r}[/red]")
+                if not force:
+                    console.print("[red]Refusing to generate script. Use --force to override.[/red]")
+                    raise typer.Exit(1)
+                else:
+                    console.print("[yellow]--force specified. Generating script despite failed preflight.[/yellow]")
+            else:
+                console.print(f"[green]CONFIG_PREFLIGHT_PASSED[/green]")
+                
+        except RuntimeError as e:
+            console.print(f"[red][FAIL] {e}[/red]")
+            if not force:
+                raise typer.Exit(1)
+    else:
+        console.print("[yellow]" + "=" * 70 + "[/yellow]")
+        console.print("[yellow]WARNING: NO PREFLIGHT WAS RUN.[/yellow]")
+        console.print("[yellow]Only use this after a successful firmware-power-script.[/yellow]")
+        console.print("[yellow]Use --pid <PID> for automatic session safety checks.[/yellow]")
+        console.print("[yellow]" + "=" * 70 + "[/yellow]\n")
+    
     lua_path = probe_dir / f"{run_id}_smoke_known_awr2944.lua"
     
     script, result = generate_smoke_known_awr2944(run_id, lua_path)
@@ -5816,10 +6173,340 @@ def mmws_post_smoke_from_known_awr2944(
     for w in result.get("warnings", []):
         console.print(f"[yellow]WARNING: {w}[/yellow]")
     
-    console.print(f"\n[bold]NOTE:[/bold] These commands are GUI-derived and NOT YET replay-validated.")
+    console.print(f"\n[bold]NOTE:[/bold] GUI-derived AWR2944 frozen smoke config. Replay-validated on this local setup; keep frozen unless revalidated.")
     console.print(f"[cyan]Generated script:[/cyan] {lua_path}")
     console.print(f"Paste this command into the mmWave Studio Lua Shell:")
     console.print(f"[green]dofile([[{lua_path.resolve()}]])[/green]")
+
+
+@mmws_post_app.command("print-known-awr2944-commands")
+def mmws_post_print_known_awr2944_commands() -> None:
+    """Print the exact frozen GUI-derived AWR2944 command list."""
+    from .mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0
+    
+    console.print("[bold]Frozen GUI-Derived AWR2944 Commands:[/bold]")
+    console.print("[dim]These are the EXACT strings that smoke-from-known-awr2944 emits.[/dim]\n")
+    for i, cmd in enumerate(VALIDATED_AWR2944_SMOKE_V0.commands, 1):
+        console.print(f"  {i:2d}. ar1.{cmd}")
+
+
+@mmws_post_app.command("verify-known-script")
+def mmws_post_verify_known_script(
+    script: str = typer.Option(..., "--script", help="Path to the generated Lua script to verify"),
+) -> None:
+    """Verify a generated Lua script against the frozen AWR2944 command list.
+    
+    Checks that every frozen command appears in an executable (non-comment)
+    line, and that no known bad patterns appear.
+    """
+    from .mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0, _KNOWN_BAD_PATTERNS
+    
+    script_path = Path(script)
+    if not script_path.exists():
+        console.print(f"[red]Script not found: {script_path}[/red]")
+        raise typer.Exit(1)
+    
+    text = script_path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    
+    # Filter to executable lines (non-comment, non-empty)
+    exec_lines = [l for l in lines if l.strip() and not l.strip().startswith("--")]
+    exec_text = "\n".join(exec_lines)
+    
+    errors: list[str] = []
+    
+    # Check frozen commands present in executable lines
+    for cmd_line in VALIDATED_AWR2944_SMOKE_V0.commands:
+        expected = f"ar1.{cmd_line}"
+        if expected not in exec_text:
+            errors.append(f"MISSING frozen command: ar1.{cmd_line}")
+    
+    # Check bad patterns absent from executable lines
+    for bad in _KNOWN_BAD_PATTERNS:
+        if bad in exec_text:
+            errors.append(f"BAD PATTERN found: {bad}")
+    
+    if errors:
+        console.print(f"\n[red]VERIFY FAILED — {len(errors)} error(s):[/red]")
+        for e in errors:
+            console.print(f"  [red]✗ {e}[/red]")
+        raise typer.Exit(1)
+    else:
+        console.print(f"[green]VERIFY PASSED — all {len(_AWR2944_GUI_DERIVED_COMMAND_LINES)} frozen commands present, no bad patterns.[/green]")
+
+
+_CRITICAL_CMDS = {
+    "firmware_power": {"DownloadBSSFw", "DownloadMSSFw", "PowerOn", "RfEnable"},
+    "smoke_known_awr2944": {"ChanNAdcConfig", "LPModConfig", "RfLdoBypassConfig", "SetCalMonFreqLimitConfig", "SetRFDeviceConfig", "RfSetCalMonFreqTxPowLimitConfig", "SetApllSynthBWCtlConfig", "RfInit", "DataPathConfig", "LVDSLaneConfig", "ProfileConfig", "ChirpConfig", "FrameConfig"},
+}
+_CRITICAL_CMDS["smoke_from_extracted"] = _CRITICAL_CMDS["smoke_known_awr2944"]
+_CRITICAL_CMDS["smoke_config"] = _CRITICAL_CMDS["smoke_known_awr2944"]
+
+def _is_cmd_successful(cmd: str, stage: str, ret: Any, ok: bool) -> bool:
+    if not ok:
+        return False
+    if ret in (0, None, "null", ""):
+        return True
+    try:
+        ret_val = float(ret)
+        if ret_val != 0.0:
+            crits = _CRITICAL_CMDS.get(stage, set())
+            if cmd in crits:
+                return False
+    except (ValueError, TypeError):
+        pass # String returns like version with ok=True are successful
+    return True
+
+
+@mmws_post_app.command("check-run")
+def mmws_post_check_run(
+    run_id: str = typer.Option(..., "--run-id", help="Run ID to look up"),
+) -> None:
+    """Look up result and progress files for a run ID and summarize them."""
+    import json
+    
+    probe_dir = _lua_launch_probe_dir()
+    
+    # Check for manifest first
+    manifest_path = probe_dir / f"{run_id}_manifest.json"
+    result_files = []
+    progress_files = []
+    stage = "unknown"
+    
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        stage = manifest.get("stage", "unknown")
+        if "result_path" in manifest:
+            rp = Path(manifest["result_path"])
+            if rp.exists():
+                result_files.append(rp)
+        if "progress_path" in manifest:
+            pp = Path(manifest["progress_path"])
+            if pp.exists():
+                progress_files.append(pp)
+    else:
+        # Fallback to globbing
+        result_files = sorted(probe_dir.glob(f"{run_id}_*_result.json")) + sorted(probe_dir.glob(f"{run_id}_*result.json"))
+        progress_files = sorted(probe_dir.glob(f"{run_id}_*_progress.jsonl")) + sorted(probe_dir.glob(f"{run_id}_*progress.jsonl"))
+        
+        result_files = sorted(set(result_files))
+        progress_files = sorted(set(progress_files))
+        
+        ref_file = result_files[0] if result_files else (progress_files[0] if progress_files else None)
+        if ref_file:
+            fname = ref_file.stem
+            if "firmware_power" in fname:
+                stage = "firmware_power"
+            elif "smoke_known_awr2944" in fname:
+                stage = "smoke_known_awr2944"
+            elif "smoke_from_extracted" in fname:
+                stage = "smoke_from_extracted"
+            elif "smoke_config" in fname:
+                stage = "smoke_config"
+            elif "session_audit" in fname:
+                stage = "session_audit"
+            elif "ar1_help" in fname:
+                stage = "ar1_help_probe"
+    
+    console.print(f"\n[bold]Run Summary (run_id: {run_id}):[/bold]")
+    console.print(f"  Stage: {stage}")
+    
+    # Parse result JSON
+    if result_files:
+        rpath = result_files[0]
+        console.print(f"  Result file: {rpath.name}")
+        try:
+            res = json.loads(rpath.read_text(encoding="utf-8"))
+            success = res.get("success", "?")
+            error = res.get("error", "")
+            warnings = res.get("warnings", [])
+            
+            color = "green" if success else "red"
+            console.print(f"  Success: [{color}]{success}[/{color}]")
+            if error:
+                console.print(f"  Error: [red]{error}[/red]")
+            if warnings:
+                console.print(f"  Warnings ({len(warnings)}):")
+                for w in warnings:
+                    console.print(f"    [yellow]• {w}[/yellow]")
+        except Exception as e:
+            console.print(f"  [red]Failed to parse result: {e}[/red]")
+    else:
+        console.print(f"  Result file: [yellow]not found[/yellow]")
+    
+    # Parse progress JSONL
+    if progress_files:
+        ppath = progress_files[0]
+        console.print(f"  Progress file: {ppath.name}")
+        try:
+            plines = ppath.read_text(encoding="utf-8").strip().splitlines()
+            first_fail = None
+            console.print(f"\n  [bold]Command Returns ({len(plines)} entries):[/bold]")
+            for pl in plines:
+                try:
+                    entry = json.loads(pl)
+                    cmd = entry.get("cmd", "?")
+                    ret = entry.get("ret")
+                    ok = entry.get("ok", True)
+                    err = entry.get("err")
+                    
+                    if _is_cmd_successful(cmd, stage, ret, ok):
+                        console.print(f"    {cmd}: ret={ret} [green]ok[/green]")
+                    else:
+                        console.print(f"    {cmd}: ret={ret} [red]FAIL[/red]" + (f" err={err}" if err else ""))
+                        if first_fail is None:
+                            first_fail = cmd
+                except json.JSONDecodeError:
+                    console.print(f"    [dim]{pl[:80]}[/dim]")
+            
+            if first_fail:
+                console.print(f"\n  [red]First failed command: {first_fail}[/red]")
+        except Exception as e:
+            console.print(f"  [red]Failed to parse progress: {e}[/red]")
+    else:
+        console.print(f"  Progress file: [yellow]not found[/yellow]")
+
+
+@mmws_post_app.command("watch-run")
+def mmws_post_watch_run(
+    run_id: str = typer.Option(..., "--run-id", help="Run ID to watch"),
+    timeout: int = typer.Option(180, "--timeout", help="Timeout in seconds to wait for result"),
+) -> None:
+    """Watch a Lua run's progress and wait for its completion."""
+    import json
+    import time
+    import sys
+    
+    probe_dir = _lua_launch_probe_dir()
+    manifest_path = probe_dir / f"{run_id}_manifest.json"
+    
+    stage = "unknown"
+    result_path = None
+    progress_path = None
+    
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        stage = manifest.get("stage", "unknown")
+        result_path = Path(manifest["result_path"]) if "result_path" in manifest else None
+        progress_path = Path(manifest["progress_path"]) if "progress_path" in manifest else None
+        
+        # If the script hasn't started writing yet, print the dofile
+        if (not result_path or not result_path.exists()) and (not progress_path or not progress_path.exists()):
+            dofile_cmd = manifest.get("dofile", f"dofile([[{manifest.get('lua_path', '')}]])")
+            console.print("[yellow]Script execution has not started yet.[/yellow]")
+            console.print("Paste this into mmWave Studio Lua Shell:")
+            console.print(f"[green]{dofile_cmd}[/green]\n")
+    else:
+        # Fallback globs
+        result_files = sorted(probe_dir.glob(f"{run_id}_*result.json"))
+        progress_files = sorted(probe_dir.glob(f"{run_id}_*progress.jsonl"))
+        if result_files:
+            result_path = result_files[0]
+        if progress_files:
+            progress_path = progress_files[0]
+            stage = progress_path.stem.replace(f"{run_id}_", "").replace("_progress", "")
+    
+    if not result_path and not progress_path:
+        console.print(f"[red]No manifest, result, or progress files found for run_id: {run_id}[/red]")
+        raise typer.Exit(1)
+        
+    console.print(f"[bold]Watching run: {run_id}[/bold] (stage: {stage})")
+    console.print(f"Waiting up to {timeout}s for completion...\n")
+    
+    start_time = time.time()
+    last_pos = 0
+    
+    while time.time() - start_time < timeout:
+        # Read new progress lines
+        if progress_path and progress_path.exists():
+            with open(progress_path, "r", encoding="utf-8") as f:
+                f.seek(last_pos)
+                new_lines = f.readlines()
+                last_pos = f.tell()
+                
+                for line in new_lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        cmd = entry.get("cmd", "?")
+                        ret = entry.get("ret")
+                        ok = entry.get("ok", True)
+                        
+                        if _is_cmd_successful(cmd, stage, ret, ok):
+                            console.print(f"  {cmd}: [green]ok[/green]")
+                        else:
+                            console.print(f"  {cmd}: [red]FAIL (ret={ret})[/red]")
+                    except json.JSONDecodeError:
+                        pass
+        
+        # Check result
+        if result_path and result_path.exists():
+            try:
+                res = json.loads(result_path.read_text(encoding="utf-8"))
+                # If success field exists, the script finished
+                if "success" in res:
+                    success = res["success"]
+                    error = res.get("error", "")
+                    console.print(f"\n[bold]Run Completed:[/bold] {'[green]Success[/green]' if success else '[red]Failed[/red]'}")
+                    if error:
+                        console.print(f"[red]Error: {error}[/red]")
+                    sys.exit(0 if success else 1)
+            except (json.JSONDecodeError, IOError):
+                pass # Wait for atomic write or retry
+                
+        time.sleep(1.0)
+        
+    console.print("\n[red]Timeout reached waiting for result.[/red]")
+    raise typer.Exit(1)
+
+
+@mmws_post_app.command("summarize-session")
+def mmws_post_summarize_session(
+    firmware_run_id: str = typer.Option(..., "--firmware-run-id", help="Run ID of the firmware sequence"),
+    config_run_id: str = typer.Option(..., "--config-run-id", help="Run ID of the config sequence"),
+) -> None:
+    """Summarize a post-connection session (firmware + config runs)."""
+    import json
+    
+    probe_dir = _lua_launch_probe_dir()
+    
+    def _read_result(rid: str) -> dict[str, Any]:
+        manifest_path = probe_dir / f"{rid}_manifest.json"
+        if manifest_path.exists():
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            rp = Path(manifest.get("result_path", ""))
+            if rp.exists():
+                return json.loads(rp.read_text(encoding="utf-8"))
+        # Fallback to glob
+        result_files = sorted(probe_dir.glob(f"{rid}_*result.json"))
+        if result_files:
+            return json.loads(result_files[0].read_text(encoding="utf-8"))
+        return {}
+
+    fw_res = _read_result(firmware_run_id)
+    cfg_res = _read_result(config_run_id)
+    
+    fw_ok = fw_res.get("success") is True
+    cfg_ok = cfg_res.get("success") is True
+    
+    console.print("\n[bold]Session Summary[/bold]")
+    console.print("=" * 40)
+    console.print(f"Firmware Run  ({firmware_run_id}): {'[green]VALIDATED[/green]' if fw_ok else '[red]FAILED/UNKNOWN[/red]'}")
+    console.print(f"Config Run    ({config_run_id}): {'[green]VALIDATED[/green]' if cfg_ok else '[red]FAILED/UNKNOWN[/red]'}")
+    console.print("=" * 40)
+    
+    post_conn_ok = fw_ok and cfg_ok
+    console.print(f"\npost_connection_config_validated: {'[green]true[/green]' if post_conn_ok else '[red]false[/red]'}")
+    
+    warnings = fw_res.get("warnings", []) + cfg_res.get("warnings", [])
+    if warnings:
+        console.print(f"\n[yellow]Warnings ({len(warnings)}):[/yellow]")
+        for w in warnings:
+            console.print(f"  • {w}")
+            
+    console.print("\n[bold]recommended_next_stage:[/bold] configuration hardening / Python wrapper")
 
 
 @mmws_post_app.command("smoke-config-script")
@@ -5889,3 +6576,395 @@ def mmws_post_capture_smoke_script() -> None:
 def mmws_post_parse_smoke_bin() -> None:
     """[STUB] Parse the raw .bin file from the smoke test capture."""
     console.print("[yellow]STUB: parse-smoke-bin not yet implemented.[/yellow]")
+
+
+@mmws_post_app.command("record-validation")
+def mmws_post_record_validation(
+    firmware_run_id: str = typer.Option(..., "--firmware-run-id", help="Run ID of the firmware sequence"),
+    config_run_id: str = typer.Option(..., "--config-run-id", help="Run ID of the config sequence"),
+    label: str = typer.Option(..., "--label", help="Notes or label for this validation record"),
+) -> None:
+    """Record a successful full post-connection validation."""
+    import json
+    import time
+    import datetime
+    
+    probe_dir = _lua_launch_probe_dir()
+    
+    def _read_result(rid: str) -> dict[str, Any]:
+        manifest_path = probe_dir / f"{rid}_manifest.json"
+        if manifest_path.exists():
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            rp = Path(manifest.get("result_path", ""))
+            if rp.exists():
+                return json.loads(rp.read_text(encoding="utf-8"))
+        # Fallback to glob
+        result_files = sorted(probe_dir.glob(f"{rid}_*result.json"))
+        if result_files:
+            return json.loads(result_files[0].read_text(encoding="utf-8"))
+        return {}
+
+    fw_res = _read_result(firmware_run_id)
+    cfg_res = _read_result(config_run_id)
+    
+    fw_ok = fw_res.get("success") is True
+    cfg_ok = cfg_res.get("success") is True
+    
+    record = {
+        "timestamp_iso": datetime.datetime.now().isoformat(),
+        "timestamp_epoch": time.time(),
+        "label": label,
+        "firmware_run_id": firmware_run_id,
+        "config_run_id": config_run_id,
+        "post_connection_config_validated": fw_ok and cfg_ok,
+        "firmware_result": fw_res,
+        "config_result": cfg_res,
+    }
+    
+    # Try to get git commit
+    try:
+        import subprocess
+        git_commit = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
+        record["git_commit"] = git_commit
+    except Exception:
+        pass
+        
+    ts_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    record_path = probe_dir / f"validation_{ts_str}.json"
+    
+    record_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    
+    console.print(f"[green]Validation record written to: {record_path}[/green]")
+
+
+@mmws_post_app.command("list-validations")
+def mmws_post_list_validations() -> None:
+    """List all recorded validation runs."""
+    import json
+    
+    probe_dir = _lua_launch_probe_dir()
+    records = sorted(probe_dir.glob("validation_*.json"))
+    
+    if not records:
+        console.print("[yellow]No validation records found.[/yellow]")
+        return
+        
+    console.print("[bold]Recorded Validations:[/bold]")
+    for rec_path in records:
+        try:
+            rec = json.loads(rec_path.read_text(encoding="utf-8"))
+            label = rec.get("label", "none")
+            fw_id = rec.get("firmware_run_id", "?")
+            cfg_id = rec.get("config_run_id", "?")
+            valid = rec.get("post_connection_config_validated", False)
+            color = "green" if valid else "red"
+            ts = rec.get("timestamp_iso", rec_path.stem.replace("validation_", ""))
+            commit = rec.get("git_commit", "")
+            commit_str = f" [dim]({commit[:7]})[/dim]" if commit else ""
+            
+            console.print(f"  [{color}]{ts}[/{color}] - {label}{commit_str}")
+            console.print(f"    Firmware: {fw_id} | Config: {cfg_id} | Valid: [{color}]{valid}[/{color}]")
+        except Exception:
+            console.print(f"  [dim]{rec_path.name} (failed to parse)[/dim]")
+
+
+@mmws_post_app.command("frozen-config-inspect")
+def mmws_post_frozen_config_inspect(
+    format: str = typer.Option("text", "--format", help="Output format: text or json")
+) -> None:
+    """Print the frozen AWR2944 config in grouped, human-readable form."""
+    from .mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0
+    from .mmws.config_parser import parse_ar1_call
+    import json
+    
+    parsed_cmds = {parse_ar1_call(cmd)["name"]: parse_ar1_call(cmd) for cmd in VALIDATED_AWR2944_SMOKE_V0.commands}
+    
+    inspect_data = {
+        "metadata": {
+            "validation_status": "replay-validated locally",
+            "firmware_run_id": VALIDATED_AWR2944_SMOKE_V0.firmware_run_id,
+            "config_run_id": VALIDATED_AWR2944_SMOKE_V0.config_run_id,
+            "git_commit": VALIDATED_AWR2944_SMOKE_V0.git_commit,
+        },
+        "groups": {
+            "channel_adc": {
+                "raw": parsed_cmds.get("ChanNAdcConfig", {}).get("raw", ""),
+                "tx_enables": {"tx0": 1, "tx1": 1, "tx2": 0, "tx3": 0},
+                "rx_enables": {"rx0": 1, "rx1": 1, "rx2": 0, "rx3": 0},
+                "adc_bits_val": 2,
+                "adc_fmt_val": 0,
+                "iq_swap": 0
+            },
+            "low_power": {
+                "raw": parsed_cmds.get("LPModConfig", {}).get("raw", ""),
+                "lp_adc_mode": "0, 0 (needs confirmation)"
+            },
+            "rf_static": {
+                "RfLdoBypassConfig": parsed_cmds.get("RfLdoBypassConfig", {}).get("raw", ""),
+                "SetCalMonFreqLimitConfig": parsed_cmds.get("SetCalMonFreqLimitConfig", {}).get("raw", ""),
+                "SetRFDeviceConfig": parsed_cmds.get("SetRFDeviceConfig", {}).get("raw", ""),
+                "RfSetCalMonFreqTxPowLimitConfig": parsed_cmds.get("RfSetCalMonFreqTxPowLimitConfig", {}).get("raw", ""),
+                "SetApllSynthBWCtlConfig": parsed_cmds.get("SetApllSynthBWCtlConfig", {}).get("raw", "")
+            },
+            "rf_init": {
+                "raw": parsed_cmds.get("RfInit", {}).get("raw", "")
+            },
+            "data_path": {
+                "DataPathConfig": parsed_cmds.get("DataPathConfig", {}).get("raw", ""),
+                "LVDSLaneConfig": parsed_cmds.get("LVDSLaneConfig", {}).get("raw", "")
+            },
+            "sensor_profile": {
+                "raw": parsed_cmds.get("ProfileConfig", {}).get("raw", ""),
+                "profile_id": 0,
+                "start_freq_ghz": 77,
+                "idle_time_us": 100,
+                "adc_start_time_us": 6,
+                "ramp_end_time_us": 60,
+                "freq_slope_mhz_per_us": 29.982,
+                "num_adc_samples": 256,
+                "sample_rate_ksps": 10000,
+                "rx_gain": 30
+            },
+            "chirp_frame": {
+                "ChirpConfig": parsed_cmds.get("ChirpConfig", {}).get("raw", ""),
+                "FrameConfig": parsed_cmds.get("FrameConfig", {}).get("raw", ""),
+                "chirp_start_end": "0, 0",
+                "enabled_tx_in_chirp": {"tx0": 1, "tx1": 1, "tx2": 0, "tx3": 0},
+                "frame_count": 8,
+                "loop_count": 128,
+                "periodicity_ms": 40,
+                "trigger_select": 1
+            }
+        }
+    }
+    
+    if format == "json":
+        print(json.dumps(inspect_data, indent=2))
+        return
+        
+    console.print("[bold]Frozen Config Inspection[/bold]\n")
+    console.print(f"Validation status: {inspect_data['metadata']['validation_status']}")
+    console.print(f"Firmware run ID: {inspect_data['metadata']['firmware_run_id']}")
+    console.print(f"Config run ID: {inspect_data['metadata']['config_run_id']}")
+    console.print(f"Git commit: {inspect_data['metadata']['git_commit']}\n")
+    
+    for group_name, group_data in inspect_data["groups"].items():
+        console.print(f"[cyan]--- {group_name.upper()} ---[/cyan]")
+        for k, v in group_data.items():
+            if isinstance(v, dict):
+                v_str = ", ".join(f"{sk}={sv}" for sk, sv in v.items())
+                console.print(f"  {k}: {v_str}")
+            else:
+                console.print(f"  {k}: {v}")
+        console.print("")
+
+
+@mmws_post_app.command("frozen-config-explain")
+def mmws_post_frozen_config_explain(
+    format: str = typer.Option("text", "--format", help="Output format: text or json")
+) -> None:
+    """Explain each frozen ar1 command."""
+    from .mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0, AWR2944_ARG_COUNTS
+    from .mmws.config_parser import parse_ar1_call
+    import json
+    
+    explanations = []
+    
+    # Simple hardcoded argument names for explain based on standard signatures
+    arg_names = {
+        "ChanNAdcConfig": ["Tx0En", "Tx1En", "Tx2En", "Tx3En", "Rx0En", "Rx1En", "Rx2En", "Rx3En", "BitsVal", "FmtVal", "IQSwap"],
+        "ChirpConfig": ["ChirpStartIdx", "ChirpEndIdx", "ProfileId", "StartFreqVar", "FreqSlopeVar", "IdleTimeVar", "AdcStartVar", "Tx0En", "Tx1En", "Tx2En", "Tx3En"],
+        "FrameConfig": ["ChirpStartIdx", "ChirpEndIdx", "FrameCount", "LoopCount", "Periodicity", "TriggerDelay", "TriggerSelect"],
+        "ProfileConfig": ["ProfileId", "StartFreq", "IdleTime", "AdcStartTime", "RampEndTime", "TxOutPower", "TxPhaseShifter", "FreqSlopeConst", "TxStartTime", "NumAdcSamples", "DigOutSampleRate", "HpfCornerFreq1", "HpfCornerFreq2", "RxGain"]
+    }
+    
+    for cmd_str in VALIDATED_AWR2944_SMOKE_V0.commands:
+        parsed = parse_ar1_call(cmd_str)
+        name = parsed["name"]
+        expected = AWR2944_ARG_COUNTS.get(name, -1)
+        
+        args_decoded = {}
+        names = arg_names.get(name, [])
+        for i, val in enumerate(parsed["args"]):
+            arg_n = names[i] if i < len(names) else f"arg{i+1} (unknown/needs confirmation)"
+            args_decoded[arg_n] = val
+            
+        explanations.append({
+            "command": name,
+            "raw": cmd_str,
+            "arg_count": parsed["arg_count"],
+            "expected_arg_count": expected,
+            "args_decoded": args_decoded
+        })
+        
+    if format == "json":
+        print(json.dumps(explanations, indent=2))
+        return
+        
+    for exp in explanations:
+        console.print(f"[bold]{exp['command']}:[/bold]")
+        console.print(f"  expected args: {exp['expected_arg_count']}")
+        console.print(f"  actual args: {exp['arg_count']}")
+        if exp["args_decoded"]:
+            for k, v in exp["args_decoded"].items():
+                console.print(f"  {k} = {v}")
+        else:
+            console.print("  (no args)")
+        console.print("")
+
+
+@mmws_post_app.command("validate-frozen-config")
+def mmws_post_validate_frozen_config() -> None:
+    """Validate that the frozen baseline is exactly correct and ordered."""
+    from .mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0, AWR2944_ARG_COUNTS
+    from .mmws.config_parser import parse_ar1_call
+    
+    expected_order = [
+        "ChanNAdcConfig", "LPModConfig", "RfLdoBypassConfig", "SetCalMonFreqLimitConfig",
+        "SetRFDeviceConfig", "RfSetCalMonFreqTxPowLimitConfig", "SetApllSynthBWCtlConfig",
+        "RfInit", "DataPathConfig", "LVDSLaneConfig", "ProfileConfig", "ChirpConfig", "FrameConfig"
+    ]
+    
+    if len(VALIDATED_AWR2944_SMOKE_V0.commands) != len(expected_order):
+        console.print(f"[red]FAIL: Baseline has {len(VALIDATED_AWR2944_SMOKE_V0.commands)} commands, expected {len(expected_order)}[/red]")
+        raise typer.Exit(1)
+        
+    for i, (cmd_str, expected_name) in enumerate(zip(VALIDATED_AWR2944_SMOKE_V0.commands, expected_order)):
+        parsed = parse_ar1_call(cmd_str)
+        name = parsed["name"]
+        
+        if name != expected_name:
+            console.print(f"[red]FAIL: Command {i+1} is {name}, expected {expected_name}[/red]")
+            raise typer.Exit(1)
+            
+        expected_count = AWR2944_ARG_COUNTS.get(name)
+        if expected_count is not None and parsed["arg_count"] != expected_count:
+            console.print(f"[red]FAIL: {name} has {parsed['arg_count']} args, expected {expected_count}[/red]")
+            raise typer.Exit(1)
+            
+    console.print("[green]Frozen config validation PASSED.[/green]")
+
+
+@mmws_post_app.command("generate-config-variant")
+def mmws_post_generate_config_variant(
+    variant: str = typer.Option(..., "--variant", help="Variant to generate (e.g. tx0-only)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="MUST be provided. Dry run only."),
+    format: str = typer.Option("text", "--format", help="Output format: text or json")
+) -> None:
+    """Generate a modified dry-run config variant."""
+    from .mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0, AWR2944_ARG_COUNTS
+    from .mmws.config_parser import parse_ar1_call
+    import json
+    
+    if not dry_run:
+        console.print("[red]FAIL: --dry-run MUST be provided in Configuration Hardening v1.[/red]")
+        raise typer.Exit(1)
+        
+    allowed_variants = ["tx0-only", "tx1-only", "tx0-tx1", "rx0-rx1-only", "all-rx", "samples-128", "samples-256"]
+    if variant not in allowed_variants:
+        console.print(f"[red]FAIL: Unknown variant '{variant}'. Allowed: {allowed_variants}[/red]")
+        raise typer.Exit(1)
+        
+    # Copy baseline parsed cmds
+    parsed_cmds = [parse_ar1_call(cmd) for cmd in VALIDATED_AWR2944_SMOKE_V0.commands]
+    
+    warnings = []
+    
+    def _find_cmd(name: str):
+        for c in parsed_cmds:
+            if c["name"] == name:
+                return c
+        return None
+        
+    chan = _find_cmd("ChanNAdcConfig")
+    chirp = _find_cmd("ChirpConfig")
+    prof = _find_cmd("ProfileConfig")
+    frame = _find_cmd("FrameConfig")
+    
+    if not (chan and chirp and prof and frame):
+        console.print("[red]FAIL: Missing critical commands in baseline.[/red]")
+        raise typer.Exit(1)
+        
+    if variant == "tx0-only":
+        chan["args"][0:4] = [1, 0, 0, 0]
+        chirp["args"][7:11] = [1, 0, 0, 0]
+    elif variant == "tx1-only":
+        chan["args"][0:4] = [0, 1, 0, 0]
+        chirp["args"][7:11] = [0, 1, 0, 0]
+    elif variant == "tx0-tx1":
+        chan["args"][0:4] = [1, 1, 0, 0]
+        chirp["args"][7:11] = [1, 1, 0, 0]
+        warnings.append("Multiple TX are enabled. TX power backoff is still 0 dB in the frozen config. This variant is dry-run only.")
+    elif variant == "rx0-rx1-only":
+        chan["args"][4:8] = [1, 1, 0, 0]
+        warnings.append("RX enable count changed but DataPathConfig/LVDSLaneConfig are still frozen; hardware execution is not allowed until data-path implications are validated.")
+    elif variant == "all-rx":
+        chan["args"][4:8] = [1, 1, 1, 1]
+        warnings.append("RX enable count changed but DataPathConfig/LVDSLaneConfig are still frozen; hardware execution is not allowed until data-path implications are validated.")
+    elif variant == "samples-128":
+        prof["args"][15] = 128
+        warnings.append("numAdcSamples changed to 128. Downstream parser and capture scripts will need to expect smaller chunks.")
+    elif variant == "samples-256":
+        prof["args"][15] = 256
+        
+    # Rebuild strings
+    modified_strings = []
+    diffs = []
+    
+    for i, (orig_str, mod_cmd) in enumerate(zip(VALIDATED_AWR2944_SMOKE_V0.commands, parsed_cmds)):
+        mod_str = f"{mod_cmd['name']}({', '.join(str(x) for x in mod_cmd['args'])})" if mod_cmd["args"] else f"{mod_cmd['name']}()"
+        modified_strings.append(mod_str)
+        
+        if mod_str != orig_str:
+            orig_parsed = parse_ar1_call(orig_str)
+            arg_diffs = []
+            for j, (o_a, m_a) in enumerate(zip(orig_parsed["args"], mod_cmd["args"])):
+                if o_a != m_a:
+                    arg_diffs.append(f"arg{j+1}: {o_a} -> {m_a}")
+            diffs.append({"command": mod_cmd["name"], "original": orig_str, "modified": mod_str, "arg_diffs": arg_diffs})
+            
+    # Guardrails
+    if sum(chan["args"][0:4]) == 0:
+        console.print("[red]FAIL: No TX enabled.[/red]")
+        raise typer.Exit(1)
+    if sum(chan["args"][4:8]) == 0:
+        console.print("[red]FAIL: No RX enabled.[/red]")
+        raise typer.Exit(1)
+        
+    for cmd in parsed_cmds:
+        expected = AWR2944_ARG_COUNTS.get(cmd["name"])
+        if expected is not None and len(cmd["args"]) != expected:
+            console.print(f"[red]FAIL: {cmd['name']} arg count mismatch: {len(cmd['args'])} != {expected}[/red]")
+            raise typer.Exit(1)
+            
+    output = {
+        "variant": variant,
+        "warnings": warnings,
+        "diffs": diffs,
+        "modified_commands": modified_strings
+    }
+    
+    if format == "json":
+        print(json.dumps(output, indent=2))
+        return
+    console.print("\n[bold yellow]" + "="*60)
+    console.print("HARDWARE EMISSION DISABLED.")
+    console.print("This is a dry-run software-only variant.")
+    console.print("Do not paste these commands into mmWave Studio unless a future")
+    console.print("validation step explicitly enables hardware emission.")
+    console.print("="*60 + "[/bold yellow]\n")
+    
+    if warnings:
+        for w in warnings:
+            console.print(f"[yellow]WARNING: {w}[/yellow]")
+        console.print("")
+        
+    if not diffs:
+        console.print("No changes from baseline.")
+    else:
+        for d in diffs:
+            console.print(f"[bold]{d['command']}:[/bold]")
+            for ad in d["arg_diffs"]:
+                console.print(f"  {ad}")
+        
+    console.print("\n[green]Signature validation passed.[/green]")

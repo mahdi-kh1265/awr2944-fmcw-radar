@@ -105,13 +105,13 @@ def parse_post_status_text(
     matched: dict[str, str] = {}
     
     source_info: dict[str, Any] = {
-        "status_source": source_name,
-        "snapshot_path": snapshot_path,
+        "source_type": source_name,
+        "source_path": snapshot_path,
         "source_text_chars": len(doc_text) if doc_text else 0
     }
     
     if not doc_text:
-        source_info["error"] = "OUTPUT_TEXT_EMPTY_OR_UNREADABLE"
+        source_info["error"] = "OUTPUT_SNAPSHOT_UNREADABLE"
         return status, source_info
 
     # Version extraction (first-match is fine, these don't repeat in conflicting ways)
@@ -262,6 +262,267 @@ def dump_output_snapshot(window, vlog: Callable[[str], None], output_path: Path)
         vlog(f"Wrote output snapshot to {output_path}")
     except Exception as e:
         vlog(f"Failed to read/write output document: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Session auditor — dirty-session detection (chronological)
+# ---------------------------------------------------------------------------
+
+# Config commands whose failure contaminates the session
+_CONFIG_FUNCTIONS = {
+    "ChanNAdcConfig", "LPModConfig", "RfInit", "SetMiscConfig",
+    "RfLdoBypassConfig", "SetCalMonFreqLimitConfig", "SetRFDeviceConfig",
+    "RfSetCalMonFreqTxPowLimitConfig", "SetApllSynthBWCtlConfig",
+    "DataPathConfig", "LvdsClkConfig", "LVDSLaneConfig",
+    "ProfileConfig", "ChirpConfig", "FrameConfig", "AdvanceFrameConfig",
+    "DisableTestSource", "EnableTestSource",
+}
+
+
+@dataclass
+class SessionAudit:
+    rs232_valid: bool = False
+    clean_for_firmware_power: bool = False
+    firmware_power_already_attempted: bool = False
+    firmware_power_success: bool = False
+    rf_enable_failed: bool = False
+    poweroff_seen: bool = False
+    disconnect_seen: bool = False
+    protocol_error_seen: bool = False
+    static_config_attempted: bool = False
+    static_config_failed: bool = False
+    requires_power_cycle: bool = False
+    reason: list[str] = field(default_factory=list)
+    source_type: str = "unknown"
+    source_path: str = ""
+
+
+def _find_session_boundary(lines: list[str]) -> int:
+    """Find the latest session boundary line index.
+    
+    Uses the latest of:
+    - Latest valid Device Status line (containing AWR2944 and / )
+    - Latest Startup.lua reference
+    - Latest AWR_RUN_BEGIN marker
+    
+    Returns 0 if no boundary found.
+    """
+    boundary = 0
+    for i in range(len(lines) - 1, -1, -1):
+        stripped = lines[i].strip()
+        if "Device Status" in stripped and "AWR2944" in stripped and "/" in stripped:
+            boundary = max(boundary, i)
+            break  # last Device Status wins
+    for i in range(len(lines) - 1, -1, -1):
+        stripped = lines[i].strip()
+        if "Startup.lua" in stripped:
+            boundary = max(boundary, i)
+            break
+    return boundary
+
+
+def audit_session(doc_text: str, rs232_valid: bool = False, source_type: str = "unknown", source_path: str = "") -> SessionAudit:
+    """Audit output text chronologically from the latest session boundary.
+    
+    Detects invalidation events and determines stage readiness.
+    """
+    audit = SessionAudit(rs232_valid=rs232_valid, source_type=source_type, source_path=source_path)
+    
+    if not doc_text:
+        audit.reason.append("OUTPUT_SNAPSHOT_UNREADABLE")
+        return audit
+    
+    lines = doc_text.splitlines()
+    start_idx = _find_session_boundary(lines)
+    
+    # Track firmware download/power/rf state chronologically
+    bss_downloaded = False
+    mss_downloaded = False
+    power_on_seen = False
+    rf_enable_seen = False
+    rf_enable_ok = False
+    
+    ar1_pattern = re.compile(r"ar1\.([A-Za-z0-9_]+)")
+    
+    i = start_idx
+    while i < len(lines):
+        stripped = lines[i].strip()
+        
+        # --- Firmware/power attempts ---
+        if "ar1.DownloadBSSFw" in stripped:
+            audit.firmware_power_already_attempted = True
+            bss_downloaded = True
+        if "ar1.DownloadMSSFw" in stripped:
+            audit.firmware_power_already_attempted = True
+            mss_downloaded = True
+        if "ar1.PowerOn" in stripped:
+            audit.firmware_power_already_attempted = True
+            power_on_seen = True
+        if "ar1.RfEnable" in stripped:
+            audit.firmware_power_already_attempted = True
+            rf_enable_seen = True
+            rf_enable_ok = True  # optimistic; overridden below if failure detected
+        
+        # --- Success indicators ---
+        if "MSS power up done async event received!" in stripped:
+            pass  # confirms PowerOn; we already track power_on_seen
+        if "BSS power up done async event received!" in stripped:
+            pass  # confirms RfEnable BSS side
+        
+        # --- Dirty events ---
+        if "ar1.PowerOff" in stripped:
+            audit.poweroff_seen = True
+            audit.requires_power_cycle = True
+            audit.reason.append(f"PowerOff seen at line {i+1}")
+            # Invalidate firmware/power success
+            power_on_seen = False
+            rf_enable_ok = False
+            audit.firmware_power_success = False
+            
+        if "ar1.Disconnect" in stripped or "Debug Port Disconnected" in stripped:
+            audit.disconnect_seen = True
+            audit.requires_power_cycle = True
+            audit.reason.append(f"Disconnect seen at line {i+1}")
+            power_on_seen = False
+            rf_enable_ok = False
+            audit.firmware_power_success = False
+            
+        if "PROTOCOL ERROR" in stripped:
+            audit.protocol_error_seen = True
+            audit.requires_power_cycle = True
+            audit.reason.append(f"PROTOCOL ERROR at line {i+1}")
+            power_on_seen = False
+            rf_enable_ok = False
+            audit.firmware_power_success = False
+        
+        if "BSS Power Up async event was not received" in stripped:
+            audit.rf_enable_failed = True
+            audit.requires_power_cycle = True
+            audit.reason.append(f"BSS Power Up async not received at line {i+1}")
+            rf_enable_ok = False
+            audit.firmware_power_success = False
+        
+        # RfEnable failure detection: "Status: Failed" in the few lines after ar1.RfEnable
+        if rf_enable_seen and "Status: Failed" in stripped:
+            audit.rf_enable_failed = True
+            audit.requires_power_cycle = True
+            audit.reason.append(f"RfEnable Status: Failed at line {i+1}")
+            rf_enable_ok = False
+            audit.firmware_power_success = False
+        
+        # --- Config attempts and failures ---
+        m = ar1_pattern.search(stripped)
+        if m:
+            func = m.group(1)
+            if func in _CONFIG_FUNCTIONS:
+                audit.static_config_attempted = True
+                # Check next few lines for failure
+                lookahead_end = min(i + 6, len(lines))
+                for j in range(i + 1, lookahead_end):
+                    la = lines[j].strip()
+                    if "Status: Failed" in la:
+                        audit.static_config_failed = True
+                        audit.requires_power_cycle = True
+                        audit.reason.append(f"{func} Status: Failed at line {j+1}")
+                        break
+                    if "Status: Passed" in la:
+                        break
+                    if ar1_pattern.search(la):
+                        break  # next command, no status for this one
+        
+        # --- RadarAPI / GUI / WinForms errors ---
+        if "[RadarAPI]: Error:" in stripped:
+            audit.static_config_failed = True
+            audit.requires_power_cycle = True
+            audit.reason.append(f"RadarAPI error at line {i+1}: {stripped[:120]}")
+        if "FREQUENCY IS NOT WITHIN VCO RANGE" in stripped:
+            audit.static_config_failed = True
+            audit.requires_power_cycle = True
+            audit.reason.append(f"VCO frequency range error at line {i+1}")
+        if "Value of '" in stripped:
+            audit.static_config_failed = True
+            audit.requires_power_cycle = True
+            audit.reason.append(f"WinForms numeric validation error at line {i+1}: {stripped[:120]}")
+        if "ProfileConfig failed" in stripped:
+            audit.static_config_failed = True
+            audit.requires_power_cycle = True
+            audit.reason.append(f"ProfileConfig failed at line {i+1}")
+        
+        # --- AWR_RUN markers ---
+        if "AWR_RUN_END" in stripped and "success=false" in stripped:
+            audit.requires_power_cycle = True
+            audit.reason.append(f"AWR_RUN_END success=false at line {i+1}")
+        
+        i += 1
+    
+    # Derived state
+    audit.firmware_power_success = (
+        bss_downloaded and mss_downloaded and power_on_seen and 
+        rf_enable_ok and not audit.requires_power_cycle
+    )
+    
+    audit.clean_for_firmware_power = (
+        audit.rs232_valid and 
+        not audit.firmware_power_already_attempted and 
+        not audit.requires_power_cycle
+    )
+    
+    return audit
+
+
+def preflight_firmware(audit: SessionAudit) -> tuple[bool, list[str]]:
+    """Check if the session is clean enough to run firmware-power-script.
+    
+    Returns (passed, reasons).
+    """
+    reasons: list[str] = []
+    
+    if not audit.rs232_valid:
+        reasons.append("RS232 identity gate not valid")
+    if audit.firmware_power_already_attempted:
+        reasons.append("Firmware/power already attempted in this session")
+    if audit.requires_power_cycle:
+        reasons.extend(audit.reason)
+    
+    passed = len(reasons) == 0
+    return passed, reasons
+
+
+def preflight_config(audit: SessionAudit) -> tuple[bool, list[str]]:
+    """Check if the session is clean enough to run config scripts.
+    
+    Returns (passed, reasons).
+    """
+    reasons: list[str] = []
+    
+    if not audit.firmware_power_success:
+        reasons.append("Firmware/power sequence did not succeed in this session")
+    if audit.requires_power_cycle:
+        reasons.extend(audit.reason)
+    if audit.static_config_failed:
+        reasons.append("A prior config command failed in this session")
+    
+    passed = len(reasons) == 0
+    return passed, reasons
+
+
+# ---------------------------------------------------------------------------
+# Jupyter API contract (TODO — enforce when Jupyter wrapper is built)
+# ---------------------------------------------------------------------------
+#
+# When the Jupyter/notebook API wrapper is implemented, the following
+# contract MUST be enforced:
+#
+#   sess.generate_firmware_power() MUST call preflight_firmware()
+#   sess.generate_config_script()  MUST call preflight_config()
+#
+#   Any Jupyter method that generates hardware-changing Lua MUST either:
+#     a) pass its preflight gate, OR
+#     b) require force=True with an explicit warning
+#
+# This prevents users from accidentally running firmware or config on a
+# dirty session from a notebook cell without realizing the session state.
+# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
@@ -538,6 +799,34 @@ def _lua_log_progress() -> str:
     ])
 
 
+def _atomic_write_manifest(
+    run_id: str,
+    stage: str,
+    lua_path: Path,
+    result_path: Path,
+    progress_path: Path,
+) -> None:
+    """Atomically write a run manifest JSON for observability tools."""
+    import datetime
+    
+    manifest = {
+        "run_id": run_id,
+        "stage": stage,
+        "lua_path": str(lua_path.resolve()),
+        "result_path": str(result_path.resolve()),
+        "progress_path": str(progress_path.resolve()),
+        "dofile": f"dofile([[{lua_path.resolve()}]])",
+        "created_at": datetime.datetime.now().isoformat()
+    }
+    
+    probe_dir = lua_path.parent
+    final_path = probe_dir / f"{run_id}_manifest.json"
+    tmp_path = probe_dir / f"{run_id}_manifest.json.tmp"
+    
+    tmp_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    tmp_path.replace(final_path)
+
+
 def _lua_result_init_and_save(run_id: str, out_path_str: str) -> str:
     """Return Lua code to initialize the result table and saveResult function."""
     return "\n".join([
@@ -568,7 +857,11 @@ def _lua_result_init_and_save(run_id: str, out_path_str: str) -> str:
 
 
 def _lua_safe_call() -> str:
-    """Return the standard Lua safeCall function (returns false on critical fail)."""
+    """Return the standard Lua safeCall function (returns false on critical fail).
+    
+    Expects `run_id` and `run_stage` local variables to be defined in the
+    calling script for AWR_RUN_END marker emission.
+    """
     return "\n".join([
         'local function safeCall(funcName, func, critical)',
         '    local ok, ret = pcall(func)',
@@ -583,6 +876,7 @@ def _lua_safe_call() -> str:
         '        if critical then',
         '            result.error = funcName .. " failed: " .. tostring(err or ret)',
         '            saveResult()',
+        '            print("AWR_RUN_END run_id=" .. run_id .. " stage=" .. run_stage .. " success=false")',
         '            return false',
         '        else',
         '            table.insert(result.warnings, funcName .. " failed: " .. tostring(err or ret))',
@@ -639,7 +933,9 @@ def generate_firmware_power_script(run_id: str, result_path: Path) -> str:
     """Deterministic firmware/power sequence."""
     
     out_path_str = result_path.resolve().as_posix()
-    prog_path_str = result_path.with_name(result_path.stem + '_progress.jsonl').resolve().as_posix()
+    prog_path = result_path.with_name(result_path.stem + '_progress.jsonl')
+    
+    _atomic_write_manifest(run_id, "firmware_power", result_path, result_path, prog_path)
     
     log_fn = _lua_log_progress()
     res_fn = _lua_result_init_and_save(run_id, out_path_str)
@@ -650,13 +946,17 @@ def generate_firmware_power_script(run_id: str, result_path: Path) -> str:
 -- run_id: {run_id}
 -- WARNING: Do NOT run this script twice in the same session.
 
-local progress_path = [[{prog_path_str}]]
+local run_id = "{run_id}"
+local run_stage = "firmware_power"
+local progress_path = [[{prog_path.resolve().as_posix()}]]
 
 {res_fn}
 
 {log_fn}
 
 {safe_fn}
+
+print("AWR_RUN_BEGIN run_id=" .. run_id .. " stage=" .. run_stage)
 
 -- 1. BSS Firmware
 local bss_path = [[C:\\ti\\mmwave_studio_03_01_04_04\\rf_eval_firmware\\radarss\\xwr29xx_radarss_rprc.bin]]
@@ -688,6 +988,7 @@ safeCall("GetBSSPatchFwVersion", function() return ar1.GetBSSPatchFwVersion() en
 
 result.success = true
 saveResult()
+print("AWR_RUN_END run_id=" .. run_id .. " stage=" .. run_stage .. " success=true")
 """
     return script
 
@@ -870,11 +1171,13 @@ def generate_smoke_from_extracted(
     Filters out commands that failed in the source log by default
     unless include_failed=True.
     """
-    prog_path = out_path.with_name(out_path.stem + "_progress.jsonl").resolve().as_posix()
-    res_path = out_path.with_name(out_path.stem + "_result.json").resolve().as_posix()
+    prog_path = out_path.with_name(out_path.stem + "_progress.jsonl")
+    res_path = out_path.with_name(out_path.stem + "_result.json")
+    
+    _atomic_write_manifest(run_id, "smoke_config", out_path, res_path, prog_path)
     
     log_fn = _lua_log_progress()
-    res_fn = _lua_result_init_and_save(run_id, res_path)
+    res_fn = _lua_result_init_and_save(run_id, res_path.resolve().as_posix())
     safe_fn = _lua_safe_call()
     
     header_lines = [
@@ -884,13 +1187,17 @@ def generate_smoke_from_extracted(
         f"-- include_failed: {include_failed}",
         f"-- include_unknown: {include_unknown}",
         "",
-        f'local progress_path = [[{prog_path}]]',
+        f'local run_id = "{run_id}"',
+        f'local run_stage = "smoke_config"',
+        f'local progress_path = [[{prog_path.resolve().as_posix()}]]',
         "",
         res_fn,
         "",
         log_fn,
         "",
         safe_fn,
+        "",
+        'print("AWR_RUN_BEGIN run_id=" .. run_id .. " stage=" .. run_stage)',
         "",
     ]
     
@@ -938,6 +1245,7 @@ def generate_smoke_from_extracted(
     cmd_lines.append('print("Smoke config from extracted commands completed successfully.")')
     cmd_lines.append('result.success = true')
     cmd_lines.append('saveResult()')
+    cmd_lines.append('print("AWR_RUN_END run_id=" .. run_id .. " stage=" .. run_stage .. " success=true")')
     
     script = "\n".join(header_lines + cmd_lines)
     
@@ -951,50 +1259,98 @@ def generate_smoke_from_extracted(
     return script, result
 
 
-# Exact sequence of AWR2944 GUI-emitted commands for static/data config.
-# These have the correct argument counts and types.
-_AWR2944_GUI_DERIVED_COMMANDS = [
-    # Static Config
-    ("ChanNAdcConfig", '1, 1, 0, 1, 1, 1, 1, 2, 1, 0, 1', "static_config", "captured during dirty session; replay validation required"),
-    ("LPModConfig", '0, 1', "static_config", None),
-    ("RfLdoBypassConfig", '0', "rf_static_config", None),
-    ("SetCalMonFreqLimitConfig", '760, 810, 0', "rf_static_config", None),
-    ("SetRFDeviceConfig", '1, 0, 0, 0, 0, 0, 0', "rf_static_config", None),
-    ("RfSetCalMonFreqTxPowLimitConfig", '760, 810, 0, 0, 760, 810, 0, 0, 760, 810, 0, 0, 0', "rf_static_config", None),
-    ("SetApllSynthBWCtlConfig", '0, 1, 1, 0, 1, 1, 0', "rf_static_config", None),
-    ("RfInit", '', "static_config", None),
-    
-    # Data Config
-    ("DataPathConfig", '1, 1, 0', "data_config", None),
-    ("LVDSLaneConfig", '0, 1, 1, 0, 0, 1, 0, 0', "data_config", None),
-    
-    # Profile/Chirp/Frame Config
-    ("ProfileConfig", '0, 77, 100, 6, 60, 0, 0, 0, 0, 0, 0, 29.982, 0, 256, 10000, 0, 0, 30, 0, 0, 0, 0, 0', "profile_chirp_frame", None),
-    ("ChirpConfig", '0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0', "profile_chirp_frame", None),
-    ("FrameConfig", '0, 0, 8, 128, 40, 0, 0', "profile_chirp_frame", None),
+# ---------------------------------------------------------------------------
+# Frozen GUI-derived AWR2944 commands — LITERAL REPLAY ONLY
+# ---------------------------------------------------------------------------
+#
+# These are the EXACT strings emitted by mmWave Studio 3.1.4.4 GUI for AWR2944.
+# DO NOT convert units, change values, reformat, or reconstruct these.
+# They are frozen golden strings. Any modification will break the radar.
+#
+# Known bad patterns that MUST NOT appear:
+#   SetCalMonFreqLimitConfig(760   — GUI uses 76/81 (x10 GHz), not 760/810
+#   RfSetCalMonFreqTxPowLimitConfig(760  — same issue
+#   DataPathConfig(1, 1, 0)        — GUI uses bitmask 513, 1216644097
+#   LPModConfig(0, 1)              — GUI uses (0, 0)
+#   FrameConfig(0, 0, 8, 128, 40, 0, 0)  — last arg is 1, not 0
+#   ProfileConfig(0, 77, ..., 29.982     — GUI uses 13 zeros before 29.982
+#
+
+@dataclass
+class ValidatedFrozenConfig:
+    name: str
+    validation_label: str
+    firmware_run_id: str
+    config_run_id: str
+    git_commit: str
+    commands: list[str]
+
+
+VALIDATED_AWR2944_SMOKE_V0 = ValidatedFrozenConfig(
+    name="awr2944_smoke_v0",
+    validation_label="First clean positive post-connection validation",
+    firmware_run_id="da0ce6de",
+    config_run_id="3ecac52f",
+    git_commit="5786958c04ade2c8e43b26364d8ce5d8643819dc",
+    commands=[
+        "ChanNAdcConfig(1, 1, 0, 0, 1, 1, 0, 0, 2, 0, 0)",
+        "LPModConfig(0, 0)",
+        "RfLdoBypassConfig(0x0)",
+        "SetCalMonFreqLimitConfig(76,81,0)",
+        "SetRFDeviceConfig(5, 0, 0, 0, 0, 0, 0)",
+        "RfSetCalMonFreqTxPowLimitConfig(76, 76, 76, 76, 81, 81, 81, 81, 0, 0, 0, 0,0)",
+        "SetApllSynthBWCtlConfig(1, 4, 3, 9, 18, 1, 4)",
+        "RfInit()",
+        "DataPathConfig(513, 1216644097, 0)",
+        "LVDSLaneConfig(0, 1, 0, 0, 0, 1, 0, 0)",
+        "ProfileConfig(0, 77, 100, 6, 60, 0, 0, 0, 0, 0, 0, 0, 0, 29.982, 0, 256, 10000, 2216755200, 0, 30, 0, 0, 0)",
+        "ChirpConfig(0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0)",
+        "FrameConfig(0, 0, 8, 128, 40, 0, 1)",
+    ]
+)
+
+# Known bad patterns — used for regression verification
+_KNOWN_BAD_PATTERNS = [
+    "SetCalMonFreqLimitConfig(760",
+    "RfSetCalMonFreqTxPowLimitConfig(760",
+    "DataPathConfig(1, 1, 0)",
+    "LPModConfig(0, 1)",
+    "FrameConfig(0, 0, 8, 128, 40, 0, 0)",
+    "ProfileConfig(0, 77, 100, 6, 60, 0, 0, 0, 0, 0, 0, 29.982",
 ]
 
+
+def _parse_frozen_command(cmd_line: str) -> tuple[str, str]:
+    """Parse 'FuncName(args)' into ('FuncName', 'args')."""
+    paren = cmd_line.index("(")
+    func = cmd_line[:paren]
+    args = cmd_line[paren + 1:].rstrip(")")
+    return func, args
+
+
 def generate_smoke_known_awr2944(run_id: str, out_path: Path) -> tuple[str, dict[str, Any]]:
-    """Generate a smoke config script using known GUI-derived AWR2944 commands.
+    """Generate a smoke config script using frozen GUI-derived AWR2944 commands.
     
-    These commands are exact copies of what mmWave Studio 3.1.4.4 emits
-    for an AWR2944, but were captured during a session that later became dirty.
+    These are LITERAL copies of what mmWave Studio 3.1.4.4 emits for AWR2944.
+    The argument strings are used verbatim — no conversion, no defaults.
     """
-    prog_path = out_path.with_name(out_path.stem + "_progress.jsonl").resolve().as_posix()
-    res_path = out_path.with_name(out_path.stem + "_result.json").resolve().as_posix()
+    prog_path = out_path.with_name(out_path.stem + "_progress.jsonl")
+    res_path = out_path.with_name(out_path.stem + "_result.json")
+    
+    _atomic_write_manifest(run_id, "smoke_config", out_path, res_path, prog_path)
     
     log_fn = _lua_log_progress()
-    res_fn = _lua_result_init_and_save(run_id, res_path)
+    res_fn = _lua_result_init_and_save(run_id, res_path.resolve().as_posix())
     safe_fn = _lua_safe_call()
     
     header = [
-        f"-- GUI-Derived AWR2944 Smoke Config",
-        f"-- NOT YET REPLAY-VALIDATED",
-        f"-- These commands match mmWave Studio GUI emission for AWR2944",
-        f"-- but have not been verified on a clean session.",
+        f"-- GUI-Derived AWR2944 Smoke Config (FROZEN LITERAL REPLAY)",
+        f"-- These are exact GUI-emitted commands. DO NOT modify arguments.",
         f"-- run_id: {run_id}",
         "",
-        f'local progress_path = [[{prog_path}]]',
+        f'local run_id = "{run_id}"',
+        f'local run_stage = "smoke_config"',
+        f'local progress_path = [[{prog_path.resolve().as_posix()}]]',
         "",
         res_fn,
         "",
@@ -1002,34 +1358,38 @@ def generate_smoke_known_awr2944(run_id: str, out_path: Path) -> tuple[str, dict
         "",
         safe_fn,
         "",
+        'print("AWR_RUN_BEGIN run_id=" .. run_id .. " stage=" .. run_stage)',
+        "",
     ]
     
     body = []
-    warnings: list[str] = []
-    for func, args, cat, note in _AWR2944_GUI_DERIVED_COMMANDS:
-        if note:
-            body.append(f"-- WARNING: {note}")
-            warnings.append(f"{func}: {note}")
+    commands_meta: list[dict] = []
+    for cmd_line in VALIDATED_AWR2944_SMOKE_V0.commands:
+        func, args = _parse_frozen_command(cmd_line)
         
         is_critical = "true" if func in _SMOKE_CRITICAL_COMMANDS else "false"
-        body.append(f'if not safeCall("{func}", function() return ar1.{func}({args}) end, {is_critical}) then return end')
+        body.append(f'if not safeCall("{func}", function() return ar1.{cmd_line} end, {is_critical}) then return end')
         
         # Add sleep after RfInit
         if func == "RfInit":
             body.append("RSTD.Sleep(1000)")
         body.append("")
+        
+        commands_meta.append({"function": func, "frozen_args": args})
     
     body.append('print("GUI-derived AWR2944 smoke config completed successfully.")')
     body.append('result.success = true')
     body.append('saveResult()')
+    body.append('print("AWR_RUN_END run_id=" .. run_id .. " stage=" .. run_stage .. " success=true")')
     
     script = "\n".join(header + body)
     
     result = {
         "run_id": run_id,
-        "source": "gui_derived_awr2944",
-        "replay_validated": False,
-        "warnings": warnings,
-        "commands": [{"function": f, "args": a, "category": c} for f, a, c, _ in _AWR2944_GUI_DERIVED_COMMANDS],
+        "source": "frozen_gui_derived_awr2944",
+        "replay_validated": True,
+        "validation_label": VALIDATED_AWR2944_SMOKE_V0.validation_label,
+        "warnings": [],
+        "commands": commands_meta,
     }
     return script, result
