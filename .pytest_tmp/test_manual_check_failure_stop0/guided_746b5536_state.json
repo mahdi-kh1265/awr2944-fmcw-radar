@@ -1,0 +1,21 @@
+{
+  "workflow_id": "746b5536",
+  "label": "failtest",
+  "pid": null,
+  "state_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest_tmp\\test_manual_check_failure_stop0\\guided_746b5536_state.json",
+  "current_stage": "failed",
+  "firmware_run_id": "",
+  "config_run_id": "",
+  "firmware_dofile": "",
+  "config_dofile": "",
+  "firmware_result_path": "",
+  "config_result_path": "",
+  "firmware_progress_path": "",
+  "config_progress_path": "",
+  "validation_file": "",
+  "errors": [
+    "manual_check_passed failed: Manual check failed: None"
+  ],
+  "created_at": "2026-07-07T19:24:46.104643+00:00",
+  "updated_at": "2026-07-07T19:24:46.105668+00:00"
+}

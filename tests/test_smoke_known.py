@@ -22,8 +22,8 @@ from awr2944_dca.mmws.post_connect import (
 def generated_script(tmp_path: Path) -> str:
     """Generate the smoke-from-known-awr2944 script and return its text."""
     out_path = tmp_path / "test_smoke_known_awr2944.lua"
-    script, result = generate_smoke_known_awr2944("testrun1", out_path)
-    return script
+    generated = generate_smoke_known_awr2944("testrun1", out_path)
+    return generated.script
 
 
 class TestFrozenCommandsPresent:
@@ -103,8 +103,15 @@ class TestScriptStructure:
     
     def test_result_json_source_is_frozen(self, tmp_path: Path):
         out_path = tmp_path / "test.lua"
-        _, result = generate_smoke_known_awr2944("testrun1", out_path)
-        assert result["source"] == "frozen_gui_derived_awr2944"
+        generated = generate_smoke_known_awr2944("testrun1", out_path)
+        
+        # Verify structured metadata
+        assert generated.metadata["source"] == "frozen_gui_derived_awr2944"
+        assert generated.metadata["replay_validated"] is True
+        
+        # Verify script comments for human/debug visibility
+        assert "-- source: frozen_gui_derived_awr2944" in generated.script
+        assert "-- replay_validated: true" in generated.script
 
 
 class TestParseFrozenCommand:

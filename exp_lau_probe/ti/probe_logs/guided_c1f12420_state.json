@@ -1,0 +1,27 @@
+{
+  "workflow_id": "c1f12420",
+  "label": "post-fix dry-run",
+  "pid": null,
+  "state_path": "ti\\probe_logs\\guided_c1f12420_state.json",
+  "current_stage": "dry_run_completed",
+  "firmware_run_id": "",
+  "config_run_id": "",
+  "firmware_dofile": "",
+  "config_dofile": "",
+  "firmware_result_path": "",
+  "config_result_path": "",
+  "firmware_progress_path": "",
+  "config_progress_path": null,
+  "dry_run": true,
+  "hardware_touched": false,
+  "lua_generated": false,
+  "validation_recorded": false,
+  "dry_run_preview": {
+    "firmware_run_id": "dryrunfw",
+    "config_run_id": "dryruncfg"
+  },
+  "validation_file": null,
+  "errors": [],
+  "created_at": "2026-07-07T22:39:19.160745+00:00",
+  "updated_at": "2026-07-07T22:39:19.187322+00:00"
+}

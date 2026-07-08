@@ -1,0 +1,10 @@
+{"ts": "17:44:25", "cmd": "DownloadBSSFw", "ret": 0, "ok": true}
+{"ts": "17:44:26", "cmd": "GetBSSFwVersion", "ret": "02.04.05.03 (20/04/22)", "ok": true}
+{"ts": "17:44:26", "cmd": "GetBSSPatchFwVersion", "ret": "02.04.10.02 (12/06/24)", "ok": true}
+{"ts": "17:45:01", "cmd": "DownloadMSSFw", "ret": 0, "ok": true}
+{"ts": "17:45:02", "cmd": "GetMSSFwVersion", "ret": "02.04.02.17 (08/07/24)", "ok": true}
+{"ts": "17:45:03", "cmd": "PowerOn", "ret": 0, "ok": true}
+{"ts": "17:45:07", "cmd": "RfEnable", "ret": 0, "ok": true}
+{"ts": "17:45:08", "cmd": "GetMSSFwVersion", "ret": "02.04.02.17 (08/07/24)", "ok": true}
+{"ts": "17:45:08", "cmd": "GetBSSFwVersion", "ret": "02.04.05.03 (20/04/22)", "ok": true}
+{"ts": "17:45:08", "cmd": "GetBSSPatchFwVersion", "ret": "02.04.10.02 (12/06/24)", "ok": true}

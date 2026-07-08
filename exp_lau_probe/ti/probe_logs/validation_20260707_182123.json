@@ -1,0 +1,23 @@
+{
+  "timestamp_iso": "2026-07-07T18:21:23.840330",
+  "timestamp_epoch": 1783466483.8410754,
+  "label": "Guided-runner hardware validation manually finalized after summary bug",
+  "firmware_run_id": "645cdf51",
+  "config_run_id": "62d8a837",
+  "post_connection_config_validated": true,
+  "firmware_result": {
+    "run_id": "645cdf51",
+    "executed": true,
+    "success": true,
+    "error": "",
+    "warnings": []
+  },
+  "config_result": {
+    "run_id": "62d8a837",
+    "executed": true,
+    "success": true,
+    "error": "",
+    "warnings": []
+  },
+  "git_commit": "7968e760e6f0abe07cd0a8808434f7d4582513e6"
+}

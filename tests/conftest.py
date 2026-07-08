@@ -46,8 +46,7 @@ def small_real_config() -> RadarConfig:
             "bits": 16,
             "is_complex": False,
             "num_lvds_lanes": 2,
-            "channel_interleave": 1,
-            "layout": "awr2944_real_2lane_noninterleaved_candidate",
+            "layout": "awr2944_real_2lane_interleaved_candidate",
         },
         "frame": {
             "chirps_per_frame": 16,
@@ -78,3 +77,8 @@ def small_complex_config() -> RadarConfig:
             "num_frames": 4,
         },
     })
+
+
+# WORKAROUND: Pytest on Windows frequently fails with PermissionError
+import _pytest.pathlib
+_pytest.pathlib.cleanup_dead_symlinks = lambda root: None

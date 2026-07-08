@@ -3,26 +3,26 @@
 Root command: ``awr``
 
 Existing commands:
-    awr doctor                         — Check setup / environment
-    awr inspect-config <yaml>          — Validate and display config + derived params
-    awr parse <bin> --config <yaml>    — Parse adc_data.bin into radar cube
-    awr process <bin> --config <yaml>  — Full DSP pipeline → range profile + range-Doppler
-    awr compare-layouts <target>       — Compare candidate binary layouts
+    awr doctor                         ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Check setup / environment
+    awr inspect-config <yaml>          ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Validate and display config + derived params
+    awr parse <bin> --config <yaml>    ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Parse adc_data.bin into radar cube
+    awr process <bin> --config <yaml>  ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Full DSP pipeline ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ range profile + range-Doppler
+    awr compare-layouts <target>       ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Compare candidate binary layouts
 
 Config management:
-    awr config new --preset <name>     — Generate capture.yaml from preset
-    awr config validate <yaml>         — Deep validation of capture config
-    awr config summarize <yaml>        — Human-readable config summary
+    awr config new --preset <name>     ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Generate capture.yaml from preset
+    awr config validate <yaml>         ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Deep validation of capture config
+    awr config summarize <yaml>        ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Human-readable config summary
 
 Experiment management:
-    awr experiment init <name>         — Scaffold experiment directory
+    awr experiment init <name>         ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Scaffold experiment directory
 
 TI bridge:
-    awr ti inspect <file>              — Inspect TI Lua/JSON config file
-    awr ti import <file>               — Import TI config to capture.yaml
-    awr ti compare <yaml> <ti_file>    — Compare our config vs TI config
-    awr ti export-lua-template <yaml>  — Generate Lua template
-    awr ti export-dca-config <yaml>    — Generate DCA1000 JSON config
+    awr ti inspect <file>              ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Inspect TI Lua/JSON config file
+    awr ti import <file>               ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Import TI config to capture.yaml
+    awr ti compare <yaml> <ti_file>    ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Compare our config vs TI config
+    awr ti export-lua-template <yaml>  ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Generate Lua template
+    awr ti export-dca-config <yaml>    ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Generate DCA1000 JSON config
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ mmws_app = typer.Typer(help="mmWave Studio backend controller")
 app.add_typer(mmws_app, name="mmws")
 mmws_conn_app = typer.Typer(help="Connection-tab control (Lua-based, DIAGNOSTIC ONLY)")
 mmws_app.add_typer(mmws_conn_app, name="connection")
-mmws_guiconn_app = typer.Typer(help="GUI-button automation for Connection tab (pywinauto) — OFFICIAL")
+mmws_guiconn_app = typer.Typer(help="GUI-button automation for Connection tab (pywinauto) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â OFFICIAL")
 mmws_app.add_typer(mmws_guiconn_app, name="gui-connect")
 mmws_studio_app = typer.Typer(help="mmWave Studio process management")
 mmws_app.add_typer(mmws_studio_app, name="studio")
@@ -1291,12 +1291,12 @@ def ti_import(
     if assumptions:
         console.print("\n[yellow]Assumptions (fields defaulted):[/yellow]")
         for a in assumptions:
-            console.print(f"  [yellow]• {a}[/yellow]")
+            console.print(f"  [yellow]ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ {a}[/yellow]")
 
     if unknown_fields:
         console.print("\n[red]Unknown fields (could not extract):[/red]")
         for f in unknown_fields:
-            console.print(f"  [red]• {f}[/red]")
+            console.print(f"  [red]ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ {f}[/red]")
 
     console.print(
         "\n[yellow]Run 'awr config validate' on the output to check for issues.[/yellow]"
@@ -2102,41 +2102,41 @@ def mmws_connection_preflight() -> None:
     
     try:
         exp = Experiment.open(".")
-        console.print(f"[green]✓[/green] Inside experiment: {exp.root_dir.name}")
+        console.print(f"[green]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ[/green] Inside experiment: {exp.root_dir.name}")
     except FileNotFoundError:
-        console.print("[red]✗[/red] Not inside an experiment directory.")
+        console.print("[red]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â[/red] Not inside an experiment directory.")
         raise typer.Exit(1)
         
     if _is_mmws_running():
-        console.print("[green]✓[/green] mmWave Studio is running.")
+        console.print("[green]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ[/green] mmWave Studio is running.")
     else:
-        console.print("[red]✗[/red] mmWave Studio is NOT running.")
+        console.print("[red]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â[/red] mmWave Studio is NOT running.")
         
     if _find_csharp_bridge():
-        console.print("[green]✓[/green] C# Bridge is built.")
+        console.print("[green]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ[/green] C# Bridge is built.")
     else:
-        console.print("[red]✗[/red] C# Bridge not found. Run: awr mmws csharp-bridge build")
+        console.print("[red]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â[/red] C# Bridge not found. Run: awr mmws csharp-bridge build")
         
     hw = get_local_hardware_config(exp.root_dir)
     com = hw.get("hardware", {}).get("awr_rs232_com")
     if com:
-        console.print(f"[green]✓[/green] Local hardware config has awr_rs232_com: {com}")
+        console.print(f"[green]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ[/green] Local hardware config has awr_rs232_com: {com}")
         
         # Check heuristics
         ports = scan_ports()
         p_info = next((p for p in ports if p.com.upper() == com.upper()), None)
         if p_info:
             if p_info.likely_role == "dca_ftdi_candidate":
-                console.print(f"[red]✗[/red] WARNING: {com} is identified as the DCA1000 FTDI port. This is usually wrong for AWR RS232.")
+                console.print(f"[red]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â[/red] WARNING: {com} is identified as the DCA1000 FTDI port. This is usually wrong for AWR RS232.")
             elif p_info.likely_role == "awr_xds_uart_candidate":
                 console.print(f"[yellow]![/yellow] WARNING: {com} is an XDS110 port. AWR2944 usually uses the FTDI port for mmWave Studio RS232.")
             else:
-                console.print(f"[green]✓[/green] Port role seems acceptable: {p_info.likely_role}")
+                console.print(f"[green]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ[/green] Port role seems acceptable: {p_info.likely_role}")
         else:
             console.print(f"[yellow]![/yellow] Port {com} is not currently visible in Windows Device Manager.")
             
     else:
-        console.print("[red]✗[/red] Local hardware config missing awr_rs232_com. Run: awr ports scan")
+        console.print("[red]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â[/red] Local hardware config missing awr_rs232_com. Run: awr ports scan")
 
 
 def _run_diag_step(com_num: int, baud: int, mode: str, timeout: float, verbose: bool, steps: list[str], script_name: str) -> None:
@@ -2742,7 +2742,7 @@ def _write_rstd_report(path: Path, results: dict, dll: Path | None, port_open: b
         "- TI MATLAB examples send `ar1.ProfileConfig(...)` directly as strings",
         "- For scripts, use `dofile([[C:/path/to/script.lua]])`",
         "- Return code 30000 = command submitted, NOT proof of Lua success",
-        "- `Init()` alone is NOT enough — `Connect('127.0.0.1', 2777)` is required",
+        "- `Init()` alone is NOT enough ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â `Connect('127.0.0.1', 2777)` is required",
         "",
         "## Variant Results",
         "",
@@ -3250,9 +3250,9 @@ def mmws_matlab_bridge_ping(
         res = _execute_matlab_bridge(p, verbose=verbose, timeout=30.0, bridge_mode="ping")
         
     if res.success:
-        console.print("[green]✓ MATLAB bridge ping successful![/green]")
+        console.print("[green]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ MATLAB bridge ping successful![/green]")
     else:
-        console.print(f"[red]✗ MATLAB bridge ping failed: {res.error}[/red]")
+        console.print(f"[red]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â MATLAB bridge ping failed: {res.error}[/red]")
         if res.verbose_log:
             for line in res.verbose_log:
                 console.print(line)
@@ -3274,9 +3274,9 @@ def mmws_matlab_bridge_send_inline(
         res = _execute_matlab_bridge(p, verbose=verbose, timeout=30.0, bridge_mode="send-inline")
         
     if res.success:
-        console.print("[green]✓ MATLAB bridge send-inline successful![/green]")
+        console.print("[green]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ MATLAB bridge send-inline successful![/green]")
     else:
-        console.print(f"[red]✗ MATLAB bridge send-inline failed: {res.error}[/red]")
+        console.print(f"[red]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â MATLAB bridge send-inline failed: {res.error}[/red]")
         if res.verbose_log:
             for line in res.verbose_log:
                 console.print(line)
@@ -3298,9 +3298,9 @@ def mmws_matlab_bridge_smoke(
         res = _execute_matlab_bridge(p, verbose=verbose, timeout=30.0, bridge_mode="send-command")
         
     if res.success:
-        console.print("[green]✓ MATLAB bridge smoke successful![/green]")
+        console.print("[green]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ MATLAB bridge smoke successful![/green]")
     else:
-        console.print(f"[red]✗ MATLAB bridge smoke failed: {res.error}[/red]")
+        console.print(f"[red]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â MATLAB bridge smoke failed: {res.error}[/red]")
         if res.verbose_log:
             for line in res.verbose_log:
                 console.print(line)
@@ -3320,14 +3320,14 @@ def mmws_matlab_bridge_dofile_test(
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "dofile_test.lua"
         res_file = Path(d) / "matlab_dofile_test_result.json"
-        p.write_text(f"WriteToLog(\"DOFILE_TEST\\\\n\")\nres_file=io.open([[{str(res_file).replace('\\\\', '/')}笑]], 'w')\nres_file:write('{{\"success\":true}}')\nres_file:close()", encoding="utf-8")
+        p.write_text(f"WriteToLog(\"DOFILE_TEST\\\\n\")\nres_file=io.open([[{str(res_file).replace('\\\\', '/')}ÃƒÆ’Ã‚Â§Ãƒâ€šÃ‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‹Å“]], 'w')\nres_file:write('{{\"success\":true}}')\nres_file:close()", encoding="utf-8")
         # Wait, just write the result file properly
         lua_code = f"""
 WriteToLog("DOFILE_TEST\\n")
-local f = io.open([[{str(res_file).replace("\\", "/")}笑]], "w")
+local f = io.open([[{str(res_file).replace("\\", "/")}ÃƒÆ’Ã‚Â§Ãƒâ€šÃ‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‹Å“]], "w")
 f:write('{{"success":true}}')
 f:close()
-""".replace("笑", "")
+""".replace("ÃƒÆ’Ã‚Â§Ãƒâ€šÃ‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‹Å“", "")
         p.write_text(lua_code, encoding="utf-8")
         if res_file.exists():
             res_file.unlink()
@@ -3339,16 +3339,16 @@ f:close()
             try:
                 data = json.loads(res_file.read_text())
                 if data.get("success"):
-                    console.print("[green]✓ MATLAB bridge dofile-test successful![/green]")
+                    console.print("[green]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ MATLAB bridge dofile-test successful![/green]")
                     return
                 else:
-                    console.print(f"[red]✗ MATLAB bridge dofile-test Lua result failed: {data}[/red]")
+                    console.print(f"[red]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â MATLAB bridge dofile-test Lua result failed: {data}[/red]")
             except Exception as e:
-                console.print(f"[red]✗ MATLAB bridge dofile-test JSON error: {e}[/red]")
+                console.print(f"[red]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â MATLAB bridge dofile-test JSON error: {e}[/red]")
         else:
-            console.print("[red]✗ MATLAB bridge dofile-test failed: lua result json not found[/red]")
+            console.print("[red]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â MATLAB bridge dofile-test failed: lua result json not found[/red]")
     else:
-        console.print(f"[red]✗ MATLAB bridge dofile-test failed: {res.error}[/red]")
+        console.print(f"[red]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â MATLAB bridge dofile-test failed: {res.error}[/red]")
     
     if res.verbose_log:
         for line in res.verbose_log:
@@ -3358,10 +3358,13 @@ f:close()
 # awr mmws lua-launch *
 # ---------------------------------------------------------------------------
 
-def _lua_launch_probe_dir() -> "Path":
+def _lua_launch_probe_dir(probe_dir_override: Optional[str] = None) -> "Path":
     """Return (and create) the lua-launch probe_logs directory."""
     from pathlib import Path
-    d = Path("ti") / "probe_logs"
+    if probe_dir_override:
+        d = Path(probe_dir_override)
+    else:
+        d = Path("ti") / "probe_logs"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -3504,7 +3507,7 @@ def mmws_lua_launch_env_probe(
     
     if data.get("type_ar1") == "nil":
         console.print(
-            "\n[yellow]ar1 is nil — /lua runs before Startup.lua initializes RadarAPI.\n"
+            "\n[yellow]ar1 is nil ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â /lua runs before Startup.lua initializes RadarAPI.\n"
             "lua-launch is useful only for standalone scripts unless we learn\n"
             "how to initialize RadarAPI/Startup safely.[/yellow]"
         )
@@ -3570,9 +3573,9 @@ def mmws_csharp_bridge_send_inline(
         )
         
     if res.success:
-        console.print("[green]✓ C# bridge send-inline successful![/green]")
+        console.print("[green]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ C# bridge send-inline successful![/green]")
     else:
-        console.print(f"[red]✗ C# bridge send-inline failed: {res.error}[/red]")
+        console.print(f"[red]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â C# bridge send-inline failed: {res.error}[/red]")
         if res.verbose_log:
             for line in res.verbose_log:
                 console.print(line)
@@ -5047,7 +5050,7 @@ def mmws_connection_parse_manual_log(
 
 
 # ---------------------------------------------------------------------------
-# gui-connect commands — pywinauto GUI-button automation (OFFICIAL)
+# gui-connect commands ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â pywinauto GUI-button automation (OFFICIAL)
 # ---------------------------------------------------------------------------
 
 _GUI_CONNECT_PRECONDITION = (
@@ -5140,11 +5143,11 @@ def _print_control_status(label: str, ctrl) -> None:
         try:
             text = ctrl.window_text()[:60]
             auto_id = ctrl.automation_id() if hasattr(ctrl, "automation_id") else ""
-            console.print(f"  [green]✓[/green] {label}: text={text!r} auto_id={auto_id!r}")
+            console.print(f"  [green]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ[/green] {label}: text={text!r} auto_id={auto_id!r}")
         except Exception:
-            console.print(f"  [green]✓[/green] {label}: [dim]present[/dim]")
+            console.print(f"  [green]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ[/green] {label}: [dim]present[/dim]")
     else:
-        console.print(f"  [red]✗[/red] {label}: [red]not found[/red]")
+        console.print(f"  [red]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â[/red] {label}: [red]not found[/red]")
 
 
 @mmws_guiconn_app.command("click-flow")
@@ -5198,7 +5201,7 @@ def mmws_gui_connect_click_flow(
         raise typer.Exit(1)
 
     if dry_run:
-        console.print("[yellow]DRY RUN — identifying controls, no clicks.[/yellow]")
+        console.print("[yellow]DRY RUN ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â identifying controls, no clicks.[/yellow]")
 
     result = click_flow(
         window,
@@ -5245,7 +5248,7 @@ def mmws_gui_connect_click_flow(
         if "planned_actions" in result.details:
             console.print("\n[bold]Planned actions:[/bold]")
             for action in result.details["planned_actions"]:
-                console.print(f"  → {action}")
+                console.print(f"  ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ {action}")
     elif result.status == "NEED_POWER_CYCLE":
         console.print(
             "[yellow]Power-cycle AWR using power-before-USB order, "
@@ -5622,7 +5625,7 @@ def mmws_post_session_audit(
         if audit.reason:
             console.print(f"\n[bold]Reasons:[/bold]")
             for r in audit.reason:
-                console.print(f"  [red]• {r}[/red]")
+                console.print(f"  [red]ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ {r}[/red]")
         
         if audit.requires_power_cycle:
             console.print(f"\n[red][!] SESSION IS DIRTY. Power-cycle and reconnect required.[/red]")
@@ -5695,7 +5698,7 @@ def mmws_post_preflight_firmware(
         else:
             console.print(f"\n[red]FIRMWARE_PREFLIGHT_FAILED_REQUIRES_CLEAN_SESSION[/red]")
             for r in reasons:
-                console.print(f"  [red]• {r}[/red]")
+                console.print(f"  [red]ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ {r}[/red]")
             raise typer.Exit(1)
             
     except RuntimeError as e:
@@ -5758,7 +5761,7 @@ def mmws_post_preflight_config(
         else:
             console.print(f"\n[red]CONFIG_PREFLIGHT_FAILED_REQUIRES_CLEAN_SESSION[/red]")
             for r in reasons:
-                console.print(f"  [red]• {r}[/red]")
+                console.print(f"  [red]ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ {r}[/red]")
             raise typer.Exit(1)
             
     except RuntimeError as e:
@@ -5835,7 +5838,7 @@ def mmws_post_firmware_power_script(
             if not passed:
                 console.print(f"\n[red]FIRMWARE_PREFLIGHT_FAILED_REQUIRES_CLEAN_SESSION[/red]")
                 for r in reasons:
-                    console.print(f"  [red]• {r}[/red]")
+                    console.print(f"  [red]ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ {r}[/red]")
                 if not force:
                     console.print("[red]Refusing to generate script. Use --force to override.[/red]")
                     raise typer.Exit(1)
@@ -5855,11 +5858,10 @@ def mmws_post_firmware_power_script(
         console.print("[yellow]Use --pid <PID> for automatic session safety checks.[/yellow]")
         console.print("[yellow]" + "=" * 70 + "[/yellow]\n")
     
-    result_path = probe_dir / f"{run_id}_firmware_power_result.json"
     lua_path = probe_dir / f"{run_id}_firmware_power.lua"
     
-    script = generate_firmware_power_script(run_id, result_path)
-    lua_path.write_text(script, encoding="utf-8")
+    generated = generate_firmware_power_script(run_id, lua_path)
+    lua_path.write_text(generated.script, encoding="utf-8")
     
     console.print(f"[cyan]Generated firmware-power script:[/cyan] {lua_path}")
     console.print(f"Paste this command into the mmWave Studio Lua Shell:")
@@ -5981,10 +5983,10 @@ def mmws_post_inspect_extracted(
         cmd = cmd_list[i]
         status_tag = ""
         if cmd.observed_status == "passed":
-            status_tag = " [green]✓[/green]"
+            status_tag = " [green]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ[/green]"
         elif cmd.observed_status == "failed":
             err = f" ({cmd.observed_error_type})" if cmd.observed_error_type else ""
-            status_tag = f" [red]✗{err}[/red]"
+            status_tag = f" [red]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â{err}[/red]"
         console.print(f"  {i+1}. [{cmd.normalized_category}] {f}{status_tag}")
     
     console.print(f"\n[bold]Category Counts:[/bold]")
@@ -6050,20 +6052,20 @@ def mmws_post_generate_smoke_from_extracted(
     probe_dir = _lua_launch_probe_dir()
     lua_path = probe_dir / f"{run_id}_smoke_from_extracted.lua"
     
-    script, result = generate_smoke_from_extracted(
+    generated = generate_smoke_from_extracted(
         cmd_list, run_id, lua_path,
         commands_json_path=str(cmd_path),
         include_failed=include_failed,
         include_unknown=include_unknown,
     )
     
-    lua_path.write_text(script, encoding="utf-8")
+    lua_path.write_text(generated.script, encoding="utf-8")
     
     result_path = probe_dir / f"{run_id}_smoke_from_extracted_result.json"
-    result_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    result_path.write_text(json.dumps(generated.metadata, indent=2), encoding="utf-8")
     
-    if result.get("signature_warnings"):
-        for w in result["signature_warnings"]:
+    if generated.metadata.get("signature_warnings"):
+        for w in generated.metadata["signature_warnings"]:
             console.print(f"[yellow]SIGNATURE WARNING: {w}[/yellow]")
     
     console.print(f"\n[cyan]Generated smoke-from-extracted script:[/cyan] {lua_path}")
@@ -6142,7 +6144,7 @@ def mmws_post_smoke_from_known_awr2944(
             if not passed:
                 console.print(f"\n[red]CONFIG_PREFLIGHT_FAILED_REQUIRES_CLEAN_SESSION[/red]")
                 for r in reasons:
-                    console.print(f"  [red]• {r}[/red]")
+                    console.print(f"  [red]ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ {r}[/red]")
                 if not force:
                     console.print("[red]Refusing to generate script. Use --force to override.[/red]")
                     raise typer.Exit(1)
@@ -6164,13 +6166,13 @@ def mmws_post_smoke_from_known_awr2944(
     
     lua_path = probe_dir / f"{run_id}_smoke_known_awr2944.lua"
     
-    script, result = generate_smoke_known_awr2944(run_id, lua_path)
-    lua_path.write_text(script, encoding="utf-8")
+    generated = generate_smoke_known_awr2944(run_id, lua_path)
+    lua_path.write_text(generated.script, encoding="utf-8")
     
     result_path = probe_dir / f"{run_id}_smoke_known_awr2944_result.json"
-    result_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    result_path.write_text(json.dumps(generated.metadata, indent=2), encoding="utf-8")
     
-    for w in result.get("warnings", []):
+    for w in generated.metadata.get("warnings", []):
         console.print(f"[yellow]WARNING: {w}[/yellow]")
     
     console.print(f"\n[bold]NOTE:[/bold] GUI-derived AWR2944 frozen smoke config. Replay-validated on this local setup; keep frozen unless revalidated.")
@@ -6227,12 +6229,12 @@ def mmws_post_verify_known_script(
             errors.append(f"BAD PATTERN found: {bad}")
     
     if errors:
-        console.print(f"\n[red]VERIFY FAILED — {len(errors)} error(s):[/red]")
+        console.print(f"\n[red]VERIFY FAILED ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â {len(errors)} error(s):[/red]")
         for e in errors:
-            console.print(f"  [red]✗ {e}[/red]")
+            console.print(f"  [red]ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â {e}[/red]")
         raise typer.Exit(1)
     else:
-        console.print(f"[green]VERIFY PASSED — all {len(_AWR2944_GUI_DERIVED_COMMAND_LINES)} frozen commands present, no bad patterns.[/green]")
+        console.print(f"[green]VERIFY PASSED ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â all {len(_AWR2944_GUI_DERIVED_COMMAND_LINES)} frozen commands present, no bad patterns.[/green]")
 
 
 _CRITICAL_CMDS = {
@@ -6261,11 +6263,16 @@ def _is_cmd_successful(cmd: str, stage: str, ret: Any, ok: bool) -> bool:
 @mmws_post_app.command("check-run")
 def mmws_post_check_run(
     run_id: str = typer.Option(..., "--run-id", help="Run ID to look up"),
+    probe_dir: str = typer.Option(None, "--probe-dir", help="Override the directory where probe logs are written"),
 ) -> None:
     """Look up result and progress files for a run ID and summarize them."""
+    check_run_impl(run_id, probe_dir)
+
+def check_run_impl(run_id: str, probe_dir: str = None) -> None:
+
     import json
     
-    probe_dir = _lua_launch_probe_dir()
+    probe_dir = _lua_launch_probe_dir(probe_dir)
     
     # Check for manifest first
     manifest_path = probe_dir / f"{run_id}_manifest.json"
@@ -6328,7 +6335,7 @@ def mmws_post_check_run(
             if warnings:
                 console.print(f"  Warnings ({len(warnings)}):")
                 for w in warnings:
-                    console.print(f"    [yellow]• {w}[/yellow]")
+                    console.print(f"    [yellow]ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ {w}[/yellow]")
         except Exception as e:
             console.print(f"  [red]Failed to parse result: {e}[/red]")
     else:
@@ -6371,14 +6378,20 @@ def mmws_post_check_run(
 def mmws_post_watch_run(
     run_id: str = typer.Option(..., "--run-id", help="Run ID to watch"),
     timeout: int = typer.Option(180, "--timeout", help="Timeout in seconds to wait for result"),
+    probe_dir: str = typer.Option(None, "--probe-dir", help="Override the directory where probe logs are written"),
 ) -> None:
     """Watch a Lua run's progress and wait for its completion."""
+    watch_run_impl(run_id, timeout, probe_dir)
+
+def watch_run_impl(run_id: str, timeout: int, probe_dir: str = None) -> None:
+
     import json
     import time
     import sys
+    from .mmws.post_connect import load_run_result
     
-    probe_dir = _lua_launch_probe_dir()
-    manifest_path = probe_dir / f"{run_id}_manifest.json"
+    probe_dir_path = _lua_launch_probe_dir(probe_dir)
+    manifest_path = probe_dir_path / f"{run_id}_manifest.json"
     
     stage = "unknown"
     result_path = None
@@ -6398,8 +6411,8 @@ def mmws_post_watch_run(
             console.print(f"[green]{dofile_cmd}[/green]\n")
     else:
         # Fallback globs
-        result_files = sorted(probe_dir.glob(f"{run_id}_*result.json"))
-        progress_files = sorted(probe_dir.glob(f"{run_id}_*progress.jsonl"))
+        result_files = sorted(probe_dir_path.glob(f"{run_id}_*result.json"))
+        progress_files = sorted(probe_dir_path.glob(f"{run_id}_*progress.jsonl"))
         if result_files:
             result_path = result_files[0]
         if progress_files:
@@ -6458,6 +6471,14 @@ def mmws_post_watch_run(
                 
         time.sleep(1.0)
         
+    # Final reconciliation before timeout
+    res = load_run_result(run_id, probe_dir_path)
+    if res.exists:
+        console.print(f"\n[bold]Run Completed (Reconciled after timeout):[/bold] {'[green]Success[/green]' if res.success else '[red]Failed[/red]'}")
+        if res.error:
+            console.print(f"[red]Error: {res.error}[/red]")
+        sys.exit(0 if res.success else 1)
+        
     console.print("\n[red]Timeout reached waiting for result.[/red]")
     raise typer.Exit(1)
 
@@ -6466,21 +6487,29 @@ def mmws_post_watch_run(
 def mmws_post_summarize_session(
     firmware_run_id: str = typer.Option(..., "--firmware-run-id", help="Run ID of the firmware sequence"),
     config_run_id: str = typer.Option(..., "--config-run-id", help="Run ID of the config sequence"),
+    probe_dir: str = typer.Option(None, "--probe-dir", help="Override the directory where probe logs are written"),
 ) -> None:
     """Summarize a post-connection session (firmware + config runs)."""
+    summarize_session_impl(firmware_run_id, config_run_id, probe_dir)
+
+def summarize_session_impl(firmware_run_id: str, config_run_id: str, probe_dir: str = None) -> None:
+
     import json
     
-    probe_dir = _lua_launch_probe_dir()
+    probe_dir_path = _lua_launch_probe_dir(probe_dir)
     
     def _read_result(rid: str) -> dict[str, Any]:
-        manifest_path = probe_dir / f"{rid}_manifest.json"
+        manifest_path = probe_dir_path / f"{rid}_manifest.json"
         if manifest_path.exists():
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            rp = Path(manifest.get("result_path", ""))
-            if rp.exists():
-                return json.loads(rp.read_text(encoding="utf-8"))
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                rp = Path(manifest.get("result_path", ""))
+                if rp.exists():
+                    return json.loads(rp.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, IOError):
+                pass
         # Fallback to glob
-        result_files = sorted(probe_dir.glob(f"{rid}_*result.json"))
+        result_files = sorted(probe_dir_path.glob(f"{rid}_*result.json"))
         if result_files:
             return json.loads(result_files[0].read_text(encoding="utf-8"))
         return {}
@@ -6504,7 +6533,7 @@ def mmws_post_summarize_session(
     if warnings:
         console.print(f"\n[yellow]Warnings ({len(warnings)}):[/yellow]")
         for w in warnings:
-            console.print(f"  • {w}")
+            console.print(f"  ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ {w}")
             
     console.print("\n[bold]recommended_next_stage:[/bold] configuration hardening / Python wrapper")
 
@@ -6583,13 +6612,17 @@ def mmws_post_record_validation(
     firmware_run_id: str = typer.Option(..., "--firmware-run-id", help="Run ID of the firmware sequence"),
     config_run_id: str = typer.Option(..., "--config-run-id", help="Run ID of the config sequence"),
     label: str = typer.Option(..., "--label", help="Notes or label for this validation record"),
+    probe_dir: str = typer.Option(None, "--probe-dir", help="Override the directory where probe logs are written"),
 ) -> None:
     """Record a successful full post-connection validation."""
+    record_validation_impl(firmware_run_id, config_run_id, label, probe_dir)
+
+def record_validation_impl(firmware_run_id: str, config_run_id: str, label: str, probe_dir: str = None) -> None:
     import json
     import time
     import datetime
     
-    probe_dir = _lua_launch_probe_dir()
+    probe_dir = _lua_launch_probe_dir(probe_dir)
     
     def _read_result(rid: str) -> dict[str, Any]:
         manifest_path = probe_dir / f"{rid}_manifest.json"
@@ -6947,6 +6980,7 @@ def mmws_post_generate_config_variant(
     if format == "json":
         print(json.dumps(output, indent=2))
         return
+        
     console.print("\n[bold yellow]" + "="*60)
     console.print("HARDWARE EMISSION DISABLED.")
     console.print("This is a dry-run software-only variant.")
@@ -6968,3 +7002,280 @@ def mmws_post_generate_config_variant(
                 console.print(f"  {ad}")
         
     console.print("\n[green]Signature validation passed.[/green]")
+
+
+@mmws_post_app.command("list-windows")
+def mmws_post_list_windows() -> None:
+    """List candidate mmWave Studio processes and their window states."""
+    from .mmws.gui_connect import _get_powershell_candidates, _is_strong_candidate
+    from rich.table import Table
+    
+    candidates = _get_powershell_candidates()
+    
+    table = Table(title="Candidate mmWave Studio Processes")
+    table.add_column("PID", justify="right", style="cyan")
+    table.add_column("Process Name", style="magenta")
+    table.add_column("Window Handle", justify="right", style="green")
+    table.add_column("Window Title", style="yellow")
+    table.add_column("Responding", style="blue")
+    table.add_column("Strong", style="red")
+    
+    if not candidates:
+        console.print("[yellow]No candidate mmWave Studio processes found.[/yellow]")
+        return
+        
+    for c in candidates:
+        pid = str(c.get("Id", ""))
+        name = str(c.get("ProcessName", ""))
+        handle = str(c.get("MainWindowHandle", ""))
+        title = str(c.get("MainWindowTitle", ""))
+        resp = str(c.get("Responding", ""))
+        strong = str(_is_strong_candidate(c))
+        table.add_row(pid, name, handle, title, resp, strong)
+        
+    console.print(table)
+
+
+@mmws_post_app.command("uia-probe")
+def mmws_post_uia_probe(
+    pid: int = typer.Option(..., "--pid", help="PID to probe"),
+) -> None:
+    """Diagnostic probe: test UIA attach strategies for a specific PID.
+
+    Read-only: no UIA control interaction, no Lua, no ar1 calls.
+    Calls the same internal attach functions used by guided-validate
+    but in diagnostic mode, printing strategy results.
+    """
+    import json as _json
+    from .mmws.gui_connect import uia_probe
+
+    vlog = lambda m: console.print(f"  [dim]{m}[/dim]")
+    console.print(f"[cyan]UIA Probe for PID={pid}[/cyan]\n")
+
+    results = uia_probe(pid, verbose_log=vlog)
+
+    # Print PowerShell candidate
+    cand = results.get("ps_candidate")
+    if cand:
+        console.print(f"[green]PowerShell candidate found:[/green]")
+        console.print(f"  PID={cand.get('Id')}  Name={cand.get('ProcessName')}")
+        console.print(f"  MainWindowHandle={cand.get('MainWindowHandle')}")
+        console.print(f"  MainWindowTitle={cand.get('MainWindowTitle')!r}")
+        console.print(f"  Responding={cand.get('Responding')}")
+    else:
+        console.print(f"[red]PID={pid} not found in PowerShell candidates[/red]")
+
+    console.print(f"\n[cyan]Resolved hwnd={results.get('hwnd')}[/cyan]\n")
+
+    # Print strategy results
+    for key, strat in results.get("strategies", {}).items():
+        method = strat.get("method", key)
+        console.print(f"[bold]{method}[/bold]")
+        if strat.get("skipped"):
+            console.print(f"  [yellow]Skipped: {strat['skipped']}[/yellow]")
+        elif strat.get("connected") is True:
+            console.print(f"  [green]Connected: True[/green]")
+            console.print(f"  Window count: {strat.get('window_count', 0)}")
+            for w in strat.get("windows", []):
+                console.print(f"    text={w['text']!r}  handle={w['handle']}")
+        elif "exists" in strat:
+            console.print(f"  exists={strat['exists']}")
+            if strat.get("text"):
+                console.print(f"  text={strat['text']!r}")
+        elif strat.get("connected") is False:
+            console.print(f"  [red]Connected: False[/red]")
+            console.print(f"  Error: {strat.get('error', 'unknown')}")
+        console.print()
+
+    if results.get("error"):
+        console.print(f"[red]Error: {results['error']}[/red]")
+
+
+@mmws_post_app.command("manual-status-probe")
+def mmws_post_manual_status_probe(
+    pid: int = typer.Option(..., "--pid", help="PID of mmWave Studio"),
+    title_regex: str = typer.Option(None, "--title-regex", help="Regex for window title"),
+    probe_dir: str = typer.Option(None, "--probe-dir", help="Override probe directory"),
+) -> None:
+    """Diagnostic probe: test Device Status extraction from mmWave Studio.
+
+    Read-only: no clicks, no Lua, no ar1, no firmware.
+    Calls the same status extraction path used by manual-check in guided-validate.
+    """
+    from pathlib import Path as _Path
+    from .mmws.gui_connect import attach_mmwave_studio, manual_status_probe
+
+    pd = _Path(probe_dir) if probe_dir else _Path("ti") / "probe_logs"
+    vlog = lambda m: console.print(f"  [dim]{m}[/dim]")
+
+    console.print(f"[cyan]Manual Status Probe for PID={pid}[/cyan]\n")
+
+    try:
+        app, window = attach_mmwave_studio(
+            pid=pid, title_regex=title_regex, probe_dir=pd, verbose_log=vlog
+        )
+    except RuntimeError as e:
+        console.print(f"[red]Attach failed: {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]Attached to: {window.window_text()!r}  handle={window.handle}[/green]\n")
+
+    results = manual_status_probe(window, probe_dir=pd, verbose_log=vlog)
+
+    # Print summary
+    console.print(f"[bold]RadarAPI (frmAR1Main) found:[/bold] {results.get('radarapi_found')}")
+    console.print(f"[bold]m_ConsoleText found:[/bold] {results.get('console_text_found')}")
+    console.print(f"[bold]Console text length:[/bold] {results.get('console_text_length')}")
+
+    ds = results.get("device_status", {})
+    console.print(f"\n[bold]Device Status raw:[/bold] {ds.get('raw_text')!r}")
+    console.print(f"[bold]Device Status valid:[/bold] {ds.get('valid')}")
+
+    console.print(f"\n[bold]RS232 status:[/bold] {results.get('rs232_status_raw')!r}")
+    console.print(f"[bold]SPI status:[/bold] {results.get('spi_status_raw')!r}")
+    console.print(f"[bold]Device Status label:[/bold] {results.get('device_status_label_raw')!r}")
+
+    ext = results.get("extraction", {})
+    console.print(f"\n[bold]Extraction source:[/bold] {ext.get('extraction_source', 'none')}")
+    console.print(f"[bold]Descendants searched:[/bold] {ext.get('descendants_searched')}")
+
+    # Last 30 lines of console text
+    last_lines = results.get("console_text_last_30_lines", [])
+    if last_lines:
+        console.print(f"\n[bold]Last {len(last_lines)} lines of m_ConsoleText:[/bold]")
+        for line in last_lines:
+            console.print(f"  {line}")
+
+    # Matching descendants
+    matching = results.get("matching_descendants", [])
+    if matching:
+        console.print(f"\n[bold]Matching descendants ({len(matching)}):[/bold]")
+        for md in matching[:30]:
+            if "error" in md:
+                console.print(f"  [red]<error: {md['error']}>[/red]")
+            else:
+                console.print(f"  auto_id={md['automation_id']!r}  name={md['name']!r}  text={md['text']!r}")
+        if len(matching) > 30:
+            console.print(f"  ... and {len(matching) - 30} more")
+
+    console.print(f"\n[bold]Diagnostic file:[/bold] {results.get('diagnostic_file')}")
+
+    # Missing controls
+    missing = results.get("missing_controls", [])
+    if missing:
+        console.print(f"\n[yellow]Missing controls:[/yellow]")
+        for m in missing:
+            console.print(f"  {m}")
+
+
+@mmws_post_app.command("guided-validate")
+def mmws_post_guided_validate(
+    label: str = typer.Option(..., "--label", help="Label for this validation run"),
+    pid: int = typer.Option(None, "--pid", help="PID of mmWave Studio if running"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Simulate the workflow without writing Lua or manifests"),
+    timeout_firmware: int = typer.Option(180, "--timeout-firmware", help="Timeout for firmware run"),
+    timeout_config: int = typer.Option(120, "--timeout-config", help="Timeout for config run"),
+    probe_dir: str = typer.Option(None, "--probe-dir", help="Override the directory where probe logs are written"),
+    assume_manual_connected: bool = typer.Option(False, "--assume-manual-connected",
+        help="Bypass Device Status scrape; assume user has visually confirmed connection"),
+) -> None:
+    """Run the guided, ordered, strictly validated post-connection workflow."""
+    from pathlib import Path
+    
+    if probe_dir is None:
+        cwd = Path.cwd()
+        if (cwd / "pyproject.toml").exists() or (cwd / ".git").exists():
+            console.print(f"[red]ERROR: guided-validate was launched from the repository root.[/red]")
+            console.print(f"\nThis command writes hardware-run artifacts and must be run from an experiment directory, or with an explicit --probe-dir.")
+            console.print(f"\nCurrent directory appears to be:")
+            console.print(f"{cwd.resolve()}")
+            console.print(f"\nRefusing to continue to avoid writing run artifacts into the wrong ti/probe_logs folder.")
+            console.print(f"\nUse one of:")
+            console.print(f"  cd exp_lau_probe")
+            console.print(f"  awr mmws post guided-validate --pid <PID> --label \"<label>\"")
+            console.print(f"\nor:")
+            console.print(f"  awr mmws post guided-validate --pid <PID> --label \"<label>\" --probe-dir C:\\...\\exp_lau_probe\\ti\\probe_logs\n")
+            raise typer.Exit(1)
+            
+    from .mmws.guided_runner import run_guided_workflow
+    run_guided_workflow(
+        label=label,
+        pid=pid,
+        dry_run=dry_run,
+        timeout_firmware=timeout_firmware,
+        timeout_config=timeout_config,
+        probe_dir=probe_dir,
+        assume_manual_connected=assume_manual_connected,
+    )
+
+
+@mmws_post_app.command("guided-resume")
+def mmws_post_guided_resume(
+    state: str = typer.Option(..., "--state", help="Path to state JSON file to resume"),
+    timeout_firmware: int = typer.Option(180, "--timeout-firmware", help="Timeout for firmware run"),
+    timeout_config: int = typer.Option(120, "--timeout-config", help="Timeout for config run"),
+    probe_dir: str = typer.Option(None, "--probe-dir", help="Override the directory where probe logs are written"),
+) -> None:
+    """Resume an interrupted guided validation workflow."""
+    from .mmws.guided_runner import resume_guided_workflow
+    # probe_dir here is mainly for consistency if the user provides it, but resume gets it from state path.
+    resume_guided_workflow(
+        state_path=state,
+        timeout_firmware=timeout_firmware,
+        timeout_config=timeout_config,
+    )
+
+@mmws_post_app.command("failure-report")
+def mmws_post_failure_report(
+    latest: bool = typer.Option(False, "--latest", help="Scan for the most recent failure"),
+    state: str = typer.Option(None, "--state", help="Path to specific guided state JSON"),
+    run_id: str = typer.Option(None, "--run-id", help="Analyze specific run ID"),
+    workflow_id: str = typer.Option(None, "--workflow-id", help="Analyze specific workflow ID"),
+    since_minutes: int = typer.Option(30, "--since-minutes", help="Lookback window for latest failures"),
+    format_type: str = typer.Option("text", "--format", help="Output format: text or json"),
+    probe_dir: str = typer.Option(None, "--probe-dir", help="Override the directory where probe logs are written"),
+) -> None:
+    """Read-only diagnostic tool to detect and report workflow failures."""
+    import json
+    from .mmws.failure_report import generate_failure_report
+    
+    # "with no arguments, treat it as --latest"
+    if not latest and not state and not run_id and not workflow_id:
+        latest = True
+
+    report = generate_failure_report(
+        latest=latest,
+        state_path=state,
+        run_id=run_id,
+        workflow_id=workflow_id,
+        since_minutes=since_minutes,
+        probe_dir_override=probe_dir,
+    )
+    
+    if format_type.lower() == "json":
+        print(json.dumps(report.to_dict()))
+        return
+        
+    console.print("\n[bold]Failure Report[/bold]")
+    console.print("=" * 14)
+    console.print(f"type:                    {report.detected_failure_type}")
+    console.print(f"primary_artifact:        {report.primary_artifact}")
+    console.print(f"workflow_id:             {report.workflow_id}")
+    console.print(f"run_id:                  {report.run_id}")
+    console.print(f"stage:                   {report.current_stage}")
+    
+    if report.errors:
+        console.print("errors:")
+        for e in report.errors:
+            console.print(f"  - {e}")
+    else:
+        console.print("errors:                  []")
+        
+    console.print(f"related_artifacts:       {report.related_artifacts}")
+    console.print(f"orphan_artifacts:        {report.orphan_artifacts}")
+    console.print(f"resume_safe:             {report.resume_safe}")
+    console.print(f"hardware_likely_touched: {report.hardware_likely_touched}")
+    console.print(f"power_cycle_required:    {str(report.power_cycle_required).lower()}")
+    console.print(f"likely_root_cause:       {report.likely_root_cause}")
+    console.print(f"recommended_next_action: {report.recommended_next_action}")
+    console.print("")

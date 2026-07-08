@@ -1,0 +1,19 @@
+{
+  "workflow_id": "d6e10ccf",
+  "label": "dry-run guided validation test",
+  "pid": null,
+  "state_path": "ti\\probe_logs\\guided_d6e10ccf_state.json",
+  "current_stage": "validation_recorded",
+  "firmware_run_id": "dryrunfw",
+  "config_run_id": "dryruncfg",
+  "firmware_dofile": "",
+  "config_dofile": "",
+  "firmware_result_path": "",
+  "config_result_path": "",
+  "firmware_progress_path": "",
+  "config_progress_path": "",
+  "validation_file": "",
+  "errors": [],
+  "created_at": "2026-07-07T19:41:26.259746+00:00",
+  "updated_at": "2026-07-07T19:41:26.283793+00:00"
+}

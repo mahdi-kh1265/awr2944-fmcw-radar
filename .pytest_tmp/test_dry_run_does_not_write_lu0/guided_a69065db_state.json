@@ -1,0 +1,19 @@
+{
+  "workflow_id": "a69065db",
+  "label": "test-dry",
+  "pid": null,
+  "state_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest_tmp\\test_dry_run_does_not_write_lu0\\guided_a69065db_state.json",
+  "current_stage": "validation_recorded",
+  "firmware_run_id": "dryrunfw",
+  "config_run_id": "dryruncfg",
+  "firmware_dofile": "",
+  "config_dofile": "",
+  "firmware_result_path": "",
+  "config_result_path": "",
+  "firmware_progress_path": "",
+  "config_progress_path": "",
+  "validation_file": "",
+  "errors": [],
+  "created_at": "2026-07-07T19:24:46.078689+00:00",
+  "updated_at": "2026-07-07T19:24:46.095981+00:00"
+}

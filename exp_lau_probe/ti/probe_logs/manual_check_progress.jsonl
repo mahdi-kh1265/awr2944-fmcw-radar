@@ -1,2 +1,2 @@
-{"step": "manual_check_started", "timestamp": "12:40:18", "monotonic": 524849.875}
-{"step": "manual_connection_valid", "timestamp": "12:40:36", "monotonic": 524867.875, "detail": "[12:39:50]  Device Status : AWR2944/GP/ASIL-B/SOP:2/ES:2.0"}
+{"step": "manual_check_started", "timestamp": "14:52:18", "monotonic": 619170.953}
+{"step": "manual_connection_not_valid", "timestamp": "14:52:18", "monotonic": 619170.953, "detail": ""}

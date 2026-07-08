@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="1" time="0.167" timestamp="2026-07-07T17:26:57.373473-05:00" hostname="ECE-TOUSI08"><testcase classname="tests.test_guided_runner" name="test_manual_check_failure_stops_workflow" time="0.022" /></testsuite></testsuites>

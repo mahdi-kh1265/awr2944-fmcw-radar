@@ -1,0 +1,26 @@
+{
+  "workflow_id": "13870162",
+  "label": "First fully completed guided-runner validation",
+  "pid": null,
+  "state_path": "ti\\probe_logs\\guided_13870162_state.json",
+  "current_stage": "failed",
+  "firmware_run_id": "",
+  "config_run_id": "",
+  "firmware_dofile": "",
+  "config_dofile": "",
+  "firmware_result_path": "",
+  "config_result_path": "",
+  "firmware_progress_path": "",
+  "config_progress_path": null,
+  "dry_run": false,
+  "hardware_touched": false,
+  "lua_generated": false,
+  "validation_recorded": false,
+  "dry_run_preview": {},
+  "validation_file": null,
+  "errors": [
+    "manual_check_passed failed: Could not attach to mmWave Studio: Could not auto-resolve mmWave Studio PID: No visible candidate processes found.\n\nCandidate processes:\n  PID=19188  Name=mmWaveStudio  Handle=0  Title=''\n  PID=27092  Name=MmwsRstdBridge  Handle=0  Title=''\n\nTry running with explicit --pid <PID>."
+  ],
+  "created_at": "2026-07-08T19:22:34.297623+00:00",
+  "updated_at": "2026-07-08T19:22:34.797369+00:00"
+}

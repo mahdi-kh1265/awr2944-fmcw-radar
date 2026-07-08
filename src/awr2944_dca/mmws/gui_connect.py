@@ -149,6 +149,52 @@ _MMWAVE_TITLE_PATTERNS = [
     re.compile(r"mmwave", re.IGNORECASE),
 ]
 
+# Strong candidate patterns — only these qualify for auto-resolution.
+_STRONG_PROCESS_NAMES = {"mmwavestudio", "rstd", "radarstudio", "mmwsrstdbridge"}
+_STRONG_TITLE_PATTERN = re.compile(r"mmWave\s+Studio", re.IGNORECASE)
+
+
+def _is_strong_candidate(cand: dict) -> bool:
+    """Return True if this PowerShell candidate is a strong mmWave Studio match.
+
+    Strong matches: process name is mmWaveStudio/RSTD/RadarStudio/MmwsRstdBridge
+    or title contains the exact phrase "mmWave Studio".
+    Weak matches (e.g. Chrome with "radar" in the URL bar) are not strong.
+    """
+    proc_name = (cand.get("ProcessName") or "").lower()
+    title = cand.get("MainWindowTitle") or ""
+    if proc_name in _STRONG_PROCESS_NAMES:
+        return True
+    if _STRONG_TITLE_PATTERN.search(title):
+        return True
+    return False
+
+
+
+def _get_powershell_candidates(verbose_log: Callable[[str], None] | None = None) -> list[dict[str, Any]]:
+    """Query PowerShell for candidate mmWave Studio processes using WMI/process objects."""
+    import subprocess
+    import json
+    vlog = verbose_log or (lambda s: None)
+    
+    script = (
+        'Get-Process | '
+        'Where-Object { $_.ProcessName -match "mmwave|rstd|radarstudio" -or $_.MainWindowTitle -match "mmwave|rstd|radar|lua" } | '
+        'Select-Object Id, ProcessName, MainWindowHandle, MainWindowTitle, Responding, Path | '
+        'ConvertTo-Json -Depth 3'
+    )
+    try:
+        output = subprocess.check_output(["powershell", "-NoProfile", "-Command", script], text=True)
+        if not output.strip():
+            return []
+        data = json.loads(output)
+        if isinstance(data, dict):
+            return [data]
+        return data
+    except Exception as e:
+        vlog(f"PowerShell candidate enumeration failed: {e}")
+        return []
+
 
 def _enumerate_uia_windows(
     verbose_log: Callable[[str], None] | None = None,
@@ -238,6 +284,150 @@ def _write_window_diagnostics(
     vlog(f"Wrote window diagnostics to {diag_path}")
 
 
+def _try_attach_pid(Application, target_pid: int, hwnd: int | None,
+                     probe_dir: Path, vlog: Callable[[str], None]):
+    """Attach to a process using the proven minimal pywinauto sequence.
+
+    Strategy order:
+    1. connect(process=pid) -> app.windows() -> pick first
+    2. connect(handle=hwnd) -> app.windows() -> pick first (if hwnd given)
+    3. Desktop.window(handle=hwnd).exists() -> use that spec (if hwnd given)
+
+    IMPORTANT: app.windows() returns UIAWrapper objects which do NOT have
+    child_window(). We re-wrap the result as app.window(handle=h) which
+    returns a WindowSpecification that *does* support child_window().
+
+    Returns (app, window_spec) on success.
+    Raises RuntimeError with honest diagnostics on failure.
+    """
+    # --- Strategy 1: connect by PID, use app.windows() ---
+    try:
+        app = Application(backend="uia").connect(process=target_pid, timeout=5)
+        wins = app.windows()
+        if wins:
+            win = wins[0]
+            h = win.handle
+            vlog(f"Attached by PID={target_pid}: {len(wins)} window(s), "
+                 f"text={win.window_text()!r}, handle={h}")
+            # Re-wrap as WindowSpecification for child_window() support
+            spec = app.window(handle=h)
+            return app, spec
+        else:
+            vlog(f"connect(process={target_pid}) succeeded but app.windows() "
+                 f"returned empty list")
+    except Exception as e:
+        vlog(f"connect(process={target_pid}) failed: {e}")
+
+    # --- Strategy 2: connect by window handle ---
+    if hwnd:
+        try:
+            app = Application(backend="uia").connect(handle=hwnd, timeout=5)
+            wins = app.windows()
+            if wins:
+                win = wins[0]
+                h = win.handle
+                vlog(f"Attached by handle={hwnd}: {len(wins)} window(s), "
+                     f"text={win.window_text()!r}")
+                # Re-wrap as WindowSpecification for child_window() support
+                spec = app.window(handle=h)
+                return app, spec
+            else:
+                vlog(f"connect(handle={hwnd}) succeeded but app.windows() "
+                     f"returned empty list")
+        except Exception as e:
+            vlog(f"connect(handle={hwnd}) failed: {e}")
+
+        # --- Strategy 3: Desktop.window(handle=hwnd) ---
+        try:
+            from pywinauto import Desktop  # type: ignore[import-untyped]
+            dw = Desktop(backend="uia").window(handle=hwnd)
+            if dw.exists(timeout=5):
+                vlog(f"Desktop.window(handle={hwnd}).exists()=True, "
+                     f"text={dw.window_text()!r}")
+                # dw is already a WindowSpecification — supports child_window()
+                app = Application(backend="uia").connect(handle=hwnd, timeout=5)
+                return app, dw
+        except Exception as e:
+            vlog(f"Desktop.window(handle={hwnd}) failed: {e}")
+
+    return None, None
+
+
+def uia_probe(pid: int, verbose_log: Callable[[str], None] | None = None) -> dict:
+    """Diagnostic probe: test UIA attach strategies for a PID.
+
+    Returns a dict with results of each strategy. Read-only: no hardware
+    interaction, no Lua, no ar1 calls.
+    """
+    vlog = verbose_log or (lambda s: None)
+    results: dict = {"pid": pid, "strategies": {}}
+
+    ps_cands = _get_powershell_candidates(verbose_log=vlog)
+    target_cand = next((c for c in ps_cands if c.get("Id") == pid), None)
+    results["ps_candidate"] = target_cand
+    hwnd = target_cand.get("MainWindowHandle", 0) if target_cand else 0
+    results["hwnd"] = hwnd
+
+    try:
+        from pywinauto import Application, Desktop  # type: ignore[import-untyped]
+    except ImportError:
+        results["error"] = "pywinauto not installed"
+        return results
+
+    # Strategy 1: connect(process=pid)
+    s1: dict = {"method": "connect(process=pid)"}
+    try:
+        app = Application(backend="uia").connect(process=pid, timeout=5)
+        wins = app.windows()
+        s1["connected"] = True
+        s1["window_count"] = len(wins)
+        s1["windows"] = [
+            {"text": w.window_text(), "handle": w.handle}
+            for w in wins
+        ]
+    except Exception as e:
+        s1["connected"] = False
+        s1["error"] = str(e)
+    results["strategies"]["connect_by_pid"] = s1
+
+    # Strategy 2: connect(handle=hwnd)
+    s2: dict = {"method": f"connect(handle={hwnd})"}
+    if hwnd:
+        try:
+            app = Application(backend="uia").connect(handle=hwnd, timeout=5)
+            wins = app.windows()
+            s2["connected"] = True
+            s2["window_count"] = len(wins)
+            s2["windows"] = [
+                {"text": w.window_text(), "handle": w.handle}
+                for w in wins
+            ]
+        except Exception as e:
+            s2["connected"] = False
+            s2["error"] = str(e)
+    else:
+        s2["skipped"] = "MainWindowHandle == 0"
+    results["strategies"]["connect_by_handle"] = s2
+
+    # Strategy 3: Desktop.window(handle=hwnd).exists()
+    s3: dict = {"method": f"Desktop.window(handle={hwnd}).exists()"}
+    if hwnd:
+        try:
+            dw = Desktop(backend="uia").window(handle=hwnd)
+            exists = dw.exists(timeout=5)
+            s3["exists"] = exists
+            if exists:
+                s3["text"] = dw.window_text()
+        except Exception as e:
+            s3["exists"] = False
+            s3["error"] = str(e)
+    else:
+        s3["skipped"] = "MainWindowHandle == 0"
+    results["strategies"]["desktop_window"] = s3
+
+    return results
+
+
 def attach_mmwave_studio(
     pid: int | None = None,
     title_regex: str | None = None,
@@ -246,14 +436,18 @@ def attach_mmwave_studio(
 ):
     """Attach to a running mmWaveStudio.exe via pywinauto UIA backend.
 
-    Attach strategies (in order):
-    1. If pid is given, attach directly by PID.
-    2. If title_regex is given, enumerate UIA windows and match.
-    3. Otherwise, enumerate UIA windows and match known mmWave Studio patterns.
+    Attach strategies (in order of preference):
+    1. connect(process=pid) -> app.windows() -> pick first window
+    2. connect(handle=hwnd) -> app.windows() -> pick first window
+    3. Desktop.window(handle=hwnd) -> use that wrapper
+
+    For auto-resolve (no --pid given), only *strong* candidates are
+    considered: process names mmWaveStudio/RSTD/RadarStudio or titles
+    containing "mmWave Studio".  Weak matches (Chrome, IDE with "radar"
+    in the title) are displayed but do not block auto-resolution.
 
     Returns (Application, top_window).
     Raises RuntimeError with descriptive messages on failure.
-    Always writes ti/probe_logs/gui_connect_windows.txt on failure.
     """
     vlog = verbose_log or (lambda s: None)
     if probe_dir is None:
@@ -268,99 +462,113 @@ def attach_mmwave_studio(
             "python -m pip install -e \".[automation]\""
         )
 
+    ps_cands = _get_powershell_candidates(verbose_log=vlog)
+
+    # Helper for formatting candidates
+    def format_cands(cands) -> str:
+        if not cands:
+            return "  (No candidates found)"
+        return "\n".join(
+            f"  PID={c.get('Id')}  Name={c.get('ProcessName')}  "
+            f"Handle={c.get('MainWindowHandle')}  Title={c.get('MainWindowTitle', '')!r}  "
+            f"Strong={_is_strong_candidate(c)}"
+            for c in cands
+        )
+
+    # Elevation check helper
+    def check_elevation(test_pid: int) -> None:
+        if _is_process_elevated(test_pid) and not _is_admin():
+            raise RuntimeError(
+                "If mmWave Studio was launched as Administrator, "
+                "this PowerShell terminal must also be run as Administrator."
+            )
+
     target_pid: int | None = pid
 
-    # --- Strategy 1: Direct PID ---
     if target_pid is not None:
+        # --- Explicit PID path ---
         vlog(f"Attaching directly by PID={target_pid}")
-        if _is_process_elevated(target_pid) and not _is_admin():
+        target_cand = next(
+            (c for c in ps_cands if c.get("Id") == target_pid), None
+        )
+        hwnd = (target_cand.get("MainWindowHandle", 0)
+                if target_cand else 0)
+
+        if target_cand is not None and hwnd == 0:
             raise RuntimeError(
-                "mmWave Studio appears to be running as administrator. "
-                "Re-run this PowerShell terminal as administrator, then retry."
-            )
-        try:
-            app = Application(backend="uia").connect(process=target_pid, timeout=10)
-            main_window = app.top_window()
-            vlog(f"Attached to PID={target_pid}: {main_window.window_text()!r}")
-            # Always write diagnostics
-            candidates = _enumerate_uia_windows(verbose_log=vlog)
-            for c in candidates:
-                if c.pid == target_pid:
-                    c.matched = True
-                    c.attach_ok = True
-            _write_window_diagnostics(candidates, probe_dir, vlog)
-            return app, main_window
-        except Exception as e:
-            # Write diagnostics on failure too
-            candidates = _enumerate_uia_windows(verbose_log=vlog)
-            _write_window_diagnostics(candidates, probe_dir, vlog)
-            raise RuntimeError(
-                f"UIA attach failed for PID={target_pid}: {e}. "
-                "Verify the PID is correct and mmWave Studio is running."
+                f"UIA attach failed for PID={target_pid}:\n"
+                f"No windows for that process could be found "
+                f"(MainWindowHandle == 0).\n"
+                f"Verify the PID is correct and mmWave Studio is running.\n\n"
+                f"Candidate processes:\n{format_cands(ps_cands)}\n\n"
+                f"If mmWave Studio was launched as Administrator, "
+                f"this PowerShell terminal must also be run as Administrator."
             )
 
-    # --- Strategy 2/3: Enumerate windows ---
-    candidates = _enumerate_uia_windows(verbose_log=vlog)
+        check_elevation(target_pid)
 
-    # Apply title_regex filter if given
-    if title_regex is not None:
-        pat = re.compile(title_regex, re.IGNORECASE)
-        for c in candidates:
-            c.matched = bool(pat.search(c.title))
-        vlog(f"Applied title_regex={title_regex!r}, "
-             f"{sum(1 for c in candidates if c.matched)} matched")
+        app, win = _try_attach_pid(
+            Application, target_pid, hwnd, probe_dir, vlog
+        )
+        if app is not None and win is not None:
+            return app, win
 
-    matched = [c for c in candidates if c.matched]
-
-    if not matched:
+        # All strategies failed — write diagnostics and raise with honesty
+        candidates = _enumerate_uia_windows(verbose_log=vlog)
         _write_window_diagnostics(candidates, probe_dir, vlog)
         raise RuntimeError(
-            "Could not find mmWave Studio window. "
-            "See ti/probe_logs/gui_connect_windows.txt for all discovered windows. "
-            "Try: --pid <PID> or --title-regex \".*mmWave.*\""
+            f"UIA attach failed for PID={target_pid}: "
+            f"all attach strategies exhausted "
+            f"(connect by PID, connect by handle={hwnd}, "
+            f"Desktop.window).\n"
+            f"If mmWave Studio was launched as Administrator, "
+            f"this PowerShell terminal must also be run as Administrator."
         )
 
-    # Try to attach to each matched candidate
-    last_error = ""
-    for c in matched:
-        vlog(f"Trying PID={c.pid} title={c.title!r}")
+    # --- Auto-resolve: only strong visible candidates ---
+    strong_visible = [
+        c for c in ps_cands
+        if c.get("MainWindowHandle", 0) != 0 and _is_strong_candidate(c)
+    ]
 
-        # Elevation check
-        if _is_process_elevated(c.pid) and not _is_admin():
-            c.failure_reason = "elevation mismatch"
-            vlog(f"  Elevation mismatch for PID={c.pid}")
-            continue
+    if len(strong_visible) == 1:
+        cand = strong_visible[0]
+        target_pid = cand.get("Id")
+        hwnd = cand.get("MainWindowHandle", 0)
+        vlog(f"Auto-resolved unambiguous strong PID={target_pid} "
+             f"handle={hwnd}")
+        check_elevation(target_pid)
 
-        try:
-            app = Application(backend="uia").connect(process=c.pid, timeout=10)
-            main_window = app.top_window()
-            c.attach_ok = True
-            vlog(f"  Attached to PID={c.pid}: {main_window.window_text()!r}")
-            _write_window_diagnostics(candidates, probe_dir, vlog)
-            return app, main_window
-        except Exception as e:
-            c.failure_reason = str(e)
-            last_error = str(e)
-            vlog(f"  Attach failed for PID={c.pid}: {e}")
+        app, win = _try_attach_pid(
+            Application, target_pid, hwnd, probe_dir, vlog
+        )
+        if app is not None and win is not None:
+            return app, win
 
-    # All candidates failed
-    _write_window_diagnostics(candidates, probe_dir, vlog)
-
-    # Check if it's an elevation issue across all candidates
-    all_elevation = all(c.failure_reason == "elevation mismatch" for c in matched)
-    if all_elevation:
+        candidates = _enumerate_uia_windows(verbose_log=vlog)
+        _write_window_diagnostics(candidates, probe_dir, vlog)
         raise RuntimeError(
-            "mmWave Studio appears to be running as administrator. "
-            "Re-run this PowerShell terminal as administrator, then retry."
+            f"UIA attach failed for auto-resolved PID={target_pid}: "
+            f"all attach strategies exhausted.\n"
+            f"If mmWave Studio was launched as Administrator, "
+            f"this PowerShell terminal must also be run as Administrator."
+        )
+    elif len(strong_visible) == 0:
+        raise RuntimeError(
+            "Could not auto-resolve mmWave Studio PID: "
+            "No visible strong candidate processes found.\n\n"
+            f"Candidate processes:\n{format_cands(ps_cands)}\n\n"
+            "Try running with explicit --pid <PID>."
+        )
+    else:
+        raise RuntimeError(
+            "Could not auto-resolve mmWave Studio PID: "
+            "Multiple visible strong candidate processes found.\n\n"
+            f"Candidate processes:\n{format_cands(ps_cands)}\n\n"
+            "Please rerun with an explicit: --pid <PID>"
         )
 
-    raise RuntimeError(
-        f"Could not attach to mmWave Studio window. "
-        f"Found {len(matched)} candidate(s) but UIA attach failed. "
-        f"Last error: {last_error}. "
-        f"See ti/probe_logs/gui_connect_windows.txt for details. "
-        f"Try: --pid <PID>"
-    )
+
 
 
 # ---------------------------------------------------------------------------
@@ -493,23 +701,48 @@ def _find_by_auto_id(
     auto_id: str,
     verbose_log: Callable[[str], None] | None = None,
 ) -> Any | None:
-    """Find a control by automation_id using child_window().
+    """Find a control by automation_id.
+
+    Primary: root.child_window(auto_id=...) — works on WindowSpecification.
+    Fallback: search root.descendants() by automation_id — works on UIAWrapper.
 
     Returns the wrapper object or None.
     """
     vlog = verbose_log or (lambda s: None)
-    try:
-        child = root.child_window(auto_id=auto_id)
-        if child.exists(timeout=2):
-            wrapper = child.wrapper_object()
-            try:
-                text = wrapper.window_text()[:80]
-            except Exception:
-                text = "<no text>"
-            vlog(f"  Found auto_id={auto_id!r}: text={text!r}")
-            return wrapper
-    except Exception as e:
-        vlog(f"  Search for auto_id={auto_id!r} failed: {e}")
+
+    # Primary: child_window() — available on WindowSpecification
+    if hasattr(root, 'child_window'):
+        try:
+            child = root.child_window(auto_id=auto_id)
+            if child.exists(timeout=2):
+                wrapper = child.wrapper_object()
+                try:
+                    text = wrapper.window_text()[:80]
+                except Exception:
+                    text = "<no text>"
+                vlog(f"  Found auto_id={auto_id!r}: text={text!r}")
+                return wrapper
+        except Exception as e:
+            vlog(f"  Search for auto_id={auto_id!r} failed: {e}")
+
+    # Fallback: descendants() — works on UIAWrapper
+    if hasattr(root, 'descendants'):
+        try:
+            for child in root.descendants():
+                try:
+                    child_auto_id = child.automation_id() if hasattr(child, 'automation_id') else ""
+                except Exception:
+                    continue
+                if child_auto_id == auto_id:
+                    try:
+                        text = child.window_text()[:80]
+                    except Exception:
+                        text = "<no text>"
+                    vlog(f"  Found auto_id={auto_id!r} via descendants: text={text!r}")
+                    return child
+        except Exception as e:
+            vlog(f"  Descendants search for auto_id={auto_id!r} failed: {e}")
+
     return None
 
 
@@ -679,14 +912,15 @@ def read_device_status(
 ) -> dict[str, Any]:
     """Read the Device Status from Output document text.
 
-    Primary source: Output document (m_ConsoleText) — search for
-    'Device Status : AWR2944/GP/...' lines.
-
-    The GUI label m_lblStatus contains 'FTDI Connectivity Status:' which
-    is NOT the device identity.  Therefore we rely on Output text.
+    Extraction strategies (in order):
+    A. Direct auto_id labels: m_lblDeviceStatus, lblDeviceStatus, etc.
+    B. Output document (m_ConsoleText): search for 'Device Status' lines
+    C. All descendants text: collect all nonempty text and search for
+       'Device Status', 'AWR2944', 'SOP:2'
 
     Returns a dict with keys:
-      raw_text, valid, device, type, sop, es, rs232_status
+      raw_text, valid, device, type, sop, es, rs232_status,
+      _extraction (diagnostics metadata)
     """
     vlog = verbose_log or (lambda s: None)
 
@@ -694,17 +928,41 @@ def read_device_status(
         controls = inspect_connection_tab(window, verbose_log=vlog)
 
     raw = ""
+    extraction: dict[str, Any] = {
+        "console_text_found": False,
+        "console_text_length": 0,
+        "device_status_label_found": controls.device_status_label is not None,
+        "device_status_label_text": "",
+        "rs232_status_found": controls.rs232_status_label is not None,
+        "descendants_searched": False,
+        "extraction_source": None,
+    }
 
-    # Primary: Output document (m_ConsoleText)
+    # --- Strategy A: Device Status label auto_ids ---
+    if controls.device_status_label is not None:
+        try:
+            label_text = controls.device_status_label.window_text()
+            extraction["device_status_label_text"] = label_text
+            if label_text and ("AWR" in label_text or "XWR" in label_text) and "/" in label_text:
+                raw = label_text
+                extraction["extraction_source"] = "device_status_label"
+                vlog(f"Found Device Status via label: {raw!r}")
+        except Exception:
+            pass
+
+    # --- Strategy B: Output document (m_ConsoleText) ---
     # Re-find fresh wrapper to avoid stale state
     output_doc = _find_by_auto_id(window, "m_ConsoleText", vlog)
     if output_doc is None:
         output_doc = controls.output_document
 
+    doc_text = ""
     if output_doc is not None:
+        extraction["console_text_found"] = True
         vlog("Reading Output document (m_ConsoleText) for Device Status")
         try:
-            doc_text = output_doc.window_text()
+            doc_text = output_doc.window_text() or ""
+            extraction["console_text_length"] = len(doc_text)
             if output_log_path is not None:
                 try:
                     with open(output_log_path, "w", encoding="utf-8", newline="") as f:
@@ -712,26 +970,48 @@ def read_device_status(
                 except Exception:
                     pass
             # Search from bottom for most recent Device Status line
-            for line in reversed(doc_text.splitlines()):
-                if "Device Status" in line and "/" in line:
-                    raw = line.strip()
-                    vlog(f"Found Device Status in Output: {raw!r}")
-                    break
+            if not raw:
+                for line in reversed(doc_text.splitlines()):
+                    if "Device Status" in line and "/" in line:
+                        raw = line.strip()
+                        extraction["extraction_source"] = "console_text"
+                        vlog(f"Found Device Status in Output: {raw!r}")
+                        break
         except Exception as e:
             vlog(f"Output document read failed: {e}")
+    else:
+        vlog("m_ConsoleText NOT FOUND")
 
-    # Fallback: Device Status label (if it actually has device identity)
-    if not raw and controls.device_status_label is not None:
+    # --- Strategy C: All descendants text search ---
+    if not raw:
+        vlog("Trying all-descendants text search for Device Status")
+        extraction["descendants_searched"] = True
         try:
-            label_text = controls.device_status_label.window_text()
-            # Only use if it actually looks like a device status, not a header
-            if label_text and ("AWR" in label_text or "XWR" in label_text) and "/" in label_text:
-                raw = label_text
-                vlog(f"Found Device Status via label: {raw!r}")
-            else:
-                vlog(f"Device Status label text is not device identity: {label_text!r}")
-        except Exception:
-            pass
+            for child in window.descendants():
+                try:
+                    child_text = child.window_text()
+                    if not child_text:
+                        continue
+                    if "Device Status" in child_text and "/" in child_text:
+                        # Found a Device Status string in some control
+                        for line in reversed(child_text.splitlines()):
+                            if "Device Status" in line and "/" in line:
+                                raw = line.strip()
+                                extraction["extraction_source"] = "descendants"
+                                auto_id = ""
+                                try:
+                                    auto_id = child.automation_id()
+                                except Exception:
+                                    pass
+                                vlog(f"Found Device Status via descendants: "
+                                     f"auto_id={auto_id!r} text={raw!r}")
+                                break
+                        if raw:
+                            break
+                except Exception:
+                    continue
+        except Exception as e:
+            vlog(f"Descendants search failed: {e}")
 
     # Read RS232 status separately
     rs232_status = ""
@@ -740,6 +1020,16 @@ def read_device_status(
             rs232_status = controls.rs232_status_label.window_text()
         except Exception:
             pass
+    extraction["rs232_status_text"] = rs232_status
+
+    # Read SPI status
+    spi_status = ""
+    if controls.spi_status_label is not None:
+        try:
+            spi_status = controls.spi_status_label.window_text()
+        except Exception:
+            pass
+    extraction["spi_status_text"] = spi_status
 
     vlog(f"Device Status raw text: {raw!r}")
     vlog(f"RS232 status: {rs232_status!r}")
@@ -753,6 +1043,7 @@ def read_device_status(
         "sop": None,
         "es": None,
         "rs232_status": rs232_status,
+        "_extraction": extraction,
     }
 
     if not raw:
@@ -763,7 +1054,7 @@ def read_device_status(
     # Also handles just the string without "Device Status :"
     pattern = r"(?:Device Status\s*:\s*)?(?P<device>AWR2944|XWR2944)/(?P<type>GP|TEST|QM)/(?P<safety>[^/]+)/SOP:(?P<sop>\d+)/ES:(?P<es>[0-9.]+)"
     match = re.search(pattern, raw)
-    
+
     if match:
         result["device"] = match.group("device")
         result["type"] = match.group("type")
@@ -797,6 +1088,172 @@ def read_device_status(
     )
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Manual status probe — read-only diagnostic
+# ---------------------------------------------------------------------------
+
+_PROBE_SEARCH_TERMS = [
+    "Device", "Status", "RS232", "SPI", "Console", "Output",
+    "Connect", "AWR", "xWR", "SOP",
+]
+
+
+def manual_status_probe(
+    window,
+    probe_dir: Path | None = None,
+    verbose_log: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    """Diagnostic probe: exercise the same extraction path as manual_check.
+
+    Read-only: no clicks, no Lua, no ar1, no firmware.
+    Writes a diagnostic file to probe_dir.
+
+    Returns a dict with all extraction results.
+    """
+    vlog = verbose_log or (lambda s: None)
+    if probe_dir is None:
+        probe_dir = Path("ti") / "probe_logs"
+    probe_dir.mkdir(parents=True, exist_ok=True)
+
+    results: dict[str, Any] = {}
+
+    # Window info
+    try:
+        results["window_title"] = window.window_text()
+        results["window_handle"] = window.handle
+    except Exception as e:
+        results["window_title"] = f"<error: {e}>"
+        results["window_handle"] = None
+
+    # Inspect connection tab controls
+    controls = inspect_connection_tab(window, verbose_log=vlog)
+    results["radarapi_found"] = controls.radarapi_window is not None
+    results["console_text_found"] = controls.output_document is not None
+    results["missing_controls"] = controls.missing
+
+    # Read device status with full diagnostics
+    device_status = read_device_status(
+        window, controls, verbose_log=vlog,
+        output_log_path=probe_dir / "manual_status_probe_output_tail.txt",
+    )
+    results["device_status"] = device_status
+    results["extraction"] = device_status.get("_extraction", {})
+
+    # Console text details
+    if controls.output_document is not None:
+        try:
+            doc_text = controls.output_document.window_text() or ""
+            results["console_text_length"] = len(doc_text)
+            lines = doc_text.splitlines()
+            results["console_text_last_30_lines"] = lines[-30:] if lines else []
+        except Exception as e:
+            results["console_text_length"] = 0
+            results["console_text_last_30_lines"] = [f"<error: {e}>"]
+    else:
+        results["console_text_length"] = 0
+        results["console_text_last_30_lines"] = []
+
+    # RS232 status
+    if controls.rs232_status_label is not None:
+        try:
+            results["rs232_status_raw"] = controls.rs232_status_label.window_text()
+        except Exception:
+            results["rs232_status_raw"] = "<error>"
+    else:
+        results["rs232_status_raw"] = "<not found>"
+
+    # SPI status
+    if controls.spi_status_label is not None:
+        try:
+            results["spi_status_raw"] = controls.spi_status_label.window_text()
+        except Exception:
+            results["spi_status_raw"] = "<error>"
+    else:
+        results["spi_status_raw"] = "<not found>"
+
+    # Device Status label
+    if controls.device_status_label is not None:
+        try:
+            results["device_status_label_raw"] = controls.device_status_label.window_text()
+        except Exception:
+            results["device_status_label_raw"] = "<error>"
+    else:
+        results["device_status_label_raw"] = "<not found>"
+
+    # Device variant
+    results["device_variant_candidates"] = controls.device_variant_candidates
+
+    # Search all descendants for matching controls
+    matching_descendants: list[dict[str, str]] = []
+    try:
+        for child in window.descendants():
+            try:
+                auto_id = child.automation_id() if hasattr(child, 'automation_id') else ""
+                child_name = child.element_info.name if hasattr(child, 'element_info') else ""
+                child_text = (child.window_text() or "")[:200]
+            except Exception:
+                continue
+            combined = (auto_id + " " + child_name + " " + child_text).lower()
+            if any(term.lower() in combined for term in _PROBE_SEARCH_TERMS):
+                matching_descendants.append({
+                    "automation_id": auto_id,
+                    "name": child_name,
+                    "text": child_text,
+                })
+    except Exception as e:
+        matching_descendants.append({"error": str(e)})
+    results["matching_descendants"] = matching_descendants
+
+    # Write diagnostic file
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    diag_path = probe_dir / f"manual_status_probe_{ts}.txt"
+    try:
+        with open(diag_path, "w", encoding="utf-8") as f:
+            f.write(f"Manual Status Probe\n")
+            f.write(f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write("=" * 80 + "\n\n")
+
+            f.write(f"Window: title={results.get('window_title')!r} "
+                    f"handle={results.get('window_handle')}\n")
+            f.write(f"RadarAPI (frmAR1Main) found: {results['radarapi_found']}\n")
+            f.write(f"m_ConsoleText found: {results['console_text_found']}\n")
+            f.write(f"Console text length: {results['console_text_length']}\n")
+            f.write(f"Device Status raw: {device_status.get('raw_text')!r}\n")
+            f.write(f"Device Status valid: {device_status.get('valid')}\n")
+            f.write(f"RS232 status: {results.get('rs232_status_raw')!r}\n")
+            f.write(f"SPI status: {results.get('spi_status_raw')!r}\n")
+            f.write(f"Device Status label: {results.get('device_status_label_raw')!r}\n")
+            f.write(f"Missing controls: {controls.missing}\n\n")
+
+            ext = results.get("extraction", {})
+            f.write(f"Extraction diagnostics:\n")
+            f.write(f"  extraction_source: {ext.get('extraction_source')}\n")
+            f.write(f"  console_text_found: {ext.get('console_text_found')}\n")
+            f.write(f"  console_text_length: {ext.get('console_text_length')}\n")
+            f.write(f"  device_status_label_found: {ext.get('device_status_label_found')}\n")
+            f.write(f"  descendants_searched: {ext.get('descendants_searched')}\n\n")
+
+            f.write("Last 30 lines of m_ConsoleText:\n")
+            for line in results.get("console_text_last_30_lines", []):
+                f.write(f"  {line}\n")
+            f.write("\n")
+
+            f.write(f"Matching descendants ({len(matching_descendants)}):\n")
+            for md in matching_descendants:
+                if "error" in md:
+                    f.write(f"  <error: {md['error']}>\n")
+                else:
+                    f.write(f"  auto_id={md['automation_id']!r}  "
+                            f"name={md['name']!r}  "
+                            f"text={md['text']!r}\n")
+    except Exception as e:
+        vlog(f"Failed to write diagnostic file: {e}")
+
+    results["diagnostic_file"] = str(diag_path)
+    vlog(f"Wrote diagnostic file: {diag_path}")
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -1370,10 +1827,11 @@ def manual_check(
     progress.log("manual_check_started")
 
     controls = inspect_connection_tab(window, verbose_log=vlog)
-    
+
+    output_log_path = probe_dir / "manual_check_output_tail.txt"
     device_status = read_device_status(
         window, controls, verbose_log=vlog,
-        output_log_path=probe_dir / "manual_check_output_tail.txt"
+        output_log_path=output_log_path,
     )
 
     result_path = probe_dir / "manual_check_result.json"
@@ -1387,22 +1845,66 @@ def manual_check(
         )
     else:
         raw_text = device_status.get("raw_text", "")
+        ext = device_status.get("_extraction", {})
         progress.log("manual_connection_not_valid", raw_text)
+
+        # Build honest diagnostic error message
+        diag_lines = [
+            "Expected Device Status containing AWR2944, GP, and SOP:2.",
+            f"UIA attach succeeded (window found).",
+        ]
+        if raw_text:
+            diag_lines.append(f"Device Status text found but did not match: {raw_text!r}")
+        else:
+            diag_lines.append("Device Status extraction returned empty string.")
+
+        diag_lines.append(
+            f"m_ConsoleText found: {ext.get('console_text_found', False)}"
+        )
+        diag_lines.append(
+            f"m_ConsoleText length: {ext.get('console_text_length', 0)}"
+        )
+        diag_lines.append(
+            f"Device Status label found: {ext.get('device_status_label_found', False)}"
+        )
+        if ext.get("device_status_label_text"):
+            diag_lines.append(
+                f"Device Status label text: {ext.get('device_status_label_text')!r}"
+            )
+        diag_lines.append(
+            f"RS232 status found: {ext.get('rs232_status_found', False)}"
+        )
+        if ext.get("rs232_status_text"):
+            diag_lines.append(
+                f"RS232 status: {ext.get('rs232_status_text')!r}"
+            )
+        diag_lines.append(
+            f"Descendants searched: {ext.get('descendants_searched', False)}"
+        )
+        diag_lines.append(
+            f"Extraction source: {ext.get('extraction_source', 'none')}"
+        )
+        diag_lines.append(
+            f"Snapshot: {output_log_path}"
+        )
+
+        error_msg = "\n".join(diag_lines)
         res = ClickFlowResult(
             status="MANUAL_CONNECTION_NOT_VALID",
             device_status_text=raw_text,
             details=device_status,
-            error=f"Expected Device Status containing AWR2944, GP, and SOP:2. Found: {raw_text!r}",
+            error=error_msg,
         )
-    
+
     result_data = {
         "status": res.status,
         "device_status_text": res.device_status_text,
         "details": res.details,
         "error": res.error,
     }
-    
+
     import json
-    result_path.write_text(json.dumps(result_data, indent=2), encoding="utf-8")
-    
+    result_path.write_text(json.dumps(result_data, indent=2, default=str), encoding="utf-8")
+
     return res
+

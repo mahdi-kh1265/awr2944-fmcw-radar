@@ -1,16 +1,20 @@
 mmWave Studio Window Enumeration
-Timestamp: 2026-07-07 12:54:24
+Timestamp: 2026-07-08 14:32:23
 Python is admin: True
 ====================================================================================================
 
 PID=16924  title='Taskbar'  process=''  exe=''  rect=(L0,T1032,R1920,B1080)  matched=False  attach_ok=False  failure=''  
 PID=16924  title=''  process=''  exe=''  rect=(L-1920,T1032,R0,B1080)  matched=False  attach_ok=False  failure=''  
-PID=20632  title='Administrator: Windows PowerShell'  process=''  exe=''  rect=(L-1651,T59,R-385,B890)  matched=False  attach_ok=False  failure=''  
+PID=20632  title='Administrator: Windows PowerShell'  process=''  exe=''  rect=(L-1651,T59,R-130,B890)  matched=False  attach_ok=False  failure=''  
 PID=20084  title='Summer2026-Saeed - Radar Data Capture Setup - Google Chrome'  process=''  exe=''  rect=(L-8,T-8,R1928,B1040)  matched=False  attach_ok=False  failure=''  
-PID=27364  title='CH@NC3 - Tell Me'  process=''  exe=''  rect=(L0,T0,R0,B0)  matched=False  attach_ok=False  failure=''  
-PID=3312  title='mmWave Studio 3.1.4.4'  process=''  exe=''  rect=(L-8,T-8,R1928,B1040)  matched=True  attach_ok=True  failure=''  >>> MATCH <<<
+PID=21996  title='Codex'  process=''  exe=''  rect=(L0,T0,R0,B0)  matched=False  attach_ok=False  failure=''  
+PID=12012  title='mmWave Studio 3.1.4.4'  process=''  exe=''  rect=(L0,T0,R0,B0)  matched=True  attach_ok=False  failure=''  >>> MATCH <<<
 PID=5716  title='awr2944-fmcw-radar1 (Workspace) - Antigravity IDE - Walkthrough'  process=''  exe=''  rect=(L-1928,T-8,R8,B1040)  matched=False  attach_ok=False  failure=''  
-PID=27228  title='@Andrew - Discord'  process=''  exe=''  rect=(L0,T0,R0,B0)  matched=False  attach_ok=False  failure=''  
+PID=21660  title='*ProjectCapture Scaffolding v1 - Notepad'  process=''  exe=''  rect=(L-1579,T215,R-139,B968)  matched=False  attach_ok=False  failure=''  
+PID=30788  title='Administrator: Windows PowerShell'  process=''  exe=''  rect=(L-1552,T169,R-287,B900)  matched=False  attach_ok=False  failure=''  
+PID=21756  title='Microsoft Store'  process=''  exe=''  rect=(L0,T0,R0,B0)  matched=False  attach_ok=False  failure=''  
+PID=16924  title='docs'  process=''  exe=''  rect=(L0,T0,R0,B0)  matched=False  attach_ok=False  failure=''  
+PID=27364  title='Spotify Premium'  process=''  exe=''  rect=(L0,T0,R0,B0)  matched=False  attach_ok=False  failure=''  
 PID=20084  title='Summer2026-Saeed - Radar Data Capture Setup - Google Chrome'  process=''  exe=''  rect=(L0,T0,R0,B0)  matched=False  attach_ok=False  failure=''  
 PID=17580  title=''  process=''  exe=''  rect=(L-32000,T-32000,R-31984,B-31984)  matched=False  attach_ok=False  failure=''  
 PID=20084  title='RF eurocard - Google Drive - Google Chrome'  process=''  exe=''  rect=(L0,T0,R0,B0)  matched=False  attach_ok=False  failure=''  

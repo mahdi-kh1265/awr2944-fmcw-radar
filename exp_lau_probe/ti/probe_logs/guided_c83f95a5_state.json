@@ -1,0 +1,28 @@
+{
+  "workflow_id": "c83f95a5",
+  "label": "First fully completed guided-runner validation with manual connection override",
+  "pid": 12012,
+  "state_path": "ti\\probe_logs\\guided_c83f95a5_state.json",
+  "current_stage": "failed",
+  "firmware_run_id": "",
+  "config_run_id": "",
+  "firmware_dofile": "",
+  "config_dofile": "",
+  "firmware_result_path": "",
+  "config_result_path": "",
+  "firmware_progress_path": "",
+  "config_progress_path": null,
+  "dry_run": false,
+  "hardware_touched": false,
+  "lua_generated": false,
+  "validation_recorded": false,
+  "dry_run_preview": {},
+  "manual_connection_override": true,
+  "manual_connection_source": "user_confirmed",
+  "validation_file": null,
+  "errors": [
+    "firmware_preflight_passed failed: Firmware preflight failed: ['RS232 identity gate not valid']"
+  ],
+  "created_at": "2026-07-08T20:11:18.458037+00:00",
+  "updated_at": "2026-07-08T20:11:19.205734+00:00"
+}

@@ -1,0 +1,26 @@
+{
+  "workflow_id": "3e02822c",
+  "label": "First fully completed guided-runner validation",
+  "pid": null,
+  "state_path": "ti\\probe_logs\\guided_3e02822c_state.json",
+  "current_stage": "failed",
+  "firmware_run_id": "",
+  "config_run_id": "",
+  "firmware_dofile": "",
+  "config_dofile": "",
+  "firmware_result_path": "",
+  "config_result_path": "",
+  "firmware_progress_path": "",
+  "config_progress_path": null,
+  "dry_run": false,
+  "hardware_touched": false,
+  "lua_generated": false,
+  "validation_recorded": false,
+  "dry_run_preview": {},
+  "validation_file": null,
+  "errors": [
+    "manual_check_passed failed: Could not attach to mmWave Studio: Could not auto-resolve mmWave Studio PID: Multiple visible candidate processes found.\n\nCandidate processes:\n  PID=5716  Name=Antigravity IDE  Handle=1512770  Title='awr2944-fmcw-radar1 (Workspace) - Antigravity IDE - Walkthrough'\n  PID=20084  Name=chrome  Handle=66902  Title='Summer2026-Saeed - Radar Data Capture Setup - Google Chrome'\n  PID=12012  Name=mmWaveStudio  Handle=1119094  Title='mmWave Studio 3.1.4.4'\n\nPlease rerun with an explicit: --pid <PID>"
+  ],
+  "created_at": "2026-07-08T19:29:29.334844+00:00",
+  "updated_at": "2026-07-08T19:29:29.923713+00:00"
+}

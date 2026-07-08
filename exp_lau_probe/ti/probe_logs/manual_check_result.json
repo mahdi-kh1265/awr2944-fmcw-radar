@@ -1,15 +1,15 @@
 {
-  "status": "MANUAL_CONNECTION_VALID",
-  "device_status_text": "[12:39:50]  Device Status : AWR2944/GP/ASIL-B/SOP:2/ES:2.0",
+  "status": "MANUAL_CONNECTION_NOT_VALID",
+  "device_status_text": "",
   "details": {
-    "raw_text": "[12:39:50]  Device Status : AWR2944/GP/ASIL-B/SOP:2/ES:2.0",
-    "valid": true,
-    "device": "AWR2944",
-    "type": "GP",
-    "safety": "ASIL-B",
-    "sop": "2",
-    "es": "2.0",
-    "rs232_status": "Connected"
+    "raw_text": "",
+    "valid": false,
+    "device": null,
+    "type": null,
+    "safety": null,
+    "sop": null,
+    "es": null,
+    "rs232_status": ""
   },
-  "error": null
+  "error": "Expected Device Status containing AWR2944, GP, and SOP:2. Found: ''"
 }

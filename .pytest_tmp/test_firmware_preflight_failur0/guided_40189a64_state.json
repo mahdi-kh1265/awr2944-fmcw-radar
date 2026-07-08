@@ -1,0 +1,21 @@
+{
+  "workflow_id": "40189a64",
+  "label": "failtest",
+  "pid": null,
+  "state_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest_tmp\\test_firmware_preflight_failur0\\guided_40189a64_state.json",
+  "current_stage": "failed",
+  "firmware_run_id": "",
+  "config_run_id": "",
+  "firmware_dofile": "",
+  "config_dofile": "",
+  "firmware_result_path": "",
+  "config_result_path": "",
+  "firmware_progress_path": "",
+  "config_progress_path": "",
+  "validation_file": "",
+  "errors": [
+    "firmware_preflight_passed failed: Firmware preflight failed: ['Preflight fail']"
+  ],
+  "created_at": "2026-07-07T19:24:46.119665+00:00",
+  "updated_at": "2026-07-07T19:24:46.124666+00:00"
+}

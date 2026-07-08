@@ -44,6 +44,56 @@ class PostStatus:
     ready_for_dca_setup: bool = False
     ready_for_capture: bool = False
 
+@dataclass
+class GeneratedScript:
+    script: str
+    run_id: str
+    lua_path: Path
+    result_path: Path
+    progress_path: Path
+    dofile: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class RunStatus:
+    run_id: str
+    exists: bool = False
+    success: bool = False
+    error: str = ""
+
+def load_run_result(manifest_or_run_id: str, probe_dir: Path) -> RunStatus:
+    """Load the final result of a run using either a manifest file or directly the run_id result JSON."""
+    manifest_path = probe_dir / f"{manifest_or_run_id}_manifest.json"
+    result_path = probe_dir / f"{manifest_or_run_id}_result.json"
+    
+    if manifest_path.exists():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if "result_path" in manifest:
+                result_path = Path(manifest["result_path"])
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    if not result_path.exists():
+        result_files = sorted(probe_dir.glob(f"{manifest_or_run_id}_*result.json"))
+        if result_files:
+            result_path = result_files[0]
+            
+    if result_path and result_path.exists():
+        try:
+            res = json.loads(result_path.read_text(encoding="utf-8"))
+            if "success" in res:
+                return RunStatus(
+                    run_id=manifest_or_run_id,
+                    exists=True,
+                    success=res["success"],
+                    error=res.get("error", "")
+                )
+        except (json.JSONDecodeError, IOError):
+            pass
+            
+    return RunStatus(run_id=manifest_or_run_id, exists=False, success=False, error="")
+
 
 # ---------------------------------------------------------------------------
 # Connection gate
@@ -478,7 +528,11 @@ def preflight_firmware(audit: SessionAudit) -> tuple[bool, list[str]]:
     reasons: list[str] = []
     
     if not audit.rs232_valid:
-        reasons.append("RS232 identity gate not valid")
+        reasons.append(
+            "RS232 identity gate not valid (Device Status extraction may have "
+            "returned empty — use --assume-manual-connected if you have "
+            "visually confirmed the connection)"
+        )
     if audit.firmware_power_already_attempted:
         reasons.append("Firmware/power already attempted in this session")
     if audit.requires_power_cycle:
@@ -929,16 +983,16 @@ def generate_replay_lua(commands: list[AR1Command], run_id: str, out_path: Path,
 # Deterministic firmware/power script
 # ---------------------------------------------------------------------------
 
-def generate_firmware_power_script(run_id: str, result_path: Path) -> str:
+def generate_firmware_power_script(run_id: str, lua_path: Path) -> GeneratedScript:
     """Deterministic firmware/power sequence."""
     
-    out_path_str = result_path.resolve().as_posix()
-    prog_path = result_path.with_name(result_path.stem + '_progress.jsonl')
+    prog_path = lua_path.with_name(f"{run_id}_firmware_power_progress.jsonl")
+    result_path = lua_path.with_name(f"{run_id}_firmware_power_result.json")
     
-    _atomic_write_manifest(run_id, "firmware_power", result_path, result_path, prog_path)
+    _atomic_write_manifest(run_id, "firmware_power", lua_path, result_path, prog_path)
     
     log_fn = _lua_log_progress()
-    res_fn = _lua_result_init_and_save(run_id, out_path_str)
+    res_fn = _lua_result_init_and_save(run_id, result_path.resolve().as_posix())
     safe_fn = _lua_safe_call()
     
     script = f"""\
@@ -990,7 +1044,14 @@ result.success = true
 saveResult()
 print("AWR_RUN_END run_id=" .. run_id .. " stage=" .. run_stage .. " success=true")
 """
-    return script
+    return GeneratedScript(
+        script=script,
+        run_id=run_id,
+        lua_path=lua_path,
+        result_path=result_path,
+        progress_path=prog_path,
+        dofile=f"dofile([[{lua_path.resolve()}]])"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1328,11 +1389,11 @@ def _parse_frozen_command(cmd_line: str) -> tuple[str, str]:
     return func, args
 
 
-def generate_smoke_known_awr2944(run_id: str, out_path: Path) -> tuple[str, dict[str, Any]]:
+def generate_smoke_known_awr2944(run_id: str, out_path: Path) -> GeneratedScript:
     """Generate a smoke config script using frozen GUI-derived AWR2944 commands.
     
     These are LITERAL copies of what mmWave Studio 3.1.4.4 emits for AWR2944.
-    The argument strings are used verbatim — no conversion, no defaults.
+    The argument strings are used verbatim  no conversion, no defaults.
     """
     prog_path = out_path.with_name(out_path.stem + "_progress.jsonl")
     res_path = out_path.with_name(out_path.stem + "_result.json")
@@ -1346,6 +1407,8 @@ def generate_smoke_known_awr2944(run_id: str, out_path: Path) -> tuple[str, dict
     header = [
         f"-- GUI-Derived AWR2944 Smoke Config (FROZEN LITERAL REPLAY)",
         f"-- These are exact GUI-emitted commands. DO NOT modify arguments.",
+        f"-- source: frozen_gui_derived_awr2944",
+        f"-- replay_validated: true",
         f"-- run_id: {run_id}",
         "",
         f'local run_id = "{run_id}"',
@@ -1392,4 +1455,12 @@ def generate_smoke_known_awr2944(run_id: str, out_path: Path) -> tuple[str, dict
         "warnings": [],
         "commands": commands_meta,
     }
-    return script, result
+    return GeneratedScript(
+        script=script,
+        run_id=run_id,
+        lua_path=out_path,
+        result_path=res_path,
+        progress_path=prog_path,
+        dofile=f"dofile([[{out_path.resolve()}]])",
+        metadata=result
+    )

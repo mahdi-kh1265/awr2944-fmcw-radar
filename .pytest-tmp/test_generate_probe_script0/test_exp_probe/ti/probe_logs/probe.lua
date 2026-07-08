@@ -34,7 +34,7 @@ local json_str = string.format([[
     "ar1_available": %s,
     "write_to_log_available": %s
 }
-]], "a6f8f90e-e181-4aa2-bebe-fab182346068", tostring(probe_executed), tostring(ar1_available), tostring(write_to_log_available))
+]], "f3886024-b9d5-40b0-b555-be2243000ee2", tostring(probe_executed), tostring(ar1_available), tostring(write_to_log_available))
 
 local file, err = io.open("C:/Users/khams008/Documents/awr2944-fmcw-radar/.pytest-tmp/test_generate_probe_script0/test_exp_probe/ti/probe_logs/probe_result.json", "w")
 if file then
