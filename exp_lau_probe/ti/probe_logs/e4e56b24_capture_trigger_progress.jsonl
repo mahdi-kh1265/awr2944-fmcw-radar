@@ -1,0 +1,3 @@
+{"ts": "11:27:49", "cmd": "CaptureCardConfig_StartRecord", "ret": 0, "ok": true}
+{"ts": "11:27:51", "cmd": "StartFrame", "ret": 0, "ok": true}
+{"ts": "11:28:26", "cmd": "CaptureCardConfig_StopRecord", "ret": 0, "ok": true}

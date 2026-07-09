@@ -66,6 +66,9 @@ mmws_app.add_typer(mmws_post_app, name="post")
 mmws_internals_app = typer.Typer(help="Internal reflection and diagnostics (Lua/.NET)")
 mmws_app.add_typer(mmws_internals_app, name="internals")
 
+dca_app = typer.Typer(help="DCA1000 integration commands")
+app.add_typer(dca_app, name="dca")
+
 manual_app = typer.Typer(help="Manual Lua scripts for the mmWave Studio Lua Shell")
 mmws_app.add_typer(manual_app, name="manual")
 
@@ -7160,8 +7163,6 @@ def mmws_post_manual_status_probe(
 
     console.print(f"\n[bold]Diagnostic file:[/bold] {results.get('diagnostic_file')}")
 
-    # Missing controls
-    missing = results.get("missing_controls", [])
     if missing:
         console.print(f"\n[yellow]Missing controls:[/yellow]")
         for m in missing:
@@ -7279,3 +7280,458 @@ def mmws_post_failure_report(
     console.print(f"likely_root_cause:       {report.likely_root_cause}")
     console.print(f"recommended_next_action: {report.recommended_next_action}")
     console.print("")
+
+
+# ===========================================================================
+# DCA1000 Commands
+# ===========================================================================
+
+@dca_app.command("preflight")
+def dca_preflight(
+    host_ip: str = typer.Option("192.168.33.30", "--host-ip", help="PC static IP for DCA"),
+    dca_ip: str = typer.Option("192.168.33.180", "--dca-ip", help="DCA1000 FPGA IP"),
+    ping_only: bool = typer.Option(False, "--ping-only", help="Only run ping test"),
+    format_type: str = typer.Option("text", "--format", help="Output format: text or json"),
+) -> None:
+    """Run read-only DCA1000 network preflight checks."""
+    import json
+    from .dca.preflight import run_dca_preflight
+    
+    report = run_dca_preflight(host_ip=host_ip, dca_ip=dca_ip, ping_only=ping_only)
+    
+    if format_type == "json":
+        import dataclasses
+        print(json.dumps(dataclasses.asdict(report), indent=2, default=str))
+        if report.overall == "NOT_READY":
+            sys.exit(1)
+        return
+        
+    console.print(f"[bold]DCA1000 Preflight Report[/bold]")
+    console.print("=" * 30)
+    for check in report.checks:
+        color = "green" if check.status == "PASS" else "yellow" if check.status == "WARN" else "red" if check.status == "FAIL" else "magenta"
+        status_str = f"[{color}]{check.status:8}[/{color}]"
+        console.print(f"{check.name:30} {status_str} ({check.detail})")
+    
+    overall_color = "green" if report.overall == "READY" else "yellow" if "WARN" in report.overall else "red"
+    console.print(f"\nOverall: [{overall_color}]{report.overall}[/{overall_color}]")
+    
+    missing_ip = any(c.name.startswith(f"Adapter IP {host_ip}") and c.status == "FAIL" for c in report.checks)
+    if missing_ip:
+        try:
+            from .dca.adapters import suggest_dca_adapter
+            suggestion = suggest_dca_adapter()
+            if suggestion:
+                console.print(f"\n[cyan]Suggested DCA adapter: {suggestion.interface_alias}[/cyan]")
+                console.print("[cyan]To configure:[/cyan]")
+                console.print(f"[cyan]awr dca configure-adapter --interface \"{suggestion.interface_alias}\" --dry-run[/cyan]")
+                console.print(f"[cyan]awr dca configure-adapter --interface \"{suggestion.interface_alias}\" --yes[/cyan]")
+        except ImportError:
+            pass
+            
+    if report.overall == "NOT_READY":
+        sys.exit(1)
+
+
+@dca_app.command("generate-setup")
+def dca_generate_setup(
+    probe_dir: Path = typer.Option(..., "--probe-dir", help="Directory for output files"),
+    host_ip: str = typer.Option("192.168.33.30", "--host-ip", help="PC static IP for DCA"),
+    dca_ip: str = typer.Option("192.168.33.180", "--dca-ip", help="DCA1000 FPGA IP"),
+    dca_mac: str = typer.Option("12:34:56:78:90:12", "--dca-mac", help="DCA1000 MAC address"),
+    config_port: int = typer.Option(4096, "--config-port", help="UDP config port"),
+    data_port: int = typer.Option(4098, "--data-port", help="UDP data port"),
+    packet_delay: int = typer.Option(25, "--packet-delay", help="UDP packet delay in us"),
+) -> None:
+    """Generate DCA1000 setup Lua script (non-RF)."""
+    import uuid
+    from .dca.scripts import generate_dca_setup_script
+    
+    run_id = str(uuid.uuid4())[:8]
+    probe_dir.mkdir(parents=True, exist_ok=True)
+    out_path = probe_dir / f"{run_id}_dca_setup.lua"
+    
+    script = generate_dca_setup_script(
+        run_id=run_id,
+        out_path=out_path,
+        host_ip=host_ip,
+        dca_ip=dca_ip,
+        dca_mac=dca_mac,
+        config_port=config_port,
+        data_port=data_port,
+        packet_delay=packet_delay,
+    )
+    
+    script.lua_path.write_text(script.script, encoding="utf-8")
+    
+    console.print(f"[green]DCA setup script generated (run_id={run_id}):[/green]")
+    console.print(script.dofile)
+
+
+def get_default_postproc_dir() -> Path:
+    base = Path("C:/ti")
+    if base.exists():
+        candidates = list(base.glob("mmwave_studio_*/mmWaveStudio/PostProc"))
+        if candidates:
+            return sorted(candidates)[-1]
+    return Path(r"C:\ti\mmwave_studio\PostProc")
+
+
+@dca_app.command("generate-capture")
+def dca_generate_capture(
+    probe_dir: Path = typer.Option(..., "--probe-dir", help="Directory for output files"),
+    output_dir: Path = typer.Option(get_default_postproc_dir(), "--output-dir", help="Capture directory"),
+    confirm_startframe: bool = typer.Option(False, "--confirm-startframe", help="Confirm generation of StartFrame"),
+) -> None:
+    """Generate DCA1000 capture trigger Lua script (RF transmission!)."""
+    import uuid
+    from .dca.scripts import generate_capture_trigger_script
+    
+    try:
+        run_id = str(uuid.uuid4())[:8]
+        probe_dir.mkdir(parents=True, exist_ok=True)
+        out_path = probe_dir / f"{run_id}_capture_trigger.lua"
+        
+        script = generate_capture_trigger_script(
+            run_id=run_id,
+            out_path=out_path,
+            output_dir=output_dir,
+            confirm_startframe=confirm_startframe,
+        )
+        script.lua_path.write_text(script.script, encoding="utf-8")
+        
+        console.print(f"[red bold]WARNING: This script triggers RF transmission.[/red bold]")
+        console.print(f"[green]Capture trigger script generated (run_id={run_id}):[/green]")
+        console.print(script.dofile)
+    except Exception as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+
+@dca_app.command("generate-postproc")
+def dca_generate_postproc(
+    probe_dir: Path = typer.Option(..., "--probe-dir", help="Directory for output files"),
+    output_dir: Path = typer.Option(get_default_postproc_dir(), "--output-dir", help="Capture directory"),
+) -> None:
+    """Generate Matlab post-processing Lua script."""
+    import uuid
+    from .dca.scripts import generate_postproc_script
+    
+    try:
+        run_id = str(uuid.uuid4())[:8]
+        probe_dir.mkdir(parents=True, exist_ok=True)
+        out_path = probe_dir / f"{run_id}_postproc.lua"
+        
+        script = generate_postproc_script(
+            run_id=run_id,
+            out_path=out_path,
+            output_dir=output_dir,
+        )
+        script.lua_path.write_text(script.script, encoding="utf-8")
+        
+        console.print(f"[green]Post-processing script generated (run_id={run_id}):[/green]")
+        console.print(script.dofile)
+    except Exception as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+
+@dca_app.command("check-capture")
+def dca_check_capture(
+    capture_dir: Path = typer.Option(get_default_postproc_dir(), "--capture-dir", help="Capture directory"),
+    expected_bytes: int = typer.Option(
+        4194304,
+        "--expected-bytes",
+        help=(
+            "Expected size of adc_data.bin in bytes. "
+            "Validated default: 4194304 (256 samples * 4 bytes/sample * 4 RX * 128 chirps * 8 frames). "
+            "Old smoke config was 524288 (1 frame). Ratio = 8.0x."
+        ),
+    ),
+    run_id: str = typer.Option(None, "--run-id", help="Optional run_id for context"),
+    format_type: str = typer.Option("text", "--format", help="Output format: text or json"),
+) -> None:
+    """Validate DCA1000 capture output files."""
+    import json
+    from .dca.validate import check_capture_files
+    
+    validation = check_capture_files(capture_dir=capture_dir, expected_bytes=expected_bytes)
+    
+    if format_type == "json":
+        import dataclasses
+        print(json.dumps(dataclasses.asdict(validation), indent=2, default=str))
+        if validation.overall == "FAIL":
+            sys.exit(1)
+        return
+        
+    console.print(f"[bold]DCA Capture Validation[/bold]")
+    console.print("=" * 30)
+    console.print(f"Capture dir:      {validation.capture_dir}")
+    console.print(f"Expected bytes:   {validation.expected_bytes:,}")
+    console.print(f"Size model:       256 samples × 4 bytes × 4 RX × 128 chirps × 8 frames = 4,194,304 (validated)")
+    if run_id:
+        console.print(f"Run ID:           {run_id}")
+    console.print("")
+    
+    for f in [validation.postproc_file, validation.raw_file]:
+        status_color = "green" if f.status == "PASS" else "yellow" if f.status == "WARN" else "red"
+        exists_str = "FOUND" if f.exists else "NOT FOUND"
+        console.print(f"{f.filename:20} {exists_str:10} size={f.size_bytes:<10} [{status_color}]{f.status}[/{status_color}] ({f.detail})")
+    
+    console.print("")
+    console.print(f"Post-processing:  {validation.post_processing_status}")
+    overall_color = "green" if validation.overall == "PASS" else "yellow" if validation.overall == "WARN" else "red"
+    console.print(f"Overall:          [{overall_color}]{validation.overall}[/{overall_color}]")
+    
+    if validation.dca_log:
+        console.print("")
+        console.print(f"[yellow]Latest DCA Log:[/yellow]")
+        console.print(f"[dim]{validation.dca_log}[/dim]")
+        
+    if validation.overall == "FAIL":
+        sys.exit(1)
+
+
+@dca_app.command("record-validation")
+def dca_record_validation(
+    capture_dir: Path = typer.Option(get_default_postproc_dir(), "--capture-dir", help="Capture directory"),
+    expected_bytes: int = typer.Option(4194304, "--expected-bytes", help="Expected size of adc_data.bin"),
+    capture_run_id: str = typer.Option(None, "--capture-run-id", help="Run ID of capture trigger script"),
+    postproc_run_id: str = typer.Option(None, "--postproc-run-id", help="Run ID of post-processing script"),
+    dca_setup_run_id: str = typer.Option(None, "--dca-setup-run-id", help="Run ID of DCA setup script"),
+    firmware_run_id: str = typer.Option(None, "--firmware-run-id", help="Run ID of firmware script"),
+    config_run_id: str = typer.Option(None, "--config-run-id", help="Run ID of config script"),
+    probe_dir: Path = typer.Option(None, "--probe-dir", help="Probe dir for run results"),
+    out: Path = typer.Option(None, "--out", help="Output validation JSON path (default: capture_dir/dca_validation_<ts>.json)"),
+) -> None:
+    """Record a DCA1000 capture validation entry."""
+    import datetime
+    import json
+    from .dca.validate import check_capture_files
+    
+    validation = check_capture_files(capture_dir=capture_dir, expected_bytes=expected_bytes)
+    
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    record: dict = {
+        "schema_version": 1,
+        "timestamp": datetime.datetime.now().isoformat(),
+        "overall": validation.overall,
+        "capture_dir": str(capture_dir.resolve()),
+        "expected_bytes": expected_bytes,
+        "size_model": "256 samples × 4 bytes × 4 RX × 128 chirps × 8 frames",
+        "adc_data_bin": {
+            "exists": validation.postproc_file.exists,
+            "size_bytes": validation.postproc_file.size_bytes,
+            "status": validation.postproc_file.status,
+            "detail": validation.postproc_file.detail,
+        },
+        "run_ids": {
+            "firmware": firmware_run_id,
+            "config": config_run_id,
+            "dca_setup": dca_setup_run_id,
+            "capture_trigger": capture_run_id,
+            "postproc": postproc_run_id,
+        },
+        "post_processing_status": validation.post_processing_status,
+    }
+    
+    if out is None:
+        out = capture_dir / f"dca_validation_{ts}.json"
+        
+    out.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    
+    overall_color = "green" if validation.overall == "PASS" else "yellow" if validation.overall == "WARN" else "red"
+    console.print(f"[{overall_color}]DCA Capture Validation: {validation.overall}[/{overall_color}]")
+    console.print(f"Saved to: {out}")
+
+    if validation.overall == "FAIL":
+        sys.exit(1)
+
+
+@dca_app.command("summarize-capture")
+def dca_summarize_capture(
+    capture_dir: Path = typer.Option(get_default_postproc_dir(), "--capture-dir", help="Capture directory"),
+    expected_bytes: int = typer.Option(4194304, "--expected-bytes", help="Expected size of adc_data.bin"),
+) -> None:
+    """Summarize DCA1000 capture artifacts in a directory."""
+    from .dca.validate import check_capture_files
+    from rich.table import Table
+    import datetime
+    
+    if not capture_dir.exists():
+        console.print(f"[red]Capture directory not found: {capture_dir}[/red]")
+        sys.exit(1)
+
+    validation = check_capture_files(capture_dir=capture_dir, expected_bytes=expected_bytes)
+    
+    console.print(f"")
+    console.print(f"[bold cyan]DCA Capture Summary[/bold cyan]")
+    console.print(f"{'Directory':16} {capture_dir}")
+    console.print("")
+
+    # File table
+    table = Table(show_header=True, header_style="bold", show_lines=True)
+    table.add_column("File")
+    table.add_column("Status")
+    table.add_column("Size (bytes)", justify="right")
+    table.add_column("Detail")
+    
+    for f in [validation.postproc_file, validation.raw_file]:
+        color = "green" if f.status == "PASS" else "yellow" if f.status == "WARN" else "red"
+        exists_str = "FOUND" if f.exists else "NOT FOUND"
+        table.add_row(
+            f.filename,
+            f"[{color}]{exists_str} — {f.status}[/{color}]",
+            f"{f.size_bytes:,}" if f.size_bytes else "—",
+            f.detail
+        )
+    
+    console.print(table)
+    
+    # Validation records in capture dir
+    val_files = sorted(capture_dir.glob("dca_validation_*.json"))
+    if val_files:
+        console.print(f"")
+        console.print(f"[bold]Validation Records:[/bold]")
+        for vf in val_files:
+            import json
+            try:
+                rec = json.loads(vf.read_text(encoding="utf-8"))
+                ts = rec.get("timestamp", "?")
+                overall = rec.get("overall", "?")
+                color = "green" if overall == "PASS" else "yellow" if overall == "WARN" else "red"
+                console.print(f"  {vf.name:45} [{color}]{overall}[/{color}]  {ts}")
+            except Exception:
+                console.print(f"  {vf.name} (parse error)")
+
+    # Run logs in capture dir
+    result_files = sorted(capture_dir.glob("*_result.json"))
+    if result_files:
+        console.print(f"")
+        console.print(f"[bold]Run Results:[/bold]")
+        for rf in result_files:
+            import json
+            try:
+                rec = json.loads(rf.read_text(encoding="utf-8"))
+                run_id = rec.get("run_id", "?")
+                success = rec.get("success", False)
+                err = rec.get("error", "")
+                color = "green" if success else "red"
+                err_str = f"  error: {err[:60]}" if err else ""
+                console.print(f"  [{color}]{run_id}[/{color}] {rf.stem.removeprefix(run_id + '_')}{err_str}")
+            except Exception:
+                console.print(f"  {rf.name} (parse error)")
+    
+    console.print("")
+    overall_color = "green" if validation.overall == "PASS" else "yellow" if validation.overall == "WARN" else "red"
+    console.print(f"[bold]Expected bytes:  {expected_bytes:,}[/bold]")
+    console.print(f"[bold]Size model:      256 samples × 4 bytes × 4 RX × 128 chirps × 8 frames = 4,194,304 (validated)[/bold]")
+    console.print(f"[bold]Overall:         [{overall_color}]{validation.overall}[/{overall_color}][/bold]")
+
+    if validation.overall == "FAIL":
+        sys.exit(1)
+
+
+@dca_app.command("adapters")
+def dca_adapters() -> None:
+    """List network adapters and score them as DCA1000 candidates."""
+    from .dca.adapters import get_adapters, score_adapter
+    from rich.table import Table
+    
+    adapters = get_adapters()
+    
+    table = Table(title="Network Adapters (DCA1000 Candidates)")
+    table.add_column("Alias")
+    table.add_column("Index")
+    table.add_column("Status")
+    table.add_column("IPs")
+    table.add_column("Gateway", justify="center")
+    table.add_column("Score", justify="right")
+    table.add_column("Reason")
+    
+    for a in adapters:
+        score, reason, is_safe = score_adapter(a)
+        
+        score_str = f"[green]{score}[/green]" if score > 0 else f"[red]{score}[/red]"
+        gateway_str = "[red]Yes[/red]" if a.has_default_gateway else "[green]No[/green]"
+        ip_str = ", ".join(a.ipv4_addresses) if a.ipv4_addresses else "None"
+        
+        table.add_row(
+            a.interface_alias,
+            str(a.interface_index),
+            a.status,
+            ip_str,
+            gateway_str,
+            score_str,
+            reason
+        )
+        
+    console.print(table)
+
+
+@dca_app.command("configure-adapter")
+def dca_configure_adapter(
+    interface: str = typer.Option(..., "--interface", help="Interface Alias or Index"),
+    yes: bool = typer.Option(False, "--yes", help="Actually execute the configuration"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print the PowerShell commands without executing"),
+    allow_gateway: bool = typer.Option(False, "--allow-gateway-adapter", help="Allow modifying an adapter that has a default gateway"),
+) -> None:
+    """Safely configure a network adapter with a static IP for DCA1000."""
+    from .dca.adapters import get_adapters, score_adapter
+    import subprocess
+    
+    if not yes and not dry_run:
+        console.print("[red]Error: You must specify either --yes or --dry-run.[/red]")
+        sys.exit(1)
+        
+    if yes and dry_run:
+        console.print("[red]Error: Cannot specify both --yes and --dry-run.[/red]")
+        sys.exit(1)
+        
+    adapters = get_adapters()
+    target = None
+    for a in adapters:
+        if str(a.interface_index) == interface or a.interface_alias.lower() == interface.lower():
+            target = a
+            break
+            
+    if not target:
+        console.print(f"[red]Error: Adapter '{interface}' not found.[/red]")
+        sys.exit(1)
+        
+    score, reason, is_safe = score_adapter(target)
+    
+    if "wi-fi" in target.interface_alias.lower() or "wireless" in target.interface_alias.lower():
+        console.print(f"[red]Safety Error: Refusing to modify Wi-Fi adapter '{target.interface_alias}'.[/red]")
+        sys.exit(1)
+        
+    if target.has_default_gateway and not allow_gateway:
+        console.print(f"[red]Safety Error: Refusing to modify adapter with a default gateway ('{target.interface_alias}'). Use --allow-gateway-adapter if absolutely sure.[/red]")
+        sys.exit(1)
+        
+    ps_commands = f"""
+Set-NetIPInterface -InterfaceAlias "{target.interface_alias}" -Dhcp Disabled
+Remove-NetIPAddress -InterfaceAlias "{target.interface_alias}" -AddressFamily IPv4 -Confirm:$false -ErrorAction SilentlyContinue
+New-NetIPAddress -InterfaceAlias "{target.interface_alias}" -IPAddress "192.168.33.30" -PrefixLength 24
+Set-DnsClientServerAddress -InterfaceAlias "{target.interface_alias}" -ResetServerAddresses
+""".strip()
+
+    if dry_run:
+        console.print(f"[yellow]Dry-run for adapter '{target.interface_alias}':[/yellow]")
+        console.print(ps_commands)
+        return
+        
+    if yes:
+        console.print(f"[yellow]Configuring adapter '{target.interface_alias}'...[/yellow]")
+        try:
+            subprocess.check_call(
+                ["powershell", "-NoProfile", "-Command", ps_commands],
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            console.print("[green]Success. Run `awr dca preflight` again to verify.[/green]")
+        except subprocess.CalledProcessError as e:
+            console.print(f"[red]Failed to configure adapter: {e}[/red]")
+            sys.exit(1)
+
+if __name__ == "__main__":
+    app()

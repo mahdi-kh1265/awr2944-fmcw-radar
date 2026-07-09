@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "timestamp": "2026-07-09T11:01:35.427042",
+  "overall": "FAIL",
+  "capture_dir": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_record_validation_fail_ex0",
+  "expected_bytes": 4194304,
+  "size_model": "256 samples \u00d7 4 bytes \u00d7 4 RX \u00d7 128 chirps \u00d7 8 frames",
+  "adc_data_bin": {
+    "exists": false,
+    "size_bytes": 0,
+    "status": "FAIL",
+    "detail": "NOT FOUND"
+  },
+  "run_ids": {
+    "firmware": null,
+    "config": null,
+    "dca_setup": null,
+    "capture_trigger": null,
+    "postproc": null
+  },
+  "post_processing_status": "MISSING"
+}

@@ -1,0 +1,4 @@
+{"ts": "17:22:45", "cmd": "SelectCaptureDevice", "ret": 0, "ok": true}
+{"ts": "17:22:46", "cmd": "CaptureCardConfig_EthInit", "ret": 0, "ok": true}
+{"ts": "17:22:46", "cmd": "CaptureCardConfig_Mode", "ret": 0, "ok": true}
+{"ts": "17:22:46", "cmd": "CaptureCardConfig_PacketDelay", "ret": 0, "ok": true}

@@ -1,1 +1,0 @@
-{"workflow_id": "1234", "label": "test", "pid": 123, "state_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_failure_report_guided_sta0\\guided_1234_state.json", "current_stage": "failed", "firmware_run_id": "fw1", "config_run_id": "cfg1", "errors": ["_atomic_write_manifest() got an unexpected keyword argument 'manifest_path'"]}

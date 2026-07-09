@@ -1,0 +1,6 @@
+{"ts": "09:49:06", "cmd": "CaptureCardConfig_StartRecord", "ret": null, "ok": false, "err": "System.ArgumentOutOfRangeException: StartIndex cannot be less than zero.
+Parameter name: startIndex
+   at System.String.Remove(Int32 startIndex, Int32 count)
+   at AR1xController.ScriptOps.CopyMatlabLogFileForDCA1000ForAnalysis(String logFileName)
+   at AR1xController.ScriptOps.UpdateNSetStartRecordADCData(UInt32 RadarDeviceId, String ADCFileName, Byte PktSeqEnaDisable)
+   at AR1xController.AR1xxxWrapper.CaptureCardConfig_StartRecord(String ADCFileName, Byte PktSeqEnaDisable): 28216060"}
