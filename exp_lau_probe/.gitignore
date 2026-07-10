@@ -1,0 +1,11 @@
+# AWR project: large binary artifacts (auto-managed)
+captures/**/raw/*.bin
+captures/**/raw/*.dat
+captures/**/processed/*.npy
+captures/**/processed/*.npz
+captures/**/processed/*.mat
+captures/**/processed/*.fig
+captures/**/processed/*.png
+captures/**/metadata/mmws_logs/*.mat
+captures/**/metadata/mmws_logs/*.fig
+captures/**/metadata/mmws_logs/*.png

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "project_id": "c93154d8",
+  "name": "lau_probe",
+  "created_at": "2026-07-09T20:32:08.580665",
+  "root_path_abs": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe",
+  "postproc_dir_abs": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc",
+  "probe_dir_rel": "ti\\probe_logs",
+  "expected_bytes": 4194304,
+  "default_adc_config": {
+    "frames": 8,
+    "chirps": 128,
+    "rx": 4,
+    "samples": 256,
+    "sample_format": "complex_int16",
+    "iq_order": "iq",
+    "layout": "frame_chirp_rx_sample",
+    "layout_assumption_confirmed": false
+  }
+}

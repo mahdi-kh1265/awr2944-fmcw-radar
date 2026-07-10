@@ -706,3 +706,238 @@ def test_start_fails_if_supplied_run_id_failed(tmp_path, monkeypatch):
             confirm_startframe=True,
         )
 
+
+# ---------------------------------------------------------------------------
+# Project Binding Tests (Phase 1A)
+# ---------------------------------------------------------------------------
+
+def test_start_without_project_unchanged(tmp_path, monkeypatch):
+    _fake_preflight_ready(monkeypatch)
+    capture_dir = tmp_path / "PostProc"
+    capture_dir.mkdir()
+    probe_dir = tmp_path / "probe"
+    _setup_valid_runs(probe_dir)
+
+    state = start_workflow(
+        probe_dir=probe_dir, capture_dir=capture_dir,
+        firmware_run_id="fw1", config_run_id="cfg1",
+        confirm_startframe=True,
+    )
+    assert not state.bind_requested
+    assert state.project_root_abs == ""
+    assert state.capture_id == ""
+
+
+def test_start_capture_id_without_project_root_fails(tmp_path, monkeypatch):
+    _fake_preflight_ready(monkeypatch)
+    capture_dir = tmp_path / "PostProc"
+    capture_dir.mkdir()
+    with pytest.raises(ValueError, match="requires --project-root"):
+        start_workflow(
+            probe_dir=tmp_path / "probe", capture_dir=capture_dir,
+            firmware_run_id="fw1", config_run_id="cfg1",
+            confirm_startframe=True, capture_id="test_cap"
+        )
+
+
+def test_start_capture_name_without_project_root_fails(tmp_path, monkeypatch):
+    _fake_preflight_ready(monkeypatch)
+    capture_dir = tmp_path / "PostProc"
+    capture_dir.mkdir()
+    with pytest.raises(ValueError, match="requires --project-root"):
+        start_workflow(
+            probe_dir=tmp_path / "probe", capture_dir=capture_dir,
+            firmware_run_id="fw1", config_run_id="cfg1",
+            confirm_startframe=True, capture_name="test_cap"
+        )
+
+
+def test_start_capture_id_and_name_mutually_exclusive(tmp_path, monkeypatch):
+    _fake_preflight_ready(monkeypatch)
+    capture_dir = tmp_path / "PostProc"
+    capture_dir.mkdir()
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        start_workflow(
+            probe_dir=tmp_path / "probe", capture_dir=capture_dir,
+            firmware_run_id="fw1", config_run_id="cfg1",
+            confirm_startframe=True, project_root=tmp_path,
+            capture_id="id1", capture_name="name1"
+        )
+
+
+def test_start_capture_name_without_auto_create_fails(tmp_path, monkeypatch):
+    _fake_preflight_ready(monkeypatch)
+    capture_dir = tmp_path / "PostProc"
+    capture_dir.mkdir()
+    with pytest.raises(ValueError, match="requires --auto-create-capture"):
+        start_workflow(
+            probe_dir=tmp_path / "probe", capture_dir=capture_dir,
+            firmware_run_id="fw1", config_run_id="cfg1",
+            confirm_startframe=True, project_root=tmp_path,
+            capture_name="name1"
+        )
+
+
+def test_start_with_existing_capture_id(tmp_path, monkeypatch):
+    from awr2944_dca.project import init_project, new_capture
+    _fake_preflight_ready(monkeypatch)
+    capture_dir = tmp_path / "PostProc"
+    capture_dir.mkdir()
+    probe_dir = tmp_path / "probe"
+    _setup_valid_runs(probe_dir)
+
+    init_project("test_proj", root=tmp_path, postproc_dir=capture_dir)
+    cap = new_capture(tmp_path, "cap1")
+
+    state = start_workflow(
+        probe_dir=probe_dir, capture_dir=capture_dir,
+        firmware_run_id="fw1", config_run_id="cfg1",
+        confirm_startframe=True, project_root=tmp_path,
+        capture_id=cap["capture_id"]
+    )
+    assert state.bind_requested
+    assert state.project_root_abs == str(tmp_path.resolve())
+    assert state.capture_id == cap["capture_id"]
+
+
+def test_start_with_auto_create_capture(tmp_path, monkeypatch):
+    from awr2944_dca.project import init_project
+    _fake_preflight_ready(monkeypatch)
+    capture_dir = tmp_path / "PostProc"
+    capture_dir.mkdir()
+    probe_dir = tmp_path / "probe"
+    _setup_valid_runs(probe_dir)
+
+    init_project("test_proj", root=tmp_path, postproc_dir=capture_dir)
+
+    state = start_workflow(
+        probe_dir=probe_dir, capture_dir=capture_dir,
+        firmware_run_id="fw1", config_run_id="cfg1",
+        confirm_startframe=True, project_root=tmp_path,
+        capture_name="auto_cap", auto_create_capture=True
+    )
+    assert state.bind_requested
+    assert state.project_root_abs == str(tmp_path.resolve())
+    assert state.capture_id != ""
+    assert "auto_cap" in state.capture_id
+
+
+def test_full_workflow_with_project_binding(tmp_path, monkeypatch):
+    from awr2944_dca.project import init_project, new_capture
+    _fake_preflight_ready(monkeypatch)
+    capture_dir = tmp_path / "PostProc"
+    capture_dir.mkdir()
+    probe_dir = tmp_path / "probe"
+    _setup_valid_runs(probe_dir)
+
+    init_project("test_proj", root=tmp_path, postproc_dir=capture_dir, expected_bytes=32)
+    cap = new_capture(tmp_path, "cap1")
+
+    state = start_workflow(
+        probe_dir=probe_dir, capture_dir=capture_dir,
+        firmware_run_id="fw1", config_run_id="cfg1",
+        confirm_startframe=True, expected_bytes=32,
+        project_root=tmp_path, capture_id=cap["capture_id"]
+    )
+
+    _write_success_result(Path(state.dca_setup.result_path), state.dca_setup.run_id)
+    state = resume_workflow(state.workflow_id, probe_dir)
+
+    _write_success_result(Path(state.capture_trigger.result_path), state.capture_trigger.run_id)
+    state = resume_workflow(state.workflow_id, probe_dir)
+
+    (capture_dir / "adc_data.bin").write_bytes(b"\x01" * 32)
+    _write_success_result(Path(state.postproc.result_path), state.postproc.run_id)
+    
+    # No mock needed
+
+    state = resume_workflow(state.workflow_id, probe_dir)
+
+    assert state.completed is True
+    assert state.current_stage == "complete"
+    assert state.bind_completed is True
+    assert state.capture_verify_passed is True
+    assert state.bound_raw_file_rel != ""
+    assert state.capture_manifest_path_rel != ""
+
+
+def test_bind_failure_records_error(tmp_path, monkeypatch):
+    from awr2944_dca.project import init_project, new_capture
+    _fake_preflight_ready(monkeypatch)
+    capture_dir = tmp_path / "PostProc"
+    capture_dir.mkdir()
+    probe_dir = tmp_path / "probe"
+    _setup_valid_runs(probe_dir)
+
+    init_project("test_proj", root=tmp_path, postproc_dir=capture_dir, expected_bytes=32)
+    cap = new_capture(tmp_path, "cap1")
+
+    state = start_workflow(
+        probe_dir=probe_dir, capture_dir=capture_dir,
+        firmware_run_id="fw1", config_run_id="cfg1",
+        confirm_startframe=True, expected_bytes=32,
+        project_root=tmp_path, capture_id=cap["capture_id"]
+    )
+
+    _write_success_result(Path(state.dca_setup.result_path), state.dca_setup.run_id)
+    state = resume_workflow(state.workflow_id, probe_dir)
+
+    _write_success_result(Path(state.capture_trigger.result_path), state.capture_trigger.run_id)
+    state = resume_workflow(state.workflow_id, probe_dir)
+
+    (capture_dir / "adc_data.bin").write_bytes(b"\x01" * 32)
+    _write_success_result(Path(state.postproc.result_path), state.postproc.run_id)
+    
+    # Break project root to cause bind failure
+    (tmp_path / "project.json").unlink()
+
+    state = resume_workflow(state.workflow_id, probe_dir)
+
+    assert state.completed is True
+    assert state.current_stage == "complete_with_bind_error"
+    assert state.bind_completed is False
+    assert state.bind_error != ""
+    assert "failed" in state.pending_operator_action
+
+
+def test_verify_failure_records_false(tmp_path, monkeypatch):
+    from awr2944_dca.project import init_project, new_capture
+    _fake_preflight_ready(monkeypatch)
+    capture_dir = tmp_path / "PostProc"
+    capture_dir.mkdir()
+    probe_dir = tmp_path / "probe"
+    _setup_valid_runs(probe_dir)
+
+    init_project("test_proj", root=tmp_path, postproc_dir=capture_dir, expected_bytes=32)
+    cap = new_capture(tmp_path, "cap1")
+
+    state = start_workflow(
+        probe_dir=probe_dir, capture_dir=capture_dir,
+        firmware_run_id="fw1", config_run_id="cfg1",
+        confirm_startframe=True, expected_bytes=32,
+        project_root=tmp_path, capture_id=cap["capture_id"]
+    )
+
+    _write_success_result(Path(state.dca_setup.result_path), state.dca_setup.run_id)
+    state = resume_workflow(state.workflow_id, probe_dir)
+
+    _write_success_result(Path(state.capture_trigger.result_path), state.capture_trigger.run_id)
+    state = resume_workflow(state.workflow_id, probe_dir)
+
+    (capture_dir / "adc_data.bin").write_bytes(b"\x01" * 32)
+    _write_success_result(Path(state.postproc.result_path), state.postproc.run_id)
+    
+    # Monkeypatch verify_capture to return passed=False
+    def fake_verify(*args, **kwargs):
+        return {"passed": False, "errors": ["Fake verify failure"]}
+    monkeypatch.setattr("awr2944_dca.project.verify_capture", fake_verify)
+
+    state = resume_workflow(state.workflow_id, probe_dir)
+
+    assert state.completed is True
+    assert state.current_stage == "complete"
+    assert state.bind_completed is True
+    assert state.capture_verify_passed is False
+    assert any("verify FAILED" in w for w in state.warnings)
+
+

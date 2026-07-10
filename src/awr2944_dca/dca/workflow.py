@@ -45,7 +45,9 @@ STAGES = [
     "postproc_validated",
     "capture_file_validated",
     "validation_recorded",
+    "project_bind_attempted",
     "complete",
+    "complete_with_bind_error",
 ]
 
 
@@ -92,6 +94,19 @@ class CaptureWorkflowState:
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     completed: bool = False
+
+    # Project binding (optional)
+    project_root_abs: str = ""
+    capture_id: str = ""
+    capture_manifest_path_rel: str = ""
+    bind_requested: bool = False
+    bind_completed: bool = False
+    bind_error: str = ""
+    capture_verify_passed: bool | None = None
+    bound_raw_file_rel: str = ""
+    bound_raw_file_sha256: str = ""
+    adc_inspect_path_rel: str = ""
+    bind_force: bool = False
 
     # Operator-facing fields
     pending_dofile: str = ""
@@ -255,11 +270,49 @@ def start_workflow(
     expected_bytes: int = 4_194_304,
     archive_existing: bool = False,
     allow_overwrite: bool = False,
+    # Project binding (optional)
+    project_root: Path | str | None = None,
+    capture_id: str | None = None,
+    capture_name: str | None = None,
+    auto_create_capture: bool = False,
+    bind_force: bool = False,
 ) -> CaptureWorkflowState:
     """Create and initialize a new capture-smoke workflow.
 
     Raises ValueError on preflight failure or safety violations.
     """
+    import awr2944_dca.project as project_lib
+
+    if capture_id and capture_name:
+        raise ValueError("--capture-id and --capture-name are mutually exclusive")
+    if capture_id and not project_root:
+        raise ValueError("--capture-id requires --project-root")
+    if capture_name and not project_root:
+        raise ValueError("--capture-name requires --project-root")
+    if capture_name and not auto_create_capture:
+        raise ValueError("--capture-name requires --auto-create-capture")
+
+    final_capture_id = ""
+    project_root_abs = ""
+    bind_requested = False
+
+    if project_root:
+        pr = Path(project_root).resolve()
+        # Verify project exists
+        project_lib.load_project(pr)
+        project_root_abs = str(pr)
+        bind_requested = True
+
+        if capture_id:
+            # Verify capture exists
+            manifest_path = pr / "captures" / capture_id / "capture_manifest.json"
+            if not manifest_path.exists():
+                raise ValueError(f"Capture {capture_id} does not exist in project {pr}")
+            final_capture_id = capture_id
+        elif capture_name and auto_create_capture:
+            manifest = project_lib.new_capture(pr, capture_name, mode="import")
+            final_capture_id = manifest["capture_id"]
+
     if not confirm_startframe:
         raise ValueError(
             "ERROR: --confirm-startframe is required. "
@@ -319,6 +372,10 @@ def start_workflow(
         expected_bytes=expected_bytes,
         firmware_run_id=firmware_run_id,
         config_run_id=config_run_id,
+        project_root_abs=project_root_abs,
+        capture_id=final_capture_id,
+        bind_requested=bind_requested,
+        bind_force=bind_force,
     )
 
     if preflight.overall == "READY_WITH_WARNINGS":
@@ -549,11 +606,56 @@ def resume_workflow(
         state.validation_record_path = str(val_path.resolve())
         state.current_stage = "validation_recorded"
 
+        # Project binding
+        if state.bind_requested and not state.bind_completed:
+            import awr2944_dca.project as project_lib
+            try:
+                state.current_stage = "project_bind_attempted"
+                manifest = project_lib.bind_mmws_output(
+                    root=state.project_root_abs,
+                    capture_id=state.capture_id,
+                    postproc_dir=state.capture_dir,
+                    force=state.bind_force,
+                    inspect=True,
+                    copy_logs=True,
+                )
+                
+                verify_result = project_lib.verify_capture(state.project_root_abs, state.capture_id)
+                
+                _update_capture_manifest_provenance(state, manifest, verify_result["passed"])
+                
+                state.bind_completed = True
+                state.bound_raw_file_rel = manifest.get("raw_file_rel", "")
+                state.bound_raw_file_sha256 = manifest.get("raw_file_sha256", "")
+                state.adc_inspect_path_rel = manifest.get("adc_inspect_path_rel", "")
+                state.capture_manifest_path_rel = f"captures/{state.capture_id}/capture_manifest.json"
+                state.capture_verify_passed = verify_result["passed"]
+                
+                if not verify_result["passed"]:
+                    state.warnings.append(f"capture verify FAILED: {verify_result['errors']}")
+                    
+            except Exception as e:
+                state.bind_error = str(e)
+                state.bind_completed = False
+                state.warnings.append(f"Project binding failed: {e}")
+                
+                # Update manifest status to bind_failed if possible
+                try:
+                    _update_capture_manifest_bind_failed(state)
+                except Exception:
+                    pass
+
         # Complete
         state.completed = True
-        state.current_stage = "complete"
+        
+        if state.bind_requested and not state.bind_completed:
+            state.current_stage = "complete_with_bind_error"
+            state.pending_operator_action = f"Workflow complete (hardware capture succeeded). Project binding failed: {state.bind_error}"
+        else:
+            state.current_stage = "complete"
+            state.pending_operator_action = "Workflow complete. Capture validated."
+            
         state.pending_dofile = ""
-        state.pending_operator_action = "Workflow complete. Capture validated."
         save_state(state, probe)
         return state
 
@@ -561,3 +663,51 @@ def resume_workflow(
     state.errors.append(f"Unknown stage: {stage}")
     save_state(state, probe)
     return state
+
+
+# ---------------------------------------------------------------------------
+# Project manifest update helpers
+# ---------------------------------------------------------------------------
+
+def _update_capture_manifest_provenance(state: CaptureWorkflowState, manifest_dict: dict, verify_passed: bool) -> None:
+    """Update capture manifest with capture-smoke workflow provenance and explicit status."""
+    from awr2944_dca.project import atomic_json_write
+    root = Path(state.project_root_abs)
+    manifest_path = root / "captures" / state.capture_id / "capture_manifest.json"
+    if not manifest_path.exists():
+        return
+        
+    m = json.loads(manifest_path.read_text(encoding="utf-8"))
+    
+    m["workflow_id"] = state.workflow_id
+    m["firmware_run_id"] = state.firmware_run_id
+    m["config_run_id"] = state.config_run_id
+    m["dca_setup_run_id"] = state.dca_setup_run_id
+    m["capture_trigger_run_id"] = state.capture_trigger_run_id
+    m["postproc_run_id"] = state.postproc_run_id
+    
+    if state.validation_record_path:
+        val_name = Path(state.validation_record_path).name
+        val_rel = f"captures/{state.capture_id}/metadata/mmws_logs/{val_name}"
+        if val_rel not in m.get("validation_records", []):
+            m.setdefault("validation_records", []).append(val_rel)
+    
+    m["status"] = "complete" if verify_passed else "verify_failed"
+    m["updated_at"] = datetime.datetime.now().isoformat()
+    
+    atomic_json_write(manifest_path, m)
+
+
+def _update_capture_manifest_bind_failed(state: CaptureWorkflowState) -> None:
+    """Update capture manifest with bind_failed status if binding crashes."""
+    from awr2944_dca.project import atomic_json_write
+    root = Path(state.project_root_abs)
+    manifest_path = root / "captures" / state.capture_id / "capture_manifest.json"
+    if not manifest_path.exists():
+        return
+        
+    m = json.loads(manifest_path.read_text(encoding="utf-8"))
+    m["status"] = "bind_failed"
+    m["updated_at"] = datetime.datetime.now().isoformat()
+    
+    atomic_json_write(manifest_path, m)

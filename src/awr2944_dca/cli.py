@@ -78,6 +78,12 @@ dca_app.add_typer(capture_smoke_app, name="capture-smoke")
 manual_app = typer.Typer(help="Manual Lua scripts for the mmWave Studio Lua Shell")
 mmws_app.add_typer(manual_app, name="manual")
 
+project_app = typer.Typer(help="Project management commands", no_args_is_help=True)
+app.add_typer(project_app, name="project")
+
+capture_mgmt_app = typer.Typer(help="Capture management commands", no_args_is_help=True)
+app.add_typer(capture_mgmt_app, name="capture")
+
 @mmws_internals_app.command("lua-dotnet-probe")
 def mmws_internals_lua_dotnet_probe(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
@@ -7642,6 +7648,36 @@ def dca_summarize_capture(
 # awr dca capture-smoke
 # ---------------------------------------------------------------------------
 
+def _print_project_binding_state(state: Any) -> None:
+    if not getattr(state, "bind_requested", False):
+        return
+    console.print("")
+    console.print("[bold]Project Binding[/bold]")
+    console.print(f"Project root:       {state.project_root_abs}")
+    console.print(f"Project Capture ID: {state.capture_id}")
+    console.print(f"Bind requested:     {state.bind_requested}")
+    console.print(f"Bind completed:     {state.bind_completed}")
+    
+    verify_str = "NOT_RUN"
+    if getattr(state, "capture_verify_passed", None) is True:
+        verify_str = "[green]PASS[/green]"
+    elif getattr(state, "capture_verify_passed", None) is False:
+        verify_str = "[red]FAIL[/red]"
+    console.print(f"Capture verify:     {verify_str}")
+    
+    if getattr(state, "capture_manifest_path_rel", None):
+        console.print(f"Capture manifest:   {state.capture_manifest_path_rel}")
+    if getattr(state, "bound_raw_file_rel", None):
+        console.print(f"Bound raw file rel: {state.bound_raw_file_rel}")
+    if getattr(state, "bound_raw_file_sha256", None):
+        console.print(f"Bound raw SHA256:   {state.bound_raw_file_sha256}")
+    if getattr(state, "adc_inspect_path_rel", None):
+        console.print(f"ADC inspect path rel: {state.adc_inspect_path_rel}")
+    if getattr(state, "bind_error", None):
+        console.print(f"Bind error:         [red]{state.bind_error}[/red]")
+    console.print("")
+
+
 @capture_smoke_app.command("start")
 def dca_capture_smoke_start(
     probe_dir: Path = typer.Option(..., "--probe-dir", help="Directory for output files"),
@@ -7652,6 +7688,11 @@ def dca_capture_smoke_start(
     archive_existing: bool = typer.Option(False, "--archive-existing", help="Archive existing adc_data.bin before capture"),
     allow_overwrite: bool = typer.Option(False, "--allow-overwrite", help="Allow overwriting existing adc_data.bin"),
     expected_bytes: int = typer.Option(4194304, "--expected-bytes", help="Expected adc_data.bin size"),
+    project_root: Path = typer.Option(None, "--project-root", help="Project root for capture binding"),
+    capture_id: str = typer.Option(None, "--capture-id", help="Existing capture ID to bind to"),
+    capture_name: str = typer.Option(None, "--capture-name", help="Name for new auto-created capture"),
+    auto_create_capture: bool = typer.Option(False, "--auto-create-capture", help="Auto-create capture from --capture-name"),
+    bind_force: bool = typer.Option(False, "--bind-force", help="Allow overwriting existing raw file when binding"),
 ) -> None:
     """Start a new DCA capture-smoke workflow."""
     from .dca.workflow import start_workflow
@@ -7666,12 +7707,20 @@ def dca_capture_smoke_start(
             expected_bytes=expected_bytes,
             archive_existing=archive_existing,
             allow_overwrite=allow_overwrite,
+            project_root=project_root,
+            capture_id=capture_id,
+            capture_name=capture_name,
+            auto_create_capture=auto_create_capture,
+            bind_force=bind_force,
         )
     except ValueError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
 
     console.print(f"[green]Workflow started:[/green] [bold cyan]{state.workflow_id}[/bold cyan]")
+    if state.bind_requested:
+        console.print(f"Project root: {state.project_root_abs}")
+        console.print(f"Capture ID:   {state.capture_id}")
     console.print(f"Stage: {state.current_stage}")
     if state.warnings:
         for w in state.warnings:
@@ -7710,6 +7759,7 @@ def dca_capture_smoke_resume(
 
     console.print(f"Workflow ID:      [bold cyan]{state.workflow_id}[/bold cyan]")
     console.print(f"Stage:            {state.current_stage}")
+    _print_project_binding_state(state)
     if state.warnings:
         for w in state.warnings:
             console.print(f"[yellow]WARNING: {w}[/yellow]")
@@ -7743,6 +7793,7 @@ def dca_capture_smoke_resume(
             console.print(f"SHA256: {state.adc_data_bin_sha256}")
         if state.adc_data_bin_size:
             console.print(f"Size: {state.adc_data_bin_size:,} bytes")
+        _print_project_binding_state(state)
 
 
 @capture_smoke_app.command("status")
@@ -7774,6 +7825,7 @@ def dca_capture_smoke_status(
     console.print(f"Updated:     {state.updated_at}")
     console.print(f"Completed:   {state.completed}")
     console.print(f"Capture dir: {state.capture_dir}")
+    _print_project_binding_state(state)
     console.print("")
     if state.dca_setup.run_id:
         console.print(f"DCA Setup Run ID:       {state.dca_setup.run_id}")
@@ -7819,6 +7871,7 @@ def dca_capture_smoke_latest(
     console.print(f"Stage:       {state.current_stage}")
     console.print(f"Completed:   {state.completed}")
     console.print(f"Updated:     {state.updated_at}")
+    _print_project_binding_state(state)
     console.print("")
     
     if state.dca_setup.run_id:
@@ -8010,6 +8063,288 @@ def adc_inspect(
         console.print("[bold]Per-RX RMS:[/bold]")
         for entry in info["per_rx_rms"]:
             console.print(f"  RX {entry['rx']}: {entry['rms']:.2f}")
+
+
+# ===========================================================================
+# awr project ...
+# ===========================================================================
+
+@project_app.command("init")
+def project_init_cmd(
+    name: str = typer.Argument(..., help="Project name"),
+    root: Path = typer.Option(Path("."), "--root", help="Project root directory"),
+    postproc_dir: str = typer.Option(
+        "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc",
+        "--postproc-dir", help="mmWave Studio PostProc staging directory",
+    ),
+    probe_dir: str = typer.Option("ti\\probe_logs", "--probe-dir", help="Probe log directory (relative)"),
+    expected_bytes: int = typer.Option(4_194_304, "--expected-bytes", help="Expected ADC file size"),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing project.json"),
+) -> None:
+    """Initialize a new project with directory scaffolding."""
+    from .project import init_project
+
+    try:
+        proj = init_project(
+            name=name, root=root, postproc_dir=postproc_dir,
+            probe_dir=probe_dir, expected_bytes=expected_bytes, force=force,
+        )
+        console.print(f"[green]Project initialized:[/green] [bold]{proj['name']}[/bold]")
+        console.print(f"  Root (absolute):    {proj['root_path_abs']}")
+        console.print(f"  PostProc dir:       {proj['postproc_dir_abs']}")
+        console.print(f"  Probe dir (rel):    {proj['probe_dir_rel']}")
+        console.print(f"  Expected bytes:     {proj['expected_bytes']:,}")
+        console.print(f"  Project ID:         {proj['project_id']}")
+    except FileExistsError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+
+@project_app.command("status")
+def project_status_cmd(
+    root: Path = typer.Option(Path("."), "--root", help="Project root directory"),
+    format_type: str = typer.Option("text", "--format", help="Output format: text or json"),
+) -> None:
+    """Show project status and health checks."""
+    from .project import project_status, find_project_root
+    import json as json_mod
+
+    try:
+        actual_root = find_project_root(root)
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    status = project_status(actual_root)
+
+    if format_type == "json":
+        print(json_mod.dumps(status, indent=2, default=str))
+        return
+
+    console.print("")
+    console.print(f"[bold cyan]Project: {status['project_name']}[/bold cyan]")
+    console.print(f"  Root:           {status['root_path_abs']}")
+    console.print(f"  PostProc dir:   {status['postproc_dir_abs']}")
+    pp_ok = "[green]exists[/green]" if status["postproc_dir_exists"] else "[red]MISSING[/red]"
+    console.print(f"  PostProc check: {pp_ok}")
+    console.print(f"  Probe dir:      {status['probe_dir_rel']}")
+    pd_ok = "[green]exists[/green]" if status["probe_dir_exists"] else "[red]MISSING[/red]"
+    console.print(f"  Probe check:    {pd_ok}")
+    gi_ok = "[green]OK[/green]" if status["gitignore_ok"] else "[yellow]INCOMPLETE[/yellow]"
+    console.print(f"  .gitignore:     {gi_ok}")
+    console.print(f"  Captures:       {status['capture_count']}")
+    
+    # Print status breakdown
+    counts = status.get("status_counts", {})
+    count_str = ", ".join(f"{k}={v}" for k, v in counts.items() if v > 0)
+    if count_str:
+        console.print(f"  Status breakdown: {count_str}")
+        
+    if status.get("error_captures"):
+        console.print("  [red]Errors:[/red]")
+        for err_cap in status["error_captures"]:
+            console.print(f"    - {err_cap['capture_id']}")
+            
+    if status["newest_capture"]:
+        n = status["newest_capture"]
+        console.print(f"  Newest:         {n['capture_id']} ({n['status']})")
+
+
+# ===========================================================================
+# awr capture ...
+# ===========================================================================
+
+@capture_mgmt_app.command("new")
+def capture_new_cmd(
+    capture_name: str = typer.Argument(..., help="Human-readable capture name"),
+    root: Path = typer.Option(Path("."), "--root", help="Project root directory"),
+    mode: str = typer.Option("import", "--mode", help="Capture mode: import or direct"),
+    notes: str = typer.Option("", "--notes", help="Initial notes"),
+) -> None:
+    """Create a new capture folder with manifest."""
+    from .project import new_capture, find_project_root
+
+    try:
+        actual_root = find_project_root(root)
+        manifest = new_capture(actual_root, capture_name, mode=mode, notes=notes)
+        console.print(f"[green]Capture created:[/green] [bold]{manifest['capture_id']}[/bold]")
+        console.print(f"  Name:       {manifest['capture_name']}")
+        console.print(f"  Directory:  {manifest['capture_dir_abs']}")
+        console.print(f"  Mode:       {manifest['mode']}")
+        console.print(f"  Status:     {manifest['status']}")
+    except (FileNotFoundError, FileExistsError) as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+
+@capture_mgmt_app.command("import-raw")
+def capture_import_raw_cmd(
+    capture_id: str = typer.Argument(..., help="Capture ID"),
+    source_path: Path = typer.Option(..., "--from", help="Path to source ADC binary"),
+    root: Path = typer.Option(Path("."), "--root", help="Project root directory"),
+    move: bool = typer.Option(False, "--move", help="Move instead of copy"),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing raw file"),
+    inspect: bool = typer.Option(True, "--inspect/--no-inspect", help="Run ADC inspection"),
+    allow_size_mismatch: bool = typer.Option(False, "--allow-size-mismatch", help="Allow wrong-size files"),
+) -> None:
+    """Import a raw ADC binary into a capture."""
+    from .project import import_raw, find_project_root
+
+    try:
+        actual_root = find_project_root(root)
+        manifest = import_raw(
+            actual_root, capture_id, source_path=source_path,
+            move=move, force=force, inspect=inspect,
+            allow_size_mismatch=allow_size_mismatch,
+        )
+        console.print(f"[green]Raw file imported:[/green] {manifest.get('raw_file_rel', '')}")
+        console.print(f"  Size:   {manifest.get('actual_raw_file_size', 0):,} bytes")
+        console.print(f"  SHA256: {manifest.get('raw_file_sha256', '')}")
+        console.print(f"  Status: {manifest.get('status', '')}")
+        for w in manifest.get("warnings", []):
+            console.print(f"  [yellow]WARNING: {w}[/yellow]")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    except FileExistsError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+
+@capture_mgmt_app.command("bind-mmws-output")
+def capture_bind_mmws_cmd(
+    capture_id: str = typer.Argument(..., help="Capture ID"),
+    root: Path = typer.Option(Path("."), "--root", help="Project root directory"),
+    postproc_dir: str = typer.Option(None, "--postproc-dir", help="PostProc directory (default from project.json)"),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing raw file"),
+    copy_logs: bool = typer.Option(True, "--copy-logs/--no-copy-logs", help="Copy log/metadata files"),
+    inspect: bool = typer.Option(True, "--inspect/--no-inspect", help="Run ADC inspection"),
+) -> None:
+    """Bind mmWave Studio PostProc output to a capture."""
+    from .project import bind_mmws_output, find_project_root
+
+    try:
+        actual_root = find_project_root(root)
+        manifest = bind_mmws_output(
+            actual_root, capture_id,
+            postproc_dir=postproc_dir, force=force,
+            copy_logs=copy_logs, inspect=inspect,
+        )
+        console.print(f"[green]PostProc output bound:[/green] {manifest.get('raw_file_rel', '')}")
+        console.print(f"  Size:       {manifest.get('actual_raw_file_size', 0):,} bytes")
+        console.print(f"  SHA256:     {manifest.get('raw_file_sha256', '')}")
+        console.print(f"  Status:     {manifest.get('status', '')}")
+        copied = manifest.get("copied_mmws_files", [])
+        if copied:
+            console.print(f"  Copied:     {len(copied)} metadata files")
+            for cf in copied:
+                console.print(f"              {cf['dest_rel']}")
+        for w in manifest.get("warnings", []):
+            console.print(f"  [yellow]WARNING: {w}[/yellow]")
+    except (FileNotFoundError, FileExistsError) as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+
+@capture_mgmt_app.command("inspect")
+def capture_inspect_cmd(
+    capture_id: str = typer.Argument(..., help="Capture ID"),
+    root: Path = typer.Option(Path("."), "--root", help="Project root directory"),
+    format_type: str = typer.Option("text", "--format", help="Output format: text or json"),
+    refresh_adc_inspect: bool = typer.Option(False, "--refresh-adc-inspect", help="Re-run ADC inspection"),
+) -> None:
+    """Inspect a capture's manifest, raw file, and ADC analysis."""
+    from .project import inspect_capture, find_project_root
+    import json as json_mod
+
+    try:
+        actual_root = find_project_root(root)
+        info = inspect_capture(actual_root, capture_id, refresh_adc_inspect=refresh_adc_inspect)
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    if format_type == "json":
+        print(json_mod.dumps(info, indent=2, default=str))
+        return
+
+    console.print("")
+    console.print(f"[bold cyan]Capture: {info['capture_id']}[/bold cyan]")
+    console.print(f"  Name:       {info['capture_name']}")
+    console.print(f"  Status:     {info['status']}")
+    console.print(f"  Mode:       {info['mode']}")
+    console.print(f"  Created:    {info['created_at']}")
+    console.print(f"  Updated:    {info['updated_at']}")
+    console.print("")
+    raw_ok = "[green]EXISTS[/green]" if info["raw_file_exists"] else "[red]MISSING[/red]"
+    console.print(f"  Raw file:   {raw_ok}")
+    if info["raw_file_exists"]:
+        console.print(f"  Raw size:   {info['raw_file_size']:,} bytes")
+        sm = "[green]MATCH[/green]" if info["size_match"] else "[red]MISMATCH[/red]"
+        console.print(f"  Size check: {sm} (expected {info['expected_bytes']:,})")
+        console.print(f"  SHA256:     {info['raw_file_sha256']}")
+    if info.get("adc_inspect"):
+        ai = info["adc_inspect"]
+        console.print("")
+        console.print("  [bold]ADC Inspection:[/bold]")
+        if ai.get("shape"):
+            console.print(f"    Shape:    {tuple(ai['shape'])}")
+        if ai.get("all_zero") is not None:
+            console.print(f"    All zero: {ai['all_zero']}")
+        if ai.get("layout_assumption"):
+            console.print(f"    Layout:   {ai['layout_assumption']} (confirmed={ai.get('layout_assumption_confirmed', False)})")
+    for w in info.get("warnings", []):
+        console.print(f"  [yellow]WARNING: {w}[/yellow]")
+    for e in info.get("errors", []):
+        console.print(f"  [red]ERROR: {e}[/red]")
+
+
+@capture_mgmt_app.command("verify")
+def capture_verify_cmd(
+    capture_id: str = typer.Argument(..., help="Capture ID"),
+    root: Path = typer.Option(Path("."), "--root", help="Project root directory"),
+    format_type: str = typer.Option("text", "--format", help="Output format: text or json"),
+) -> None:
+    """Verify a capture's manifest, files, and hashes."""
+    from .project import verify_capture, find_project_root
+    import json as json_mod
+
+    try:
+        actual_root = find_project_root(root)
+        result = verify_capture(actual_root, capture_id)
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    if format_type == "json":
+        print(json_mod.dumps(result, indent=2, default=str))
+        if not result["passed"]:
+            sys.exit(1)
+        return
+
+    console.print("")
+    console.print(f"[bold cyan]Capture Verification: {capture_id}[/bold cyan]")
+    
+    if result["passed"]:
+        console.print("[green]PASS[/green] All checks succeeded.")
+    else:
+        console.print("[red]FAIL[/red] Verification found errors.")
+        
+    if result["errors"]:
+        console.print("\n[red]Errors:[/red]")
+        for err in result["errors"]:
+            console.print(f"  - {err}")
+            
+    if result["warnings"]:
+        console.print("\n[yellow]Warnings:[/yellow]")
+        for warn in result["warnings"]:
+            console.print(f"  - {warn}")
+            
+    if not result["passed"]:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
