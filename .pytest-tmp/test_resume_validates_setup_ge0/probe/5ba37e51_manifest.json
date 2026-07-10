@@ -1,0 +1,9 @@
+{
+  "run_id": "5ba37e51",
+  "stage": "dca_setup",
+  "lua_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_validates_setup_ge0\\probe\\5ba37e51_dca_setup.lua",
+  "result_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_validates_setup_ge0\\probe\\5ba37e51_dca_setup_result.json",
+  "progress_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_validates_setup_ge0\\probe\\5ba37e51_dca_setup_progress.jsonl",
+  "dofile": "dofile([[C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_validates_setup_ge0\\probe\\5ba37e51_dca_setup.lua]])",
+  "created_at": "2026-07-09T18:47:03.172002"
+}

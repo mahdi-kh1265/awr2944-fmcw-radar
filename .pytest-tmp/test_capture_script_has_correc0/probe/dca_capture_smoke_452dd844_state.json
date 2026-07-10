@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "workflow_id": "452dd844",
+  "created_at": "2026-07-09T18:47:03.881481",
+  "updated_at": "2026-07-09T18:47:03.912493",
+  "current_stage": "capture_script_generated",
+  "probe_dir": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_capture_script_has_correc0\\probe",
+  "capture_dir": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_capture_script_has_correc0\\PostProc",
+  "expected_bytes": 4194304,
+  "firmware_run_id": "fw1",
+  "config_run_id": "cfg1",
+  "dca_setup": {
+    "run_id": "bd85a0b6",
+    "generated_at": "2026-07-09T18:47:03.884916",
+    "script_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_capture_script_has_correc0\\probe\\bd85a0b6_dca_setup.lua",
+    "result_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_capture_script_has_correc0\\probe\\bd85a0b6_dca_setup_result.json",
+    "progress_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_capture_script_has_correc0\\probe\\bd85a0b6_dca_setup_progress.jsonl"
+  },
+  "capture_trigger": {
+    "run_id": "a3d060e2",
+    "generated_at": "2026-07-09T18:47:03.912493",
+    "script_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_capture_script_has_correc0\\probe\\a3d060e2_capture_trigger.lua",
+    "result_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_capture_script_has_correc0\\probe\\a3d060e2_capture_trigger_result.json",
+    "progress_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_capture_script_has_correc0\\probe\\a3d060e2_capture_trigger_progress.jsonl"
+  },
+  "postproc": {
+    "run_id": "",
+    "generated_at": "",
+    "script_path": "",
+    "result_path": "",
+    "progress_path": ""
+  },
+  "validation_record_path": "",
+  "adc_data_bin_path": "",
+  "adc_data_bin_size": 0,
+  "adc_data_bin_sha256": "",
+  "errors": [],
+  "warnings": [
+    "Preflight READY_WITH_WARNINGS: READY_WITH_WARNINGS"
+  ],
+  "completed": false,
+  "pending_dofile": "dofile([[C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_capture_script_has_correc0\\probe\\a3d060e2_capture_trigger.lua]])",
+  "pending_operator_action": "WARNING: This script calls ar1.StartFrame() (RF transmission).\nPaste the capture dofile into mmWave Studio Lua Shell ONLY when ready.\nThen run: awr dca capture-smoke resume --workflow-id 452dd844"
+}

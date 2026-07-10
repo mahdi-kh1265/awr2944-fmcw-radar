@@ -1,0 +1,2 @@
+{"ts": "0.0", "cmd": "DownloadBSSFw", "ret": 0, "ok": true}
+{"ts": "0.2", "cmd": "RfEnable", "ret": -1, "ok": true}

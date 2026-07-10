@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "timestamp": "2026-07-09T18:47:33.260843",
+  "overall": "PASS",
+  "capture_dir": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_record_validation_creates0",
+  "expected_bytes": 4194304,
+  "size_model": "256 samples \u00d7 4 bytes \u00d7 4 RX \u00d7 128 chirps \u00d7 8 frames",
+  "adc_data_bin": {
+    "exists": true,
+    "size_bytes": 4194304,
+    "status": "PASS",
+    "detail": "exact match (not all-zero, not all-0xFF)"
+  },
+  "run_ids": {
+    "firmware": null,
+    "config": null,
+    "dca_setup": null,
+    "capture_trigger": "7bbbee5c",
+    "postproc": "00339bb1"
+  },
+  "post_processing_status": "COMPLETE"
+}

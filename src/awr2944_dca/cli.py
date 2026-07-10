@@ -69,6 +69,12 @@ mmws_app.add_typer(mmws_internals_app, name="internals")
 dca_app = typer.Typer(help="DCA1000 integration commands")
 app.add_typer(dca_app, name="dca")
 
+adc_app = typer.Typer(help="ADC data commands")
+app.add_typer(adc_app, name="adc")
+
+capture_smoke_app = typer.Typer(help="DCA capture smoke workflow")
+dca_app.add_typer(capture_smoke_app, name="capture-smoke")
+
 manual_app = typer.Typer(help="Manual Lua scripts for the mmWave Studio Lua Shell")
 mmws_app.add_typer(manual_app, name="manual")
 
@@ -7632,6 +7638,208 @@ def dca_summarize_capture(
         sys.exit(1)
 
 
+# ---------------------------------------------------------------------------
+# awr dca capture-smoke
+# ---------------------------------------------------------------------------
+
+@capture_smoke_app.command("start")
+def dca_capture_smoke_start(
+    probe_dir: Path = typer.Option(..., "--probe-dir", help="Directory for output files"),
+    capture_dir: Path = typer.Option(get_default_postproc_dir(), "--capture-dir", help="Capture directory"),
+    firmware_run_id: str = typer.Option("", "--firmware-run-id", help="Run ID of firmware validation"),
+    config_run_id: str = typer.Option("", "--config-run-id", help="Run ID of config validation"),
+    confirm_startframe: bool = typer.Option(False, "--confirm-startframe", help="Confirm this workflow will call StartFrame"),
+    archive_existing: bool = typer.Option(False, "--archive-existing", help="Archive existing adc_data.bin before capture"),
+    allow_overwrite: bool = typer.Option(False, "--allow-overwrite", help="Allow overwriting existing adc_data.bin"),
+    expected_bytes: int = typer.Option(4194304, "--expected-bytes", help="Expected adc_data.bin size"),
+) -> None:
+    """Start a new DCA capture-smoke workflow."""
+    from .dca.workflow import start_workflow
+
+    try:
+        state = start_workflow(
+            probe_dir=probe_dir,
+            capture_dir=capture_dir,
+            firmware_run_id=firmware_run_id,
+            config_run_id=config_run_id,
+            confirm_startframe=confirm_startframe,
+            expected_bytes=expected_bytes,
+            archive_existing=archive_existing,
+            allow_overwrite=allow_overwrite,
+        )
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    console.print(f"[green]Workflow started:[/green] [bold cyan]{state.workflow_id}[/bold cyan]")
+    console.print(f"Stage: {state.current_stage}")
+    if state.warnings:
+        for w in state.warnings:
+            console.print(f"[yellow]WARNING: {w}[/yellow]")
+    console.print("")
+    console.print(f"[bold]Next step:[/bold] {state.pending_operator_action}")
+    console.print(f"[cyan]{state.pending_dofile}[/cyan]")
+    console.print("")
+    console.print("[bold]Next command to run:[/bold]")
+    console.print(f"awr dca capture-smoke resume --workflow-id {state.workflow_id} --probe-dir {probe_dir}")
+
+
+@capture_smoke_app.command("resume")
+def dca_capture_smoke_resume(
+    workflow_id: str = typer.Option(..., "--workflow-id", help="Workflow ID"),
+    probe_dir: Path = typer.Option(None, "--probe-dir", help="Probe directory (auto-detected from state)"),
+) -> None:
+    """Resume a capture-smoke workflow by one step."""
+    from .dca.workflow import load_state as load_wf_state, resume_workflow
+
+    try:
+        if probe_dir is None:
+            # Try common locations
+            for candidate in [Path("ti/probe_logs"), Path(".")]:
+                if (candidate / f"dca_capture_smoke_{workflow_id}_state.json").exists():
+                    probe_dir = candidate
+                    break
+            if probe_dir is None:
+                console.print("[red]Cannot find workflow state. Specify --probe-dir.[/red]")
+                sys.exit(1)
+
+        state = resume_workflow(workflow_id, probe_dir)
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    console.print(f"Workflow ID:      [bold cyan]{state.workflow_id}[/bold cyan]")
+    console.print(f"Stage:            {state.current_stage}")
+    if state.warnings:
+        for w in state.warnings:
+            console.print(f"[yellow]WARNING: {w}[/yellow]")
+    if state.errors:
+        for e in state.errors:
+            console.print(f"[red]ERROR: {e}[/red]")
+    console.print("")
+    
+    if state.dca_setup.run_id:
+        console.print(f"DCA Setup Run ID:       {state.dca_setup.run_id}")
+    if state.capture_trigger.run_id:
+        console.print(f"Capture Trigger Run ID: {state.capture_trigger.run_id}")
+    if state.postproc.run_id:
+        console.print(f"Postproc Run ID:        {state.postproc.run_id}")
+    if state.dca_setup.run_id or state.capture_trigger.run_id or state.postproc.run_id:
+        console.print("")
+
+    console.print(f"[bold]Next step:[/bold] {state.pending_operator_action}")
+    if state.pending_dofile:
+        console.print(f"[cyan]{state.pending_dofile}[/cyan]")
+    
+    if not state.completed and not state.errors:
+        console.print("")
+        console.print("[bold]Next command to run:[/bold]")
+        console.print(f"awr dca capture-smoke resume --workflow-id {state.workflow_id} --probe-dir {probe_dir}")
+        
+    if state.completed:
+        console.print("")
+        console.print("[green]Workflow COMPLETE.[/green]")
+        if state.adc_data_bin_sha256:
+            console.print(f"SHA256: {state.adc_data_bin_sha256}")
+        if state.adc_data_bin_size:
+            console.print(f"Size: {state.adc_data_bin_size:,} bytes")
+
+
+@capture_smoke_app.command("status")
+def dca_capture_smoke_status(
+    workflow_id: str = typer.Option(..., "--workflow-id", help="Workflow ID"),
+    probe_dir: Path = typer.Option(None, "--probe-dir", help="Probe directory"),
+) -> None:
+    """Print status of a capture-smoke workflow."""
+    from .dca.workflow import load_state as load_wf_state
+
+    try:
+        if probe_dir is None:
+            for candidate in [Path("ti/probe_logs"), Path(".")]:
+                if (candidate / f"dca_capture_smoke_{workflow_id}_state.json").exists():
+                    probe_dir = candidate
+                    break
+            if probe_dir is None:
+                console.print("[red]Cannot find workflow state. Specify --probe-dir.[/red]")
+                sys.exit(1)
+
+        state = load_wf_state(workflow_id, probe_dir)
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    console.print(f"Workflow ID: [bold cyan]{state.workflow_id}[/bold cyan]")
+    console.print(f"Stage:       {state.current_stage}")
+    console.print(f"Created:     {state.created_at}")
+    console.print(f"Updated:     {state.updated_at}")
+    console.print(f"Completed:   {state.completed}")
+    console.print(f"Capture dir: {state.capture_dir}")
+    console.print("")
+    if state.dca_setup.run_id:
+        console.print(f"DCA Setup Run ID:       {state.dca_setup.run_id}")
+    if state.capture_trigger.run_id:
+        console.print(f"Capture Trigger Run ID: {state.capture_trigger.run_id}")
+    if state.postproc.run_id:
+        console.print(f"Postproc Run ID:        {state.postproc.run_id}")
+    if state.warnings:
+        console.print("")
+        for w in state.warnings:
+            console.print(f"[yellow]WARNING: {w}[/yellow]")
+    if state.errors:
+        console.print("")
+        for e in state.errors:
+            console.print(f"[red]ERROR: {e}[/red]")
+    console.print("")
+    console.print(f"[bold]Next step:[/bold] {state.pending_operator_action}")
+    if state.pending_dofile:
+        console.print(f"[cyan]{state.pending_dofile}[/cyan]")
+
+    if not state.completed and not state.errors:
+        console.print("")
+        console.print("[bold]Next command to run:[/bold]")
+        console.print(f"awr dca capture-smoke resume --workflow-id {state.workflow_id} --probe-dir {probe_dir}")
+
+
+@capture_smoke_app.command("latest")
+def dca_capture_smoke_latest(
+    probe_dir: Path = typer.Option(None, "--probe-dir", help="Probe directory"),
+) -> None:
+    """Show the latest capture-smoke workflow."""
+    from .dca.workflow import find_latest_state
+
+    if probe_dir is None:
+        probe_dir = Path("ti/probe_logs")
+
+    state = find_latest_state(probe_dir)
+    if state is None:
+        console.print("[yellow]No capture-smoke workflows found.[/yellow]")
+        return
+
+    console.print(f"Workflow ID: [bold cyan]{state.workflow_id}[/bold cyan]")
+    console.print(f"Stage:       {state.current_stage}")
+    console.print(f"Completed:   {state.completed}")
+    console.print(f"Updated:     {state.updated_at}")
+    console.print("")
+    
+    if state.dca_setup.run_id:
+        console.print(f"DCA Setup Run ID:       {state.dca_setup.run_id}")
+    if state.capture_trigger.run_id:
+        console.print(f"Capture Trigger Run ID: {state.capture_trigger.run_id}")
+    if state.postproc.run_id:
+        console.print(f"Postproc Run ID:        {state.postproc.run_id}")
+    if state.dca_setup.run_id or state.capture_trigger.run_id or state.postproc.run_id:
+        console.print("")
+
+    console.print(f"[bold]Next step:[/bold] {state.pending_operator_action}")
+    if state.pending_dofile:
+        console.print(f"[cyan]{state.pending_dofile}[/cyan]")
+        
+    if not state.completed and not state.errors:
+        console.print("")
+        console.print("[bold]Next command to run:[/bold]")
+        console.print(f"awr dca capture-smoke resume --workflow-id {state.workflow_id} --probe-dir {probe_dir}")
+
+
 @dca_app.command("adapters")
 def dca_adapters() -> None:
     """List network adapters and score them as DCA1000 candidates."""
@@ -7732,6 +7940,77 @@ Set-DnsClientServerAddress -InterfaceAlias "{target.interface_alias}" -ResetServ
         except subprocess.CalledProcessError as e:
             console.print(f"[red]Failed to configure adapter: {e}[/red]")
             sys.exit(1)
+
+# ---------------------------------------------------------------------------
+# awr adc inspect
+# ---------------------------------------------------------------------------
+
+@adc_app.command("inspect")
+def adc_inspect(
+    bin_path: Path = typer.Option(..., "--bin", help="Path to adc_data.bin"),
+    frames: int = typer.Option(8, "--frames", help="Number of frames"),
+    chirps: int = typer.Option(128, "--chirps", help="Chirps per frame"),
+    rx: int = typer.Option(4, "--rx", help="RX channels"),
+    samples: int = typer.Option(256, "--samples", help="Samples per chirp"),
+    iq_order: str = typer.Option("iq", "--iq-order", help="IQ interleave order: iq or qi"),
+    layout: str = typer.Option("frame_chirp_rx_sample", "--layout", help="Cube layout"),
+    format_type: str = typer.Option("text", "--format", help="Output format: text or json"),
+) -> None:
+    """Inspect an ADC binary capture file (no FFT)."""
+    from .adc_parser import AdcParserConfig, inspect_adc_file
+    import json as json_mod
+
+    config = AdcParserConfig(
+        frames=frames, chirps=chirps, rx=rx, samples=samples,
+        iq_order=iq_order, layout=layout,
+    )
+    info = inspect_adc_file(bin_path, config)
+
+    if format_type == "json":
+        print(json_mod.dumps(info, indent=2, default=str))
+        if info.get("error"):
+            sys.exit(1)
+        return
+
+    # Text output
+    console.print("")
+    console.print("[bold cyan]ADC Capture Inspection[/bold cyan]")
+    console.print(f"{'Path':20} {info['file_path']}")
+    console.print(f"{'File size':20} {info['file_size']:,} bytes")
+    console.print(f"{'Expected':20} {info['expected_bytes']:,} bytes")
+    console.print(f"{'Size match':20} {info['size_match']}")
+
+    if info.get("error"):
+        console.print(f"[red]{'Error':20} {info['error']}[/red]")
+        sys.exit(1)
+
+    console.print(f"{'Shape':20} {tuple(info['shape'])}")
+    console.print(f"{'Format':20} {config.sample_format}, iq_order={config.iq_order}")
+    console.print(f"{'Layout assumption':20} {info['layout_assumption']}")
+    console.print(f"{'Layout confirmed':20} [yellow]{info['layout_assumption_confirmed']}[/yellow]")
+    console.print(f"{'SHA256':20} {info.get('sha256', 'N/A')}")
+    console.print(f"{'All zero':20} {info.get('all_zero', 'N/A')}")
+    console.print(f"{'Int16 count':20} {info.get('int16_count', 'N/A'):,}")
+    console.print(f"{'Complex count':20} {info.get('complex_count', 'N/A'):,}")
+    console.print("")
+    console.print(f"{'Real min/max':20} {info.get('real_min', 'N/A')} / {info.get('real_max', 'N/A')}")
+    console.print(f"{'Real mean/std':20} {info.get('real_mean', 'N/A'):.2f} / {info.get('real_std', 'N/A'):.2f}")
+    console.print(f"{'Imag min/max':20} {info.get('imag_min', 'N/A')} / {info.get('imag_max', 'N/A')}")
+    console.print(f"{'Imag mean/std':20} {info.get('imag_mean', 'N/A'):.2f} / {info.get('imag_std', 'N/A'):.2f}")
+    console.print(f"{'Zero fraction':20} {info.get('zero_fraction', 'N/A'):.4f}")
+
+    if info.get("first_16_int16_values"):
+        console.print(f"{'First 16 int16':20} {info['first_16_int16_values']}")
+    if info.get("first_8_complex_values"):
+        cvals = [f"{c['real']}+{c['imag']}j" for c in info['first_8_complex_values']]
+        console.print(f"{'First 8 complex':20} {cvals}")
+
+    if info.get("per_rx_rms"):
+        console.print("")
+        console.print("[bold]Per-RX RMS:[/bold]")
+        for entry in info["per_rx_rms"]:
+            console.print(f"  RX {entry['rx']}: {entry['rms']:.2f}")
+
 
 if __name__ == "__main__":
     app()

@@ -1,0 +1,13 @@
+[
+  {
+    "name": "SOPControl",
+    "stage": "connection-only",
+    "risk": "state_changing",
+    "yaml_fields": [],
+    "allowed_yet": false,
+    "args": "",
+    "file": "",
+    "line": 0,
+    "gui_equiv": ""
+  }
+]

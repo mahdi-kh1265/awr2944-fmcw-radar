@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "workflow_id": "994b3b71",
+  "created_at": "2026-07-09T18:47:03.210625",
+  "updated_at": "2026-07-09T18:47:03.239006",
+  "current_stage": "dca_setup_script_generated",
+  "probe_dir": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_stops_on_failed_se0\\probe",
+  "capture_dir": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_stops_on_failed_se0\\PostProc",
+  "expected_bytes": 4194304,
+  "firmware_run_id": "fw1",
+  "config_run_id": "cfg1",
+  "dca_setup": {
+    "run_id": "4eb98159",
+    "generated_at": "2026-07-09T18:47:03.214621",
+    "script_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_stops_on_failed_se0\\probe\\4eb98159_dca_setup.lua",
+    "result_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_stops_on_failed_se0\\probe\\4eb98159_dca_setup_result.json",
+    "progress_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_stops_on_failed_se0\\probe\\4eb98159_dca_setup_progress.jsonl"
+  },
+  "capture_trigger": {
+    "run_id": "",
+    "generated_at": "",
+    "script_path": "",
+    "result_path": "",
+    "progress_path": ""
+  },
+  "postproc": {
+    "run_id": "",
+    "generated_at": "",
+    "script_path": "",
+    "result_path": "",
+    "progress_path": ""
+  },
+  "validation_record_path": "",
+  "adc_data_bin_path": "",
+  "adc_data_bin_size": 0,
+  "adc_data_bin_sha256": "",
+  "errors": [],
+  "warnings": [
+    "Preflight READY_WITH_WARNINGS: READY_WITH_WARNINGS"
+  ],
+  "completed": false,
+  "pending_dofile": "dofile([[C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_stops_on_failed_se0\\probe\\4eb98159_dca_setup.lua]])",
+  "pending_operator_action": "dca_setup failed: EthInit failed"
+}

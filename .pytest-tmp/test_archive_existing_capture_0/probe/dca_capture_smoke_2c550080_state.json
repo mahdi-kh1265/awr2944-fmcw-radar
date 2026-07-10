@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "workflow_id": "2c550080",
+  "created_at": "2026-07-09T18:47:03.932390",
+  "updated_at": "2026-07-09T18:47:03.938375",
+  "current_stage": "dca_setup_script_generated",
+  "probe_dir": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_archive_existing_capture_0\\probe",
+  "capture_dir": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_archive_existing_capture_0\\PostProc",
+  "expected_bytes": 4194304,
+  "firmware_run_id": "",
+  "config_run_id": "",
+  "dca_setup": {
+    "run_id": "2b85f987",
+    "generated_at": "2026-07-09T18:47:03.938375",
+    "script_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_archive_existing_capture_0\\probe\\2b85f987_dca_setup.lua",
+    "result_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_archive_existing_capture_0\\probe\\2b85f987_dca_setup_result.json",
+    "progress_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_archive_existing_capture_0\\probe\\2b85f987_dca_setup_progress.jsonl"
+  },
+  "capture_trigger": {
+    "run_id": "",
+    "generated_at": "",
+    "script_path": "",
+    "result_path": "",
+    "progress_path": ""
+  },
+  "postproc": {
+    "run_id": "",
+    "generated_at": "",
+    "script_path": "",
+    "result_path": "",
+    "progress_path": ""
+  },
+  "validation_record_path": "",
+  "adc_data_bin_path": "",
+  "adc_data_bin_size": 0,
+  "adc_data_bin_sha256": "",
+  "errors": [],
+  "warnings": [
+    "Preflight READY_WITH_WARNINGS: READY_WITH_WARNINGS",
+    "Archived existing capture to C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_archive_existing_capture_0\\PostProc\\archive_20260709_184703"
+  ],
+  "completed": false,
+  "pending_dofile": "dofile([[C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_archive_existing_capture_0\\probe\\2b85f987_dca_setup.lua]])",
+  "pending_operator_action": "Paste the DCA setup dofile into mmWave Studio Lua Shell, then run: awr dca capture-smoke resume --workflow-id 2c550080"
+}

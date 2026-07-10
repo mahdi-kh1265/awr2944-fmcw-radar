@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "workflow_id": "29214440",
+  "created_at": "2026-07-09T14:37:05.712251",
+  "updated_at": "2026-07-09T14:38:17.856642",
+  "current_stage": "dca_setup_script_generated",
+  "probe_dir": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe\\ti\\probe_logs",
+  "capture_dir": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc",
+  "expected_bytes": 4194304,
+  "firmware_run_id": "df1f275c",
+  "config_run_id": "4b87faae",
+  "dca_setup": {
+    "run_id": "e5add66f",
+    "generated_at": "2026-07-09T14:37:05.717239",
+    "script_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe\\ti\\probe_logs\\e5add66f_dca_setup.lua",
+    "result_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe\\ti\\probe_logs\\e5add66f_dca_setup_result.json",
+    "progress_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe\\ti\\probe_logs\\e5add66f_dca_setup_progress.jsonl"
+  },
+  "capture_trigger": {
+    "run_id": "",
+    "generated_at": "",
+    "script_path": "",
+    "result_path": "",
+    "progress_path": ""
+  },
+  "postproc": {
+    "run_id": "",
+    "generated_at": "",
+    "script_path": "",
+    "result_path": "",
+    "progress_path": ""
+  },
+  "validation_record_path": "",
+  "adc_data_bin_path": "",
+  "adc_data_bin_size": 0,
+  "adc_data_bin_sha256": "",
+  "errors": [],
+  "warnings": [
+    "Preflight READY_WITH_WARNINGS: READY_WITH_WARNINGS"
+  ],
+  "completed": false,
+  "pending_dofile": "dofile([[C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe\\ti\\probe_logs\\e5add66f_dca_setup.lua]])",
+  "pending_operator_action": "dca_setup failed: CaptureCardConfig_EthInit failed: System.IO.FileNotFoundException: Could not find file 'C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc\\cf.json'.\r\nFile name: 'C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc\\cf.json'\r\n   at System.IO.__Error.WinIOError(Int32 errorCode, String maybeFullPath)\r\n   at System.IO.FileStream.Init(String path, FileMode mode, FileAccess access, Int32 rights, Boolean useRights, FileShare share, Int32 bufferSize, FileOptions options, SECURITY_ATTRIBUTES secAttrs, String msgPath, Boolean bFromProxy, Boolean useLongPath, Boolean checkHost)\r\n   at System.IO.FileStream..ctor(String path, FileMode mode, FileAccess access, FileShare share, Int32 bufferSize, FileOptions options, String msgPath, Boolean bFromProxy, Boolean useLongPath, Boolean checkHost)\r\n   at System.IO.StreamReader..ctor(String path, Encoding encoding, Boolean detectEncodingFromByteOrderMarks, Int32 bufferSize, Boolean checkHost)\r\n   at System.IO.File.InternalReadAllText(String path, Encoding encoding, Boolean checkHost)\r\n   at System.IO.File.ReadAllText(String path)\r\n   at AR1xController.ScriptOps.RFEthernetInitializationConfigurationData_Impl()\r\n   at AR1xController.ScriptOps.UpdateNSetRFEthernetInitializationConfigurationData(UInt32 RadarDeviceId, String MACFPGAAddress, String SourcePCIPAddress, String DestFPGAIPAddress, UInt32 ConfigPort, UInt32 RecordPort)\r\n   at AR1xController.AR1xxxWrapper.CaptureCardConfig_EthInit(String SystemSourceIPAddress, String FPGADestIPAddress, String FPGAMACAddress, UInt32 ConfigPort, UInt32 RecordPort): 18765758"
+}

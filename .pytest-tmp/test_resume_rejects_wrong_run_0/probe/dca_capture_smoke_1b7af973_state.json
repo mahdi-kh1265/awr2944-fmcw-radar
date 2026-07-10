@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "workflow_id": "1b7af973",
+  "created_at": "2026-07-09T18:47:03.635459",
+  "updated_at": "2026-07-09T18:47:03.653478",
+  "current_stage": "dca_setup_script_generated",
+  "probe_dir": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_rejects_wrong_run_0\\probe",
+  "capture_dir": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_rejects_wrong_run_0\\PostProc",
+  "expected_bytes": 4194304,
+  "firmware_run_id": "fw1",
+  "config_run_id": "cfg1",
+  "dca_setup": {
+    "run_id": "360becfc",
+    "generated_at": "2026-07-09T18:47:03.639596",
+    "script_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_rejects_wrong_run_0\\probe\\360becfc_dca_setup.lua",
+    "result_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_rejects_wrong_run_0\\probe\\360becfc_dca_setup_result.json",
+    "progress_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_rejects_wrong_run_0\\probe\\360becfc_dca_setup_progress.jsonl"
+  },
+  "capture_trigger": {
+    "run_id": "",
+    "generated_at": "",
+    "script_path": "",
+    "result_path": "",
+    "progress_path": ""
+  },
+  "postproc": {
+    "run_id": "",
+    "generated_at": "",
+    "script_path": "",
+    "result_path": "",
+    "progress_path": ""
+  },
+  "validation_record_path": "",
+  "adc_data_bin_path": "",
+  "adc_data_bin_size": 0,
+  "adc_data_bin_sha256": "",
+  "errors": [],
+  "warnings": [
+    "Preflight READY_WITH_WARNINGS: READY_WITH_WARNINGS"
+  ],
+  "completed": false,
+  "pending_dofile": "dofile([[C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_rejects_wrong_run_0\\probe\\360becfc_dca_setup.lua]])",
+  "pending_operator_action": "run_id mismatch: result has 'wrong_id', expected '360becfc'"
+}

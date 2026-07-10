@@ -1,0 +1,9 @@
+{
+  "run_id": "46e59947",
+  "stage": "postproc",
+  "lua_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_after_capture_gene0\\probe\\46e59947_postproc.lua",
+  "result_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_after_capture_gene0\\probe\\46e59947_postproc_result.json",
+  "progress_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_after_capture_gene0\\probe\\46e59947_postproc_progress.jsonl",
+  "dofile": "dofile([[C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_after_capture_gene0\\probe\\46e59947_postproc.lua]])",
+  "created_at": "2026-07-09T18:47:03.303063"
+}

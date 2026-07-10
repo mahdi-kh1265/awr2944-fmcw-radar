@@ -1,0 +1,44 @@
+# Imported from: test.lua
+# Review all fields before using for a real capture.
+
+experiment:
+  name: imported_from_test
+  operator: ''
+  description: 'Imported from TI file: test.lua'
+rig:
+  name: awr2944-dca1000
+  radar: AWR2944EVM
+  capture_card: DCA1000EVM
+hardware:
+  tx_enabled:
+  - 0
+  rx_enabled:
+  - 0
+  - 1
+  - 2
+  - 3
+  antenna_mode: single_tx
+adc:
+  is_complex: false
+  bits: 16
+  samples_per_chirp: 256
+  channel_interleave: 1
+  num_lvds_lanes: 2
+  iq_order: IQ
+  layout: awr2944_real_2lane_noninterleaved_candidate
+profile:
+  start_freq_ghz: 77.0
+  slope_mhz_per_us: 60.0
+  sample_rate_ksps: 10000.0
+  idle_time_us: 10.0
+  ramp_end_time_us: 60.0
+frame:
+  chirps_per_frame: 128
+  num_frames: 10
+  frame_period_ms: 50.0
+capture:
+  output_root: experiments
+  packet_delay_us: 25
+  save_raw_packets: true
+  raw_files: []
+  adc_file: raw/adc_data.bin

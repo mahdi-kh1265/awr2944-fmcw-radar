@@ -1,0 +1,29 @@
+{
+  "workflow_id": "newsummary",
+  "label": "test",
+  "pid": null,
+  "state_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_failure_report_new_summar0\\guided_newsummary_state.json",
+  "current_stage": "failed",
+  "firmware_run_id": "fwsym",
+  "config_run_id": "cfgsym",
+  "firmware_dofile": "",
+  "config_dofile": "",
+  "firmware_result_path": "",
+  "config_result_path": "",
+  "firmware_progress_path": "",
+  "config_progress_path": null,
+  "dry_run": false,
+  "hardware_touched": false,
+  "lua_generated": false,
+  "validation_recorded": false,
+  "dry_run_preview": {},
+  "manual_connection_override": false,
+  "manual_connection_source": "",
+  "rs232_identity_gate_override": false,
+  "validation_file": null,
+  "errors": [
+    "session_summarized failed: argument should be a str or an os.PathLike object where __fspath__ returns a str, not 'OptionInfo'"
+  ],
+  "created_at": "2026-07-09T23:48:35.907066+00:00",
+  "updated_at": "2026-07-09T23:48:35.907066+00:00"
+}

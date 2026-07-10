@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "timestamp": "2026-07-09T18:47:03.461932",
+  "overall": "PASS",
+  "workflow_id": "f4ab532b",
+  "capture_dir": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_after_postproc_val0\\PostProc",
+  "expected_bytes": 32,
+  "size_model": "256 samples \u00d7 4 bytes \u00d7 4 RX \u00d7 128 chirps \u00d7 8 frames",
+  "adc_data_bin": {
+    "exists": true,
+    "size_bytes": 32,
+    "status": "PASS",
+    "detail": "exact match (not all-zero, not all-0xFF)",
+    "sha256": "72cd6e8422c407fb6d098690f1130b7ded7ec2f7f5e1d30bd9d521f015363793"
+  },
+  "run_ids": {
+    "firmware": "fw1",
+    "config": "cfg1",
+    "dca_setup": "4f1eb798",
+    "capture_trigger": "213b378c",
+    "postproc": "735483bd"
+  },
+  "post_processing_status": "COMPLETE"
+}
