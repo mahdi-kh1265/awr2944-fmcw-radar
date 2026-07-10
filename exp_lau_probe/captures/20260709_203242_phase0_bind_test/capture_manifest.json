@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "capture_id": "20260709_203242_phase0_bind_test",
+  "capture_name": "phase0_bind_test",
+  "project_id": "c93154d8",
+  "project_name": "lau_probe",
+  "created_at": "2026-07-09T20:32:42.583917",
+  "updated_at": "2026-07-09T20:51:09.109965",
+  "status": "inspected",
+  "mode": "import",
+  "root_path_abs": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe",
+  "capture_dir_rel": "captures/20260709_203242_phase0_bind_test",
+  "capture_dir_abs": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe\\captures\\20260709_203242_phase0_bind_test",
+  "raw_dir_rel": "captures/20260709_203242_phase0_bind_test/raw",
+  "metadata_dir_rel": "captures/20260709_203242_phase0_bind_test/metadata",
+  "processed_dir_rel": "captures/20260709_203242_phase0_bind_test/processed",
+  "notes_path_rel": "captures/20260709_203242_phase0_bind_test/notes.md",
+  "postproc_dir_abs": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc",
+  "expected_bytes": 4194304,
+  "actual_raw_file_size": 4194304,
+  "raw_file_name": "adc_data.bin",
+  "raw_file_rel": "captures/20260709_203242_phase0_bind_test/raw/adc_data.bin",
+  "raw_file_sha256": "535c937cacfcbd1fc7485603523eded7afd712dea72cea45743904a2fff202f0",
+  "adc_inspect_path_rel": "captures/20260709_203242_phase0_bind_test/metadata/adc_inspect.json",
+  "validation_records": [
+    "captures/20260709_203242_phase0_bind_test/metadata/mmws_logs/dca_validation_20260709_185953.json"
+  ],
+  "copied_mmws_files": [
+    {
+      "source_abs": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc\\cf.json",
+      "dest_rel": "captures/20260709_203242_phase0_bind_test/metadata/mmws_logs/cf.json",
+      "size": 1492,
+      "sha256": "be6c903e54ee11c8d034e74eaf0b887aaa3ed4f927aad3cbd83a59361e78df86"
+    },
+    {
+      "source_abs": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc\\LogFile.txt",
+      "dest_rel": "captures/20260709_203242_phase0_bind_test/metadata/mmws_logs/LogFile.txt",
+      "size": 2365,
+      "sha256": "34b4a94e50c504d7744aef0c4fd2c9f05ace78ba5e4b22c0a4930b4335b8a395"
+    },
+    {
+      "source_abs": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc\\CLI_LogFile.txt",
+      "dest_rel": "captures/20260709_203242_phase0_bind_test/metadata/mmws_logs/CLI_LogFile.txt",
+      "size": 2718,
+      "sha256": "86abd9182e6cc017ccd8a5929b6a2afade549e37711d6b4570c6d920c78901a2"
+    },
+    {
+      "source_abs": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc\\adc_data_LogFile.txt",
+      "dest_rel": "captures/20260709_203242_phase0_bind_test/metadata/mmws_logs/adc_data_LogFile.txt",
+      "size": 2257,
+      "sha256": "9f1d0025eaee628eeb51880163058282541a87ae6551c95e54ecee74d3ec0e52"
+    },
+    {
+      "source_abs": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc\\adc_data_Raw_LogFile.csv",
+      "dest_rel": "captures/20260709_203242_phase0_bind_test/metadata/mmws_logs/adc_data_Raw_LogFile.csv",
+      "size": 466,
+      "sha256": "7762bd325e747da18b5c8cd20201fb73e2e1b11870c6133149eefe05eeecd608"
+    },
+    {
+      "source_abs": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc\\dca_validation_20260709_185953.json",
+      "dest_rel": "captures/20260709_203242_phase0_bind_test/metadata/mmws_logs/dca_validation_20260709_185953.json",
+      "size": 780,
+      "sha256": "66ea266f02d4c3846b3a2b0a8a3246484eb3e2f822dbda4c28973d66de51f0e8"
+    },
+    {
+      "source_abs": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc\\PackFile.mat",
+      "dest_rel": "captures/20260709_203242_phase0_bind_test/metadata/mmws_logs/PackFile.mat",
+      "size": 70192,
+      "sha256": "08455e199df0ce38d77a25b0e5076a3c0e4f231c67f2b32366ad12326ce9a953"
+    }
+  ],
+  "mmws_output_snapshot_path_rel": null,
+  "firmware_run_id": null,
+  "config_run_id": null,
+  "dca_setup_run_id": null,
+  "capture_trigger_run_id": null,
+  "postproc_run_id": null,
+  "workflow_id": null,
+  "warnings": [],
+  "errors": [],
+  "tags": [],
+  "notes": ""
+}

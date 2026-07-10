@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "capture_id": "20260709_213610_phase1a_integrated_smoke",
+  "capture_name": "phase1a_integrated_smoke",
+  "project_id": "c93154d8",
+  "project_name": "lau_probe",
+  "created_at": "2026-07-09T21:36:10.156739",
+  "updated_at": "2026-07-09T21:46:22.064794",
+  "status": "complete",
+  "mode": "import",
+  "root_path_abs": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe",
+  "capture_dir_rel": "captures/20260709_213610_phase1a_integrated_smoke",
+  "capture_dir_abs": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe\\captures\\20260709_213610_phase1a_integrated_smoke",
+  "raw_dir_rel": "captures/20260709_213610_phase1a_integrated_smoke/raw",
+  "metadata_dir_rel": "captures/20260709_213610_phase1a_integrated_smoke/metadata",
+  "processed_dir_rel": "captures/20260709_213610_phase1a_integrated_smoke/processed",
+  "notes_path_rel": "captures/20260709_213610_phase1a_integrated_smoke/notes.md",
+  "postproc_dir_abs": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc",
+  "expected_bytes": 4194304,
+  "actual_raw_file_size": 4194304,
+  "raw_file_name": "adc_data.bin",
+  "raw_file_rel": "captures/20260709_213610_phase1a_integrated_smoke/raw/adc_data.bin",
+  "raw_file_sha256": "b6511c59fc7056709f6d97ae7e2c0769a96ae91b1e070d219d102f742af18e20",
+  "adc_inspect_path_rel": "captures/20260709_213610_phase1a_integrated_smoke/metadata/adc_inspect.json",
+  "validation_records": [
+    "captures/20260709_213610_phase1a_integrated_smoke/metadata/mmws_logs/dca_validation_20260709_214621.json"
+  ],
+  "copied_mmws_files": [
+    {
+      "source_abs": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc\\cf.json",
+      "dest_rel": "captures/20260709_213610_phase1a_integrated_smoke/metadata/mmws_logs/cf.json",
+      "size": 1492,
+      "sha256": "be6c903e54ee11c8d034e74eaf0b887aaa3ed4f927aad3cbd83a59361e78df86"
+    },
+    {
+      "source_abs": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc\\LogFile.txt",
+      "dest_rel": "captures/20260709_213610_phase1a_integrated_smoke/metadata/mmws_logs/LogFile.txt",
+      "size": 2599,
+      "sha256": "b8b67c39a736da51640b11c2c4bc8ebbc4c47b3e2109d1eb0c7ad7f12c0ce8c8"
+    },
+    {
+      "source_abs": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc\\CLI_LogFile.txt",
+      "dest_rel": "captures/20260709_213610_phase1a_integrated_smoke/metadata/mmws_logs/CLI_LogFile.txt",
+      "size": 4077,
+      "sha256": "5153d5770e82b06cb19c1081d966977c9fbcc133e93b47eee55946fde2cb2913"
+    },
+    {
+      "source_abs": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc\\adc_data_LogFile.txt",
+      "dest_rel": "captures/20260709_213610_phase1a_integrated_smoke/metadata/mmws_logs/adc_data_LogFile.txt",
+      "size": 2424,
+      "sha256": "4d586862fee1a506e1f4add8577ff0819bfc7edae8d4885d320ac50e39b151db"
+    },
+    {
+      "source_abs": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc\\adc_data_Raw_LogFile.csv",
+      "dest_rel": "captures/20260709_213610_phase1a_integrated_smoke/metadata/mmws_logs/adc_data_Raw_LogFile.csv",
+      "size": 466,
+      "sha256": "320c6186eee3518d53ec2862bebdde48ae2b205089a704af410635c30ec61d63"
+    },
+    {
+      "source_abs": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc\\dca_validation_20260709_214621.json",
+      "dest_rel": "captures/20260709_213610_phase1a_integrated_smoke/metadata/mmws_logs/dca_validation_20260709_214621.json",
+      "size": 780,
+      "sha256": "102b30596b5bcf2bf3a9f6fc6b23809af6224879b687b25d9499af717c99b517"
+    },
+    {
+      "source_abs": "C:\\ti\\mmwave_studio_03_01_04_04\\mmWaveStudio\\PostProc\\PackFile.mat",
+      "dest_rel": "captures/20260709_213610_phase1a_integrated_smoke/metadata/mmws_logs/PackFile.mat",
+      "size": 70192,
+      "sha256": "48308e3a4cdb43b8f6fc283f353a0368fef104799b01f1a77d4bfe09aedf29d6"
+    }
+  ],
+  "mmws_output_snapshot_path_rel": null,
+  "firmware_run_id": "df1f275c",
+  "config_run_id": "4b87faae",
+  "dca_setup_run_id": "16a14240",
+  "capture_trigger_run_id": "9135251c",
+  "postproc_run_id": "d6e8f177",
+  "workflow_id": "04b7829b",
+  "warnings": [],
+  "errors": [],
+  "tags": [],
+  "notes": ""
+}

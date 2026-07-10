@@ -1,0 +1,108 @@
+{
+  "file_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe\\captures\\20260709_213610_phase1a_integrated_smoke\\raw\\adc_data.bin",
+  "file_size": 4194304,
+  "expected_bytes": 4194304,
+  "size_match": true,
+  "config": {
+    "frames": 8,
+    "chirps": 128,
+    "rx": 4,
+    "samples": 256,
+    "sample_format": "complex_int16",
+    "iq_order": "iq",
+    "layout": "frame_chirp_rx_sample"
+  },
+  "layout_assumption": "frame_chirp_rx_sample",
+  "layout_assumption_confirmed": false,
+  "error": null,
+  "sha256": "b6511c59fc7056709f6d97ae7e2c0769a96ae91b1e070d219d102f742af18e20",
+  "int16_count": 2097152,
+  "complex_count": 1048576,
+  "first_16_int16_values": [
+    90,
+    0,
+    -1,
+    -1,
+    -13,
+    0,
+    -1,
+    -1,
+    -404,
+    0,
+    -1,
+    -1,
+    -425,
+    0,
+    -1,
+    -1
+  ],
+  "shape": [
+    8,
+    128,
+    4,
+    256
+  ],
+  "dtype": "complex64",
+  "first_8_complex_values": [
+    {
+      "real": 90.0,
+      "imag": 0.0
+    },
+    {
+      "real": -1.0,
+      "imag": -1.0
+    },
+    {
+      "real": -13.0,
+      "imag": 0.0
+    },
+    {
+      "real": -1.0,
+      "imag": -1.0
+    },
+    {
+      "real": -404.0,
+      "imag": 0.0
+    },
+    {
+      "real": -1.0,
+      "imag": -1.0
+    },
+    {
+      "real": -425.0,
+      "imag": 0.0
+    },
+    {
+      "real": -1.0,
+      "imag": -1.0
+    }
+  ],
+  "real_min": -17491.0,
+  "real_max": 1901.0,
+  "real_mean": 2.0804882049560547,
+  "real_std": 417.1528625488281,
+  "imag_min": -32645.0,
+  "imag_max": 32767.0,
+  "imag_mean": -28.04033660888672,
+  "imag_std": 721.4745483398438,
+  "zero_fraction": 0.00035858154296875,
+  "all_zero": false,
+  "per_rx_rms": [
+    {
+      "rx": 0,
+      "rms": 868.6161499023438
+    },
+    {
+      "rx": 1,
+      "rms": 868.5411376953125
+    },
+    {
+      "rx": 2,
+      "rms": 788.2067260742188
+    },
+    {
+      "rx": 3,
+      "rms": 806.9713745117188
+    }
+  ]
+}
