@@ -165,3 +165,12 @@ tools/MmwsRstdBridge/MmwsRstdBridge.exe
 
 # lua-launch probe artifacts
 ti/probe_logs/
+
+# Pytest tmp_path fixture artifacts
+.pytest-tmp*/
+.pytest_tmp/
+
+# Development scratch scripts
+patch*.py
+patch*_out.txt
+patch_dump.py

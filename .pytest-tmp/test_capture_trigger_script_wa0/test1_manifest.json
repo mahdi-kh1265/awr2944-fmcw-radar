@@ -1,9 +1,0 @@
-{
-  "run_id": "test1",
-  "stage": "capture_trigger",
-  "lua_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_capture_trigger_script_wa0\\t.lua",
-  "result_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_capture_trigger_script_wa0\\t_result.json",
-  "progress_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_capture_trigger_script_wa0\\t_progress.jsonl",
-  "dofile": "dofile([[C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_capture_trigger_script_wa0\\t.lua]])",
-  "created_at": "2026-07-09T18:47:06.065153"
-}

@@ -1,7 +1,0 @@
-{
-  "run_id": "test1",
-  "executed": true,
-  "success": false,
-  "error": "CaptureCardConfig_StartRecord failed:\nSystem.ArgumentOutOfRangeException: StartIndex cannot be less than zero.\r\nParameter name: startIndex\r\n   at System.String.Remove(Int32 startIndex)\n",
-  "warnings": []
-}

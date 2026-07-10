@@ -1,9 +1,0 @@
-{
-  "run_id": "621351aa",
-  "stage": "capture_trigger",
-  "lua_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_after_capture_gene0\\probe\\621351aa_capture_trigger.lua",
-  "result_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_after_capture_gene0\\probe\\621351aa_capture_trigger_result.json",
-  "progress_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_after_capture_gene0\\probe\\621351aa_capture_trigger_progress.jsonl",
-  "dofile": "dofile([[C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\.pytest-tmp\\test_resume_after_capture_gene0\\probe\\621351aa_capture_trigger.lua]])",
-  "created_at": "2026-07-09T18:47:03.275720"
-}
