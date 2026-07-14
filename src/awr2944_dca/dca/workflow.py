@@ -25,7 +25,6 @@ from awr2944_dca.dca.scripts import (
     generate_postproc_script,
 )
 from awr2944_dca.dca.validate import check_capture_files
-from awr2944_dca.mmws.post_connect import load_run_result
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +106,13 @@ class CaptureWorkflowState:
     bound_raw_file_sha256: str = ""
     adc_inspect_path_rel: str = ""
     bind_force: bool = False
+
+    # Radar Config metadata
+    radar_config_name: str = ""
+    radar_config_path: str = ""
+    radar_config_sha256: str = ""
+    radar_config_lua_path: str = ""
+    radar_config_lua_sha256: str = ""
 
     # Operator-facing fields
     pending_dofile: str = ""
@@ -273,13 +279,28 @@ def start_workflow(
     # Project binding (optional)
     project_root: Path | str | None = None,
     capture_id: str | None = None,
-    capture_name: str | None = None,
+    capture_name: str = "",
     auto_create_capture: bool = False,
     bind_force: bool = False,
+    radar_config: Any | None = None,
 ) -> CaptureWorkflowState:
-    """Create and initialize a new capture-smoke workflow.
+    """Start a new DCA capture-smoke workflow.
 
-    Raises ValueError on preflight failure or safety violations.
+    Args:
+        probe_dir: Directory to store state and generated scripts.
+        capture_dir: Output directory for the raw ADC binary (e.g. PostProc).
+        firmware_run_id: Optional ID of the validated firmware run.
+        config_run_id: Optional ID of the validated config run.
+        confirm_startframe: Must be True to proceed (safety check).
+        expected_bytes: Expected size of adc_data.bin (default 4MB).
+        archive_existing: Move existing bin/json out of the way.
+        allow_overwrite: If True, do not error on existing file.
+        project_root: Optional project root to bind the capture.
+        capture_id: Optional existing capture ID to bind.
+        capture_name: Required if auto_create_capture=True.
+        auto_create_capture: If True, create a new capture in the project.
+        bind_force: Ignore size mismatch when binding.
+        radar_config: Optional RadarConfig object to record in manifest.
     """
     import awr2944_dca.project as project_lib
 
@@ -310,7 +331,7 @@ def start_workflow(
                 raise ValueError(f"Capture {capture_id} does not exist in project {pr}")
             final_capture_id = capture_id
         elif capture_name and auto_create_capture:
-            manifest = project_lib.new_capture(pr, capture_name, mode="import")
+            manifest = project_lib.new_capture(pr, capture_name, mode="import", radar_config=radar_config)
             final_capture_id = manifest["capture_id"]
 
     if not confirm_startframe:
@@ -377,6 +398,12 @@ def start_workflow(
         bind_requested=bind_requested,
         bind_force=bind_force,
     )
+    
+    if radar_config is not None:
+        state.radar_config_name = getattr(radar_config, "name", "")
+        # Since radar_config might not be saved, we just record its name and maybe Lua if we had it
+        # Actually, the user requirement is that apply_config does the export. We can just record name.
+        state.radar_config_name = radar_config.name or ""
 
     if preflight.overall == "READY_WITH_WARNINGS":
         state.warnings.append(f"Preflight READY_WITH_WARNINGS: {preflight.overall}")

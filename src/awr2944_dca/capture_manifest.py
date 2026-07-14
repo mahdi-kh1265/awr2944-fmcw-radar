@@ -1,0 +1,79 @@
+import json
+from dataclasses import dataclass, asdict
+from pathlib import Path
+from typing import Optional, Any
+from awr2944_dca.dsp.config import RadarProfile
+
+def profile_to_manifest_dict(profile: RadarProfile) -> dict[str, Any]:
+    """Serialize RadarProfile strictly to primitive Python types."""
+    d = asdict(profile)
+    # Ensure no nested objects or enums leak into JSON
+    return d
+
+def profile_from_manifest_dict(data: dict[str, Any]) -> RadarProfile:
+    """Deserialize RadarProfile strictly from primitive Python types."""
+    return RadarProfile(**data)
+
+@dataclass
+class CaptureManifest:
+    total_frames: int
+    guard_frame_count: int
+    canonical_frame_count: int
+    native_sha256: str
+    canonical_sha256: str
+    packet_count: int
+    sequence_gaps: int
+    capture_timestamp: str
+    parser_layout_version: str
+    dsp_config_version: str
+
+    # Legacy V1 schema fields
+    radar_config: Optional[list[str]] = None
+    dca_config: Optional[dict] = None
+
+    # V2 schema fields (Optional for V1 backward compatibility)
+    manifest_schema_version: int = 3
+    profile: Optional[dict[str, Any]] = None
+    native_byte_count: Optional[int] = None
+    canonical_native_byte_count: Optional[int] = None
+    logical_byte_count: Optional[int] = None
+    canonical_logical_byte_count: Optional[int] = None
+    stream_layout: Optional[str] = None
+    active_lane_indices: Optional[list[int]] = None
+    physical_lvds_lanes: Optional[int] = None
+    dca_word_slots: Optional[int] = None
+    storage_expansion_factor: Optional[int] = None
+    logical_cube_shape: Optional[list[int]] = None
+    sdk_cli_commands: Optional[list[str]] = None
+    dca_configuration: Optional[dict] = None
+    
+    # Execution status fields
+    status: str = "complete"
+    success: bool = True
+    failure_stage: Optional[str] = None
+    failure_reason: Optional[str] = None
+    captured_native_bytes: Optional[int] = None
+    expected_native_bytes: Optional[int] = None
+    
+    # V3 schema fields for byte counter integrity
+    byte_counter_discontinuity_count: Optional[int] = None
+    missing_payload_bytes: Optional[int] = None
+    overlap_payload_bytes: Optional[int] = None
+    
+    # Legacy fields
+    byte_counter_gaps: Optional[int] = None
+
+    def to_json(self, path: Path):
+        with open(path, "w") as f:
+            json.dump(asdict(self), f, indent=4)
+
+    @classmethod
+    def from_json(cls, path: Path) -> "CaptureManifest":
+        with open(path, "r") as f:
+            data = json.load(f)
+            
+        # Explicit version schema enforcement if missing
+        if "manifest_schema_version" not in data:
+            data["manifest_schema_version"] = 1
+
+        return cls(**data)

@@ -6,6 +6,20 @@ numpy cube shaped (frames, chirps, rx, samples) of complex64.
 No FFT, no Doppler, no angle processing.  This is the raw-data
 loading and inspection layer only.
 
+.. deprecated::
+    **INVALID FOR AWR2944 RAW CAPTURES.**
+    The AWR2944 outputs Real int16 ADC data (not complex I/Q) over
+    2 LVDS lanes.  DCA1000 raw files from AWR2944 contain 4-word-slot
+    frames with inactive-lane filler in slots 2/3.  Interpreting such
+    files as complex int16 [I,Q,I,Q,...] produces meaningless results.
+
+    Use ``awr2944_adc.parse_awr2944_real()`` instead for AWR2944.
+
+    This module may still be valid for devices that produce complex ADC
+    output (e.g., xWR14xx, xWR16xx, AWR2243) but must NOT be used for
+    AWR2944 without explicit device/layout metadata confirming complex
+    format.
+
 Validated binary assumptions (parser v1):
     adc_data.bin size : 4,194,304 bytes
     sample format     : complex int16 (I int16 + Q int16 = 4 bytes)
@@ -18,6 +32,7 @@ Layout assumption:
     on the validated capture.  It has NOT been confirmed against TI
     MATLAB reference scripts or controlled synthetic captures.
 """
+
 
 from __future__ import annotations
 

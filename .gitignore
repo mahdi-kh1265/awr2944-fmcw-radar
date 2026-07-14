@@ -155,10 +155,18 @@ test_output/
 *.bin
 experiments/
 data/
+captures/
+exp_lau_probe/captures/
+exp_lau_probe/ti/probe_logs/
 *.zarr/
 *.h5
 *.hdf5
 *.mat
+*.npz
+
+# Generated analysis artifacts
+captures/*/analysis/
+captures/*/raw/*.csv
 
 # C# RSTD bridge build artifacts
 tools/MmwsRstdBridge/MmwsRstdBridge.exe
@@ -174,3 +182,15 @@ ti/probe_logs/
 patch*.py
 patch*_out.txt
 patch_dump.py
+
+# Phase 5: Headless capture artifacts
+exp_lau_probe/ti/headless/toolchain.local.json
+*.appimage
+*.tiimage
+exp_lau_probe/ti/headless/captures/
+exp_lau_probe/ti/headless/logs/
+exp_lau_probe/ti/headless/*.bin
+
+# MATLAB figure files
+*.fig
+adc_data.fig

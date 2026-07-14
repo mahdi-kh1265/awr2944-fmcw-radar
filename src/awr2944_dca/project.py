@@ -77,6 +77,27 @@ _POSTPROC_VALIDATION_GLOB = "dca_validation_*.json"
 # Maximum size for PackFile.mat copy (50 MB)
 _MAX_MAT_FILE_BYTES = 50 * 1024 * 1024
 
+# Default values for project.json["defaults"]
+PROJECT_DEFAULTS = {
+    "firmware_run_id": "",
+    "config_run_id": "",
+    "expected_bytes": DEFAULT_EXPECTED_BYTES,
+    "archive_existing": True,
+    "confirm_startframe": True,
+    "bind_force": False,
+    "ensure_eth": True,
+}
+
+# Default values for project.json["dca_profile"]
+DCA_PROFILE_DEFAULTS = {
+    "host_ip": "192.168.33.30",
+    "prefix_length": 24,
+    "dca_ip": "192.168.33.180",
+    "dca_mac": "",
+    "config_port": 4096,
+    "data_port": 4098,
+}
+
 
 # ---------------------------------------------------------------------------
 # Utility: atomic JSON write
@@ -213,6 +234,7 @@ def init_project(
 
     # Create directory tree
     dirs = [
+        root / "configs" / "radar",
         root / "configs" / "mmws" / "lua",
         root / "configs" / "mmws" / "manifests",
         root / "configs" / "mmws" / "results",
@@ -365,6 +387,8 @@ def new_capture(
     mode: Literal["import", "direct"] = "import",
     notes: str = "",
     *,
+    radar_config: Any | None = None,
+    radar_config_lua_path: str = "",
     _now: datetime.datetime | None = None,
 ) -> dict:
     """Create a new capture folder and manifest.
@@ -429,6 +453,11 @@ def new_capture(
         "raw_file_name": None,
         "raw_file_rel": None,
         "raw_file_sha256": None,
+        "radar_config_name": getattr(radar_config, "name", None) if radar_config else None,
+        "radar_config_path": None,
+        "radar_config_sha256": None,
+        "radar_config_lua_path": radar_config_lua_path or None,
+        "radar_config_lua_sha256": None,
         "adc_inspect_path_rel": None,
         "validation_records": [],
         "copied_mmws_files": [],
@@ -960,3 +989,114 @@ def verify_capture(root: Path | str, capture_id: str) -> dict:
         "warnings": warnings,
         "details": details,
     }
+
+
+# ---------------------------------------------------------------------------
+# get_defaults / set_defaults
+# ---------------------------------------------------------------------------
+
+def get_defaults(root: Path | str) -> dict:
+    """Return merged project defaults from ``project.json["defaults"]``.
+
+    Keys not present in the saved defaults are filled from
+    ``PROJECT_DEFAULTS``.
+    """
+    proj = load_project(root)
+    saved = proj.get("defaults", {})
+    merged = {**PROJECT_DEFAULTS, **saved}
+    return merged
+
+
+def set_defaults(root: Path | str, **kwargs: Any) -> dict:
+    """Update project defaults and persist to ``project.json``.
+
+    Only keys present in ``PROJECT_DEFAULTS`` are accepted.
+    Returns the updated defaults dict.
+
+    Raises:
+        ValueError: If an unknown key is provided.
+    """
+    unknown = set(kwargs) - set(PROJECT_DEFAULTS)
+    if unknown:
+        raise ValueError(
+            f"Unknown default keys: {unknown}. "
+            f"Valid keys: {sorted(PROJECT_DEFAULTS)}"
+        )
+
+    root = Path(root).resolve()
+    proj = load_project(root)
+    saved = proj.get("defaults", {})
+    saved.update(kwargs)
+    proj["defaults"] = saved
+    proj["updated_at"] = datetime.datetime.now().isoformat()
+    atomic_json_write(root / PROJECT_MARKER, proj)
+    return {**PROJECT_DEFAULTS, **saved}
+
+
+# ---------------------------------------------------------------------------
+# DCA profile
+# ---------------------------------------------------------------------------
+
+def get_dca_profile(root: Path | str) -> dict:
+    """Return merged DCA profile from ``project.json["dca_profile"]``."""
+    proj = load_project(root)
+    saved = proj.get("dca_profile", {})
+    return {**DCA_PROFILE_DEFAULTS, **saved}
+
+
+def set_dca_profile(root: Path | str, **kwargs: Any) -> dict:
+    """Update DCA profile and persist to ``project.json``.
+
+    Only keys present in ``DCA_PROFILE_DEFAULTS`` are accepted.
+    """
+    unknown = set(kwargs) - set(DCA_PROFILE_DEFAULTS)
+    if unknown:
+        raise ValueError(
+            f"Unknown DCA profile keys: {unknown}. "
+            f"Valid keys: {sorted(DCA_PROFILE_DEFAULTS)}"
+        )
+
+    root = Path(root).resolve()
+    proj = load_project(root)
+    saved = proj.get("dca_profile", {})
+    saved.update(kwargs)
+    proj["dca_profile"] = saved
+    proj["updated_at"] = datetime.datetime.now().isoformat()
+    atomic_json_write(root / PROJECT_MARKER, proj)
+    return {**DCA_PROFILE_DEFAULTS, **saved}
+
+
+# ---------------------------------------------------------------------------
+# Capture notes and tags
+# ---------------------------------------------------------------------------
+
+def add_capture_note(root: Path | str, capture_id: str, text: str) -> None:
+    """Append a timestamped note to the capture's ``notes.md``."""
+    root = Path(root).resolve()
+    cap_dir = root / "captures" / capture_id
+    notes_path = cap_dir / "notes.md"
+    if not cap_dir.exists():
+        raise FileNotFoundError(f"Capture folder not found: {cap_dir}")
+
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    entry = f"\n**[{ts}]** {text}\n"
+
+    with open(notes_path, "a", encoding="utf-8") as f:
+        f.write(entry)
+
+
+def add_capture_tags(root: Path | str, capture_id: str, *tags: str) -> list[str]:
+    """Add tags to a capture manifest. Returns the updated tag list."""
+    root = Path(root).resolve()
+    cap_dir = root / "captures" / capture_id
+    manifest_path = cap_dir / "capture_manifest.json"
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Manifest not found: {manifest_path}")
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    existing = set(manifest.get("tags", []))
+    existing.update(tags)
+    manifest["tags"] = sorted(existing)
+    manifest["updated_at"] = datetime.datetime.now().isoformat()
+    atomic_json_write(manifest_path, manifest)
+    return manifest["tags"]

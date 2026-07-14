@@ -623,7 +623,7 @@ def test_verify_capture_passes_under_ignored_root(tmp_path):
     bind_mmws_output(tmp_path, manifest["capture_id"], postproc_dir=str(pp))
     inspect_capture(tmp_path, manifest["capture_id"], refresh_adc_inspect=True)
     # Using subprocess.run mock to simulate ignored root
-    with patch("subprocess.run") as mock_run:
+    with patch("subprocess.run") as mock_run, patch("shutil.which", return_value="git"):
         mock_run.return_value.returncode = 0  # 0 means ignored in check-ignore
         result = verify_capture(tmp_path, manifest["capture_id"])
         assert result["passed"] is True
@@ -639,7 +639,7 @@ def test_verify_capture_catches_hash_under_ignored_root(tmp_path):
     raw_path = tmp_path / "captures" / manifest["capture_id"] / "raw" / "adc_data.bin"
     raw_path.write_bytes(b"\x00" * 4194304)  # Break hash but keep size
     
-    with patch("subprocess.run") as mock_run:
+    with patch("subprocess.run") as mock_run, patch("shutil.which", return_value="git"):
         mock_run.return_value.returncode = 0  # ignored root
         result = verify_capture(tmp_path, manifest["capture_id"])
         assert result["passed"] is False
@@ -667,7 +667,7 @@ def test_verify_capture_enforces_gitignore_on_normal_root(tmp_path):
         # Everything else is not ignored (which is fine for manifest/inspect)
         return CompletedProcess(args, 1)
     
-    with patch("subprocess.run", side_effect=mock_subprocess_run):
+    with patch("subprocess.run", side_effect=mock_subprocess_run), patch("shutil.which", return_value="git"):
         result = verify_capture(tmp_path, manifest["capture_id"])
         assert result["passed"] is False
         assert any("raw ADC file is not ignored by git" in e for e in result["errors"])

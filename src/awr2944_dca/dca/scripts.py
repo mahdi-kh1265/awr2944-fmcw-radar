@@ -10,14 +10,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from awr2944_dca.mmws.post_connect import (
-    GeneratedScript,
-    _atomic_write_manifest,
-    _lua_log_progress,
-    _lua_result_init_and_save,
-    _lua_safe_call,
-)
-
+from typing import Optional, TYPE_CHECKING
+if TYPE_CHECKING:
+    from awr2944_dca.mmws.post_connect import GeneratedScript
 
 def generate_dca_setup_script(
     run_id: str,
@@ -30,6 +25,14 @@ def generate_dca_setup_script(
     packet_delay: int = 25,
 ) -> GeneratedScript:
     """Generate DCA1000 setup Lua. State-changing, but no RF transmission."""
+    from awr2944_dca.mmws.post_connect import (
+        GeneratedScript,
+        _atomic_write_manifest,
+        _lua_log_progress,
+        _lua_result_init_and_save,
+        _lua_safe_call,
+    )
+
     prog_path = out_path.with_name(out_path.stem + "_progress.jsonl")
     res_path = out_path.with_name(out_path.stem + "_result.json")
 
@@ -115,10 +118,19 @@ def generate_capture_trigger_script(
     output_dir: Path,
     confirm_startframe: bool = False,
 ) -> GeneratedScript:
-    """Generate capture trigger Lua (StartRecord + StartFrame).
+    """Generate the trigger Lua script.
     
-    Raises ValueError if confirm_startframe is False.
+    This script is small and only executes StartRecord and StartFrame.
+    Requires radar static configuration to be complete.
     """
+    from awr2944_dca.mmws.post_connect import (
+        GeneratedScript,
+        _atomic_write_manifest,
+        _lua_log_progress,
+        _lua_result_init_and_save,
+        _lua_safe_call,
+    )
+
     if not confirm_startframe:
         raise ValueError(
             "ERROR: This script contains ar1.StartFrame(), which triggers RF transmission.\n"

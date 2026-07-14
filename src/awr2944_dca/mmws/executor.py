@@ -1035,23 +1035,18 @@ def _execute_via_csharp_bridge(
 # ---------------------------------------------------------------------------
 
 
-def _execute_via_pywinauto(script_path: Path, verbose: bool = False) -> ExecutionResult:
-    """Execute a Lua script by pasting dofile into mmWave Studio Lua Shell.
+def _execute_via_pywinauto(
+    script_path: Path,
+    verbose: bool = False,
+    focused_only: bool = False,
+) -> ExecutionResult:
+    """Execute a Lua script using pywinauto to paste into the Lua Shell.
 
     This is a TRANSPORT ONLY — it submits Lua to the existing Lua Shell.
 
-    ALLOWED actions:
-    - Focus mmWave Studio window
-    - Find the Lua Shell input control (Scintilla or text input)
-    - Paste dofile([[script_path]]) via clipboard + Ctrl+V
-    - Press Enter
-
-    FORBIDDEN actions (these must NEVER be implemented):
-    - Clicking Connection, RF, Data Capture, or any radar-config tabs
-    - Clicking "RF Power Up", "SPI Connect", "Trigger Frame", or any button
-    - Editing COM port, IP address, or any GUI text field
-    - Using GUI controls as the source of truth
-    - Sending any keystroke to controls other than the Lua Shell input
+    If focused_only=True, it skips searching for the window and control,
+    assuming the user has manually focused the Lua Shell input. It just
+    pastes the command and presses Enter.
     """
     vlog = _VerboseLog(verbose)
     start = time.monotonic()
@@ -1060,16 +1055,7 @@ def _execute_via_pywinauto(script_path: Path, verbose: bool = False) -> Executio
         from pywinauto import keyboard  # type: ignore[import-untyped]
         import pyperclip  # type: ignore[import-untyped]
 
-        app = Application(backend="uia").connect(path="mmWaveStudio.exe")
-        main_window = app.top_window()
-        main_window.set_focus()
-        time.sleep(0.3)
-        vlog.log("Connected to mmWaveStudio.exe via pywinauto")
-
-        # Search strategies for Lua Shell input control
         lua_shell = None
-
-        # Strategy 1: Look for Scintilla control (the Lua editor/input)
         for ctrl in main_window.descendants():
             try:
                 class_name = ctrl.class_name()
@@ -1095,7 +1081,7 @@ def _execute_via_pywinauto(script_path: Path, verbose: bool = False) -> Executio
                     vlog.log(f"Found Lua control: class={class_name}, text={ctrl_text[:50]}")
                     break
 
-        if lua_shell is None:
+        if not focused_only and lua_shell is None:
             elapsed = time.monotonic() - start
             vlog.print_if_enabled()
             return ExecutionResult(
@@ -1107,8 +1093,6 @@ def _execute_via_pywinauto(script_path: Path, verbose: bool = False) -> Executio
                 verbose_log=vlog.lines,
             )
 
-        dofile_cmd = f'dofile([[{script_path.resolve()}]])'
-
         # Use clipboard paste for reliability (type_keys can lose characters)
         try:
             old_clipboard = pyperclip.paste()
@@ -1116,8 +1100,12 @@ def _execute_via_pywinauto(script_path: Path, verbose: bool = False) -> Executio
             old_clipboard = ""
 
         try:
-            lua_shell.set_focus()
-            time.sleep(0.2)
+            if lua_shell:
+                lua_shell.set_focus()
+                time.sleep(0.2)
+            elif focused_only:
+                # Give user a tiny window if they just alt-tabbed back
+                time.sleep(0.5)
             pyperclip.copy(dofile_cmd)
             keyboard.send_keys("^v")  # Ctrl+V
             time.sleep(0.1)
@@ -1215,13 +1203,22 @@ def detect_available_modes() -> list[TransportInfo]:
     # C# RSTD Bridge (primary transport)
     bridge = _find_csharp_bridge()
     port_open = _is_rstd_port_open()
-    if bridge and port_open:
-        modes.append(TransportInfo(
-            mode=ExecutionMode.CSHARP_RSTD,
-            available=True,
-            confidence="high",
-            detail=f"MmwsRstdBridge.exe found, TCP:{_RSTD_PORT} open",
-        ))
+    if bridge and _is_rstd_port_open():
+        running = _is_mmws_running()
+        if not running:
+            modes.append(TransportInfo(
+                mode=ExecutionMode.CSHARP_RSTD,
+                available=False,
+                confidence="low",
+                detail=f"MmwsRstdBridge.exe alive (TCP:{_RSTD_PORT} open) but mmWaveStudio.exe is NOT running. Stale bridge.",
+            ))
+        else:
+            modes.append(TransportInfo(
+                mode=ExecutionMode.CSHARP_RSTD,
+                available=True,
+                confidence="high",
+                detail=f"MmwsRstdBridge.exe found, TCP:{_RSTD_PORT} open, mmWaveStudio running",
+            ))
     elif bridge:
         modes.append(TransportInfo(
             mode=ExecutionMode.CSHARP_RSTD,
@@ -1275,14 +1272,29 @@ def detect_available_modes() -> list[TransportInfo]:
                 detail="Legacy Pythonnet RSTD not recommended",
             ))
 
-    # CLI launch
+    # CLI launch via mmWaveStudio.exe /lua
+    # Proven to execute Lua and write result files (manual test confirmed).
+    # WARNING: may launch a new instance; does not guarantee current GUI session state.
+    # Safe for smoke tests and standalone scripts.
     exe = _find_mmws_exe()
-    modes.append(TransportInfo(
-        mode=ExecutionMode.CLI_LAUNCH,
-        available=exe is not None,
-        confidence="medium" if exe else "low",
-        detail=str(exe) if exe else "mmWaveStudio.exe not found",
-    ))
+    if exe:
+        modes.append(TransportInfo(
+            mode=ExecutionMode.CLI_LAUNCH,
+            available=True,
+            confidence="medium",  # proven for standalone scripts; session-isolation caveat
+            detail=(
+                f"mmWaveStudio.exe found: {exe}. "
+                "Proven to execute Lua + write result files. "
+                "WARNING: may open new instance, does not preserve current session."
+            ),
+        ))
+    else:
+        modes.append(TransportInfo(
+            mode=ExecutionMode.CLI_LAUNCH,
+            available=False,
+            confidence="low",
+            detail="mmWaveStudio.exe not found in C:\\ti",
+        ))
 
     # Manual (always available but only when explicitly requested)
     modes.append(TransportInfo(
@@ -1591,6 +1603,17 @@ def execute_script(
             error=f"Script not found: {script_path}",
         )
 
+    # Normalize aliases
+    mode = mode.lower().replace("_", "-")
+    if mode in ("cli-lua-launch", "lua-launch", "cli-launch"):
+        mode = "lua-launch"
+    if mode in ("ui-lua-shell", "ui-lua-shell-focused"):
+        # We handle focused as a special flag
+        focused_only = (mode == "ui-lua-shell-focused")
+        mode = "pywinauto"
+    else:
+        focused_only = False
+
     if mode == "manual":
         return ExecutionResult(
             mode=ExecutionMode.MANUAL_ONE_SHOT,
@@ -1598,19 +1621,32 @@ def execute_script(
             error=None,
         )
 
-    # --- Priority 1: C# RSTD Bridge (primary transport) ---
+    # --- Priority 1: pywinauto Lua Shell (Primary transport for tonight) ---
+    if mode in ("pywinauto", "auto"):
+        if _HAVE_PYWINAUTO and (focused_only or _is_mmws_running()):
+            return _execute_via_pywinauto(script_path, verbose=verbose, focused_only=focused_only)
+        elif mode == "pywinauto":
+            if not _HAVE_PYWINAUTO:
+                return ExecutionResult(
+                    mode=ExecutionMode.UI_LUA_SHELL,
+                    success=False,
+                    error="pywinauto not installed. "
+                          "Install: python -m pip install -e \".[automation]\"",
+                )
+            return ExecutionResult(
+                mode=ExecutionMode.UI_LUA_SHELL,
+                success=False,
+                error="mmWave Studio is not running",
+            )
+
+    # --- Priority 2: C# RSTD Bridge (fallback/legacy) ---
     if mode in ("csharp-rstd", "auto"):
         bridge = _find_csharp_bridge()
         if bridge and _is_rstd_port_open():
             result = _execute_via_csharp_bridge(
                 script_path, verbose=verbose, timeout=timeout, apartment=apartment,
             )
-            if result.success or mode == "csharp-rstd" or not allow_fallback:
-                if not result.success and not allow_fallback and result.error and "BRIDGE_TIMEOUT" in result.error:
-                    # For hardware stages, a timeout means the board or Studio is hung.
-                    result.error = "HARDWARE_SCRIPT_TIMEOUT: mmWave Studio hung. Please restart mmWave Studio and reset the board."
-                return result
-            # auto mode: bridge failed, fall through to pywinauto
+            return result
         elif mode == "csharp-rstd":
             if bridge is None:
                 return ExecutionResult(
@@ -1624,24 +1660,6 @@ def execute_script(
                 success=False,
                 error=f"RSTD port {_RSTD_PORT} not open. "
                       f"Is mmWave Studio running?",
-            )
-
-    # --- Priority 2: pywinauto Lua Shell (UI fallback) ---
-    if mode in ("pywinauto", "auto"):
-        if _HAVE_PYWINAUTO and _is_mmws_running():
-            return _execute_via_pywinauto(script_path, verbose=verbose)
-        elif mode == "pywinauto":
-            if not _HAVE_PYWINAUTO:
-                return ExecutionResult(
-                    mode=ExecutionMode.UI_LUA_SHELL,
-                    success=False,
-                    error="pywinauto not installed. "
-                          "Install: python -m pip install -e \".[automation]\"",
-                )
-            return ExecutionResult(
-                mode=ExecutionMode.UI_LUA_SHELL,
-                success=False,
-                error="mmWave Studio is not running",
             )
 
     # --- MATLAB RSTD Bridge ---

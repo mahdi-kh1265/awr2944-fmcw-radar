@@ -1,7 +1,9 @@
-"""mmWave Studio backend controller package.
+"""Legacy mmWave Studio backend controller package.
 
-Python/Jupyter is the control layer and source of truth.
-mmWave Studio is the execution backend.
-Python controls mmWave Studio through generated Lua/ar1.* scripts.
-Python must never directly open the AWR radar RS232 port while mmWave Studio owns it.
+This subsystem is considered legacy and optional.
+The primary production hardware execution path now bypasses mmWave Studio entirely,
+using the AWR2944 Demo UART CLI and direct DCA1000 UDP socket capture.
+
+This module is retained for mmWave Studio GUI validation, RSTD automation,
+and specific radar features not yet supported by the SDK CLI path.
 """
