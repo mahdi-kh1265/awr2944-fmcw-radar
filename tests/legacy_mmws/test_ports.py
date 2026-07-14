@@ -1,4 +1,6 @@
 import pytest
+pytestmark = pytest.mark.legacy_mmws
+import pytest
 from awr2944_dca.hardware.ports import scan_ports, resolve_port, save_local_hardware
 
 class MockPort:

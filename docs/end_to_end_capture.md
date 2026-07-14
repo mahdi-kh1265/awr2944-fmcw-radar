@@ -1,6 +1,16 @@
 # AWR2944 Direct Capture (Phase I) - End to End Guide
 
-This guide describes the hardened production flow for capturing raw radar data from the Texas Instruments AWR2944 and DCA1000 EVM using direct Python-based UART and UDP commands, completely bypassing mmWave Studio.
+This guide describes the hardened production flow for capturing raw radar data from the Texas Instruments AWR2944 and DCA1000 EVM. 
+The production capture is mmWave Studio GUI-, Lua-, and RSTD-free. TI's DCA1000 command-line utilities remain an external runtime dependency for DCA FPGA/network initialization.
+
+The actual production chain operates in this exact order:
+1. **SDK Demo UART CLI**: Configures the radar chirp and frame parameters natively.
+2. **TI DCA1000 CLI Initialization**: Resets and arms the DCA1000 via external `DCA1000EVM_CLI_Control.exe`.
+3. **Direct UDP Capture**: A lightweight Python thread captures packets and streams them to disk while preserving high-resolution metadata.
+4. **Sequence/Counter Validation**: Discontinuities in sequence numbers and DCA wire payload byte counters are validated.
+5. **DCA Depadding & Canonical ADC Cube Extraction**: Truncates any dropped/padding bytes at the end of the stream, emitting a canonical cube.
+6. **Python DSP**: Parses the canonical cube.
+7. **Standalone MATLAB Viewer**: Presents the results cleanly via `buildMmwsCompatibleShell.m`.
 
 ## Prerequisites
 

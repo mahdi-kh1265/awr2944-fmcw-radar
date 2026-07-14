@@ -1,3 +1,5 @@
+import pytest
+pytestmark = pytest.mark.legacy_mmws
 import json
 from pathlib import Path
 import pytest

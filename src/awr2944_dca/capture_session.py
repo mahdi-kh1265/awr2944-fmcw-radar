@@ -294,8 +294,8 @@ def run_capture(
         parser_layout_version=layout.layout_version,
         dsp_config_version="1.0",
         
-        # V2 specific fields
-        manifest_schema_version=2,
+        # V3 specific fields
+        manifest_schema_version=3,
         profile=profile_to_manifest_dict(profile),
         native_byte_count=expected_native_bytes,
         canonical_native_byte_count=expected_canonical_bytes,
@@ -314,7 +314,13 @@ def run_capture(
         failure_stage=failure_stage,
         failure_reason=failure_reason,
         captured_native_bytes=captured_native_bytes,
-        expected_native_bytes=expected_native_bytes
+        expected_native_bytes=expected_native_bytes,
+        
+        # Packet metadata fields
+        packet_metadata_preserved=bool(receiver.packet_records),
+        packet_metadata_path="metadata/packet_metadata.jsonl" if receiver.packet_records else None,
+        packet_metadata_format="jsonl" if receiver.packet_records else None,
+        packet_record_count=len(receiver.packet_records) if receiver.packet_records else None,
     )
     manifest.to_json(manifest_path)
     

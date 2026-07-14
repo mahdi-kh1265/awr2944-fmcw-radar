@@ -2,15 +2,19 @@
 
 A Python research toolkit for TI AWR2944EVM + DCA1000EVM raw ADC radar captures.
 
-This package adds the reproducible research layer on top of TI mmWave Studio:
-experiment configs, metadata, file-size validation, binary parsing, DSP
-processing, plotting, and exports.
+This package provides a robust, native direct-capture pipeline that is free from mmWave Studio GUI automation and Lua scripts.
 
-## AWR2944 layout status
+## Architecture
 
-The AWR2944 binary layout (`awr2944_real_interleaved_2lane_unvalidated`) is
-a best-guess implementation.  It has **not been validated** against real captures.
-See `docs/DATA_FORMATS.md` for the validation checklist.
+The production capture chain uses:
+1. SDK Demo UART CLI for radar configuration
+2. TI DCA1000 CLI utilities (external dependency) for FPGA initialization
+3. Native direct UDP capture with zero-copy stream processing and metadata logging
+4. Sequence/counter validation and DCA depadding
+5. Canonical ADC cube extraction
+6. Python DSP and standalone MATLAB viewer `buildMmwsCompatibleShell.m`
+
+Historical mmWave Studio GUI automation is available as an optional `legacy-mmws` dependency extra for compatibility and debugging.
 
 ## Reference documents
 

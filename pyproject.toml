@@ -38,7 +38,7 @@ hardware = [
     "pyserial>=3.5",
     "psutil>=6.0",
 ]
-automation = [
+legacy-mmws = [
     "pythonnet>=3.0",
     "pywinauto>=0.6",
     "pyperclip>=1.8",
@@ -75,6 +75,9 @@ line-length = 100
 target-version = "py312"
 
 [tool.pytest.ini_options]
+markers = [
+    "legacy_mmws: marks tests as part of the optional legacy mmWave Studio suite",
+]
 testpaths = [
     "tests",
 ]

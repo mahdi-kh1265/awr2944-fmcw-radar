@@ -7,6 +7,7 @@ import struct
 import threading
 import time
 import logging
+import json
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,7 @@ class UdpReceiverThread(threading.Thread):
         self.byte_counter_discontinuity_count = 0
         self.missing_payload_bytes = 0
         self.overlap_payload_bytes = 0
+        self.packet_records = []
         self.phase = "ready"
         
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -128,6 +130,8 @@ class UdpReceiverThread(threading.Thread):
         last_seq = None
         last_byte_counter = None
         last_wire_payload_len = None
+        
+        packet_index = 0
         
         try:
             with open(self.output_path, "wb") as f:
@@ -186,6 +190,30 @@ class UdpReceiverThread(threading.Thread):
                                 elif actual_delta < expected_delta:
                                     self.overlap_payload_bytes += expected_delta - actual_delta
                                     
+                        classification = "normal"
+                        if seq_delta != 1:
+                            classification = "sequence_gap"
+                        elif last_byte_counter is not None and actual_delta != expected_delta:
+                            classification = "byte_gap"
+                            
+                        # It might also be the last packet
+                        if self.received_bytes >= self.expected_bytes:
+                            if classification == "normal":
+                                classification = "last_packet"
+                                
+                        self.packet_records.append({
+                            "packet_index": packet_index,
+                            "sequence_number": seq,
+                            "byte_counter": byte_count,
+                            "wire_payload_length": wire_payload_len,
+                            "consumed_payload_length": consumed_payload_len,
+                            "arrival_time_ns": time.perf_counter_ns(),
+                            "sequence_delta": seq_delta,
+                            "counter_delta": actual_delta if last_byte_counter is not None else 0,
+                            "classification": classification,
+                        })
+                        packet_index += 1
+
                         last_seq = seq
                         last_byte_counter = byte_count
                         last_wire_payload_len = wire_payload_len
@@ -202,6 +230,8 @@ class UdpReceiverThread(threading.Thread):
             self.failure_reason = f"Exception during capture: {e}"
         finally:
             self.sock.close()
+            # Write metadata after capture loop exits
+            self._write_metadata()
             
             if self.stop_event.is_set():
                 self.phase = "stopped"
@@ -218,6 +248,19 @@ class UdpReceiverThread(threading.Thread):
                 f"Captured: {self.received_bytes}/{self.expected_bytes} bytes. "
                 f"Seq Gaps: {self.sequence_gaps}, Byte Discontinuities: {self.byte_counter_discontinuity_count}"
             )
+
+    def _write_metadata(self) -> None:
+        if not self.packet_records:
+            return
+        meta_dir = Path(self.output_path).parent / "metadata"
+        meta_dir.mkdir(parents=True, exist_ok=True)
+        meta_path = meta_dir / "packet_metadata.jsonl"
+        try:
+            with open(meta_path, "w") as f:
+                for rec in self.packet_records:
+                    f.write(json.dumps(rec) + "\n")
+        except Exception as e:
+            logger.error(f"Failed to write packet metadata: {e}")
 
     def stop(self):
         self.stop_event.set()

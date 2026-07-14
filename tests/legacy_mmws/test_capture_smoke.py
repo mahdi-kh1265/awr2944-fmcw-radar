@@ -1,3 +1,5 @@
+import pytest
+pytestmark = pytest.mark.legacy_mmws
 """Tests for DCA capture-smoke workflow (Path A).
 
 All tests use monkeypatched preflight and tmp_path.

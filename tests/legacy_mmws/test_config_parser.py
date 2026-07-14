@@ -1,4 +1,6 @@
 import pytest
+pytestmark = pytest.mark.legacy_mmws
+import pytest
 from awr2944_dca.mmws.config_parser import parse_ar1_call, AR1ParseError
 
 def test_parse_simple_call():

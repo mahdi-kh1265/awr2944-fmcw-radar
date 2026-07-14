@@ -1,4 +1,6 @@
 import pytest
+pytestmark = pytest.mark.legacy_mmws
+import pytest
 import subprocess
 import tempfile
 from pathlib import Path

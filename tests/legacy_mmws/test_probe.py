@@ -1,4 +1,6 @@
 import pytest
+pytestmark = pytest.mark.legacy_mmws
+import pytest
 from pathlib import Path
 from awr2944_dca.ti.probe import (
     find_studio,

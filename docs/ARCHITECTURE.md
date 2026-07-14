@@ -3,17 +3,19 @@
 ## Data flow
 
 ```text
-TI mmWave Studio / DCA1000
+SDK Demo UART CLI (radar config) / DCA1000 CLI (FPGA init)
     ↓
-adc_data_Raw_*.bin ──→ packet inspect/reorder/zero-fill ──→ adc_data.bin
-    ↓                                                       ↓
-packet_report.json                                     parse_adc_data_bin()
-                                                            ↓
-                                         cube[frame, chirp, rx/antenna, sample]
-                                                            ↓
-             range FFT → clutter removal → Doppler FFT → angle FFT → CFAR
-                                                            ↓
-                         figures / point cloud / report / dashboard / exports
+Direct UDP Capture (streaming + metadata logging)
+    ↓
+adc_data.bin (native size)
+    ↓
+Sequence/Counter Validation & Depadding
+    ↓
+adc_data_canonical.bin (exact N-frame size)
+    ↓
+parse_adc_data_bin() → cube[frame, chirp, rx, sample]
+    ↓
+standalone MATLAB viewer (buildMmwsCompatibleShell.m) OR Python DSP (range/doppler FFT)
 ```
 
 ## Central shape

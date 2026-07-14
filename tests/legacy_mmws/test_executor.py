@@ -1,3 +1,5 @@
+import pytest
+pytestmark = pytest.mark.legacy_mmws
 """Tests for mmws automatic Lua execution (executor + smoke + bridge)."""
 
 import json

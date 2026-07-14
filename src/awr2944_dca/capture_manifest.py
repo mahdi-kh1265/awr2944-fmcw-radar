@@ -59,6 +59,10 @@ class CaptureManifest:
     byte_counter_discontinuity_count: Optional[int] = None
     missing_payload_bytes: Optional[int] = None
     overlap_payload_bytes: Optional[int] = None
+    packet_metadata_preserved: Optional[bool] = None
+    packet_metadata_path: Optional[str] = None
+    packet_metadata_format: Optional[str] = None
+    packet_record_count: Optional[int] = None
     
     # Legacy fields
     byte_counter_gaps: Optional[int] = None

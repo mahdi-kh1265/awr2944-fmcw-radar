@@ -1,3 +1,5 @@
+import pytest
+pytestmark = pytest.mark.legacy_mmws
 """Tests for DCA1000 integration."""
 
 import json

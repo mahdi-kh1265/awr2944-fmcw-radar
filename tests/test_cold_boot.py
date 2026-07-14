@@ -45,6 +45,11 @@ def test_cold_boot_event_order(monkeypatch, tmp_path):
 
     # Mock Receiver
     mock_receiver = MagicMock()
+    mock_receiver.packet_records = []
+    mock_receiver.sequence_gaps = 0
+    mock_receiver.byte_counter_discontinuity_count = 0
+    mock_receiver.missing_payload_bytes = 0
+    mock_receiver.overlap_payload_bytes = 0
     mock_receiver.ready_event.wait.return_value = True
     mock_receiver.is_alive.return_value = False
     mock_receiver.capture_complete = True

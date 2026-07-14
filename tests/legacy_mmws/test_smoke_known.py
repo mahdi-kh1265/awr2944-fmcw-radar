@@ -1,3 +1,5 @@
+import pytest
+pytestmark = pytest.mark.legacy_mmws
 """Golden tests for smoke-from-known-awr2944 script generation.
 
 These tests verify that the generated Lua script contains the exact

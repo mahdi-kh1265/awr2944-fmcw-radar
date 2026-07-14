@@ -1,4 +1,6 @@
 import pytest
+pytestmark = pytest.mark.legacy_mmws
+import pytest
 from pathlib import Path
 from typer.testing import CliRunner
 from awr2944_dca.cli import app

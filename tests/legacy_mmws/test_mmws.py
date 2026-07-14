@@ -1,3 +1,5 @@
+import pytest
+pytestmark = pytest.mark.legacy_mmws
 """Tests for the mmws backend package."""
 
 from pathlib import Path
