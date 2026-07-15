@@ -252,3 +252,11 @@ def test_open_viewer_delegates_to_production_viewer(tmp_path, monkeypatch):
     assert mock_args['mode'] == 'standalone'
     assert mock_args['profile'] is not None
     assert 'viewer' in str(mock_args['matlab_script_dir'])
+def test_capture_path_accessor(tmp_path):
+    _make_project(tmp_path)
+    manifest = new_capture(tmp_path, 'path_test')
+    cap = RadarCapture(tmp_path, manifest['capture_id'])
+    assert hasattr(cap, 'path')
+    expected_path = tmp_path / 'captures' / manifest['capture_id']
+    assert cap.path == expected_path
+    assert cap.path.is_absolute() == tmp_path.is_absolute()

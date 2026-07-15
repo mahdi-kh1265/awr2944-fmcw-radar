@@ -26,7 +26,7 @@ def test_cli_dry_run(tmp_path):
     result = _run_cli(
         "smoke_v1",
         "--project-root", str(tmp_path),
-        "--frames", "9",
+        "--frames", "8",
         "--guard-frames", "1",
         "--dry-run"
     )

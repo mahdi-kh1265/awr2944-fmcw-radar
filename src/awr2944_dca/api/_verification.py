@@ -94,7 +94,68 @@ def verify_production_capture(capture_dir: Path, manifest: dict) -> CaptureVerif
     All checks are offline. Handles manifest field name variations
     across schema versions.
     """
+    import json
     checks: list[VerificationCheck] = []
+    
+    schema_version = manifest.get("manifest_schema_version", 1)
+    
+    # Expected bytes fallback to manifest
+    native_expected = manifest.get("native_byte_count") or manifest.get("expected_native_bytes")
+    canonical_expected = manifest.get("canonical_native_byte_count")
+    
+    # Merge config_summary.json if present (or required for v4)
+    summary_path = capture_dir / "config_summary.json"
+    if summary_path.exists():
+        try:
+            summary = json.loads(summary_path.read_text())
+            checks.append(VerificationCheck("config_summary_parse", "PASS"))
+            if "native_dca_bytes" in summary:
+                native_expected = summary["native_dca_bytes"]
+            if "canonical_dca_bytes" in summary:
+                canonical_expected = summary["canonical_dca_bytes"]
+                
+            if schema_version >= 4:
+                req_keys = [
+                    "config_summary_schema_version", "source_config_kind", 
+                    "source_config_sha256", "resolved_config_sha256", 
+                    "radar_config_sha256", "target_device", "sdk_version", 
+                    "firmware_config_target"
+                ]
+                missing = [k for k in req_keys if k not in summary]
+                if missing:
+                    checks.append(VerificationCheck("config_summary_fields", "FAIL", f"Missing keys: {missing}"))
+                else:
+                    checks.append(VerificationCheck("config_summary_fields", "PASS"))
+                    
+                    # Verify resolved_config.cfg hash
+                    resolved_cfg_path = capture_dir / "resolved_config.cfg"
+                    if resolved_cfg_path.exists():
+                        import hashlib
+                        actual_resolved_sha = hashlib.sha256(resolved_cfg_path.read_bytes()).hexdigest()
+                        if actual_resolved_sha == summary.get("resolved_config_sha256"):
+                            checks.append(VerificationCheck("resolved_config_hash", "PASS"))
+                        else:
+                            checks.append(VerificationCheck("resolved_config_hash", "FAIL", "resolved_config.cfg hash mismatch"))
+                    else:
+                        checks.append(VerificationCheck("resolved_config_hash", "FAIL", "Missing resolved_config.cfg"))
+                        
+                    # Verify radar_config_sha256 == resolved_config_sha256
+                    if summary.get("radar_config_sha256") == summary.get("resolved_config_sha256"):
+                        checks.append(VerificationCheck("radar_config_hash_match", "PASS"))
+                    else:
+                        checks.append(VerificationCheck("radar_config_hash_match", "FAIL", "radar_config_sha256 != resolved_config_sha256"))
+                        
+                    # Verify manifest vs summary hashes
+                    m_source_hash = manifest.get("source_config_sha256")
+                    if m_source_hash and m_source_hash != summary.get("source_config_sha256"):
+                        checks.append(VerificationCheck("manifest_summary_hash_match", "FAIL", "source_config_sha256 mismatch"))
+                    else:
+                        checks.append(VerificationCheck("manifest_summary_hash_match", "PASS"))
+                    
+        except Exception as e:
+            checks.append(VerificationCheck("config_summary_parse", "FAIL", f"Malformed JSON: {e}"))
+    elif schema_version >= 4:
+        checks.append(VerificationCheck("config_summary_parse", "FAIL", "Missing required config_summary.json for V4 capture"))
 
     # --- File existence ---
     native_path = capture_dir / "adc_data.bin"
@@ -122,8 +183,6 @@ def verify_production_capture(capture_dir: Path, manifest: dict) -> CaptureVerif
         ))
 
     # --- Byte count checks with field-name precedence ---
-    # Native expected: native_byte_count → expected_native_bytes
-    native_expected = manifest.get("native_byte_count") or manifest.get("expected_native_bytes")
     # Native actual: captured_native_bytes → file size
     native_actual = manifest.get("captured_native_bytes")
     if native_actual is None and native_path.exists():
@@ -144,7 +203,6 @@ def verify_production_capture(capture_dir: Path, manifest: dict) -> CaptureVerif
         checks.append(VerificationCheck("native_byte_count", "WARN", "No expected byte count in manifest"))
 
     # Canonical expected: canonical_native_byte_count
-    canonical_expected = manifest.get("canonical_native_byte_count")
     if canonical_path.exists() and canonical_expected is not None:
         actual_size = canonical_path.stat().st_size
         if actual_size == canonical_expected:

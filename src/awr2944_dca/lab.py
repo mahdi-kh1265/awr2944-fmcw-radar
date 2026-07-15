@@ -287,6 +287,11 @@ class RadarCapture:
     def capture_id(self) -> str:
         return self._capture_id
 
+    @property
+    def path(self) -> Path:
+        """Path to this capture's directory."""
+        return self._root / 'captures' / self._capture_id
+
     def refresh(self) -> 'RadarCapture':
         """Reload manifest from disk."""
         self._load_manifest()

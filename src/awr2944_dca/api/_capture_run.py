@@ -55,6 +55,19 @@ def _get_api_version() -> str:
         return "unknown"
 
 
+def _write_atomic(path: Path, content: bytes) -> None:
+    """Write content to path atomically using a temporary file."""
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_bytes(content)
+    import stat
+    if path.exists():
+        try:
+            path.chmod(stat.S_IWRITE)
+        except Exception:
+            pass
+    tmp_path.replace(path)
+
+
 @dataclass
 class CaptureRunResult:
     """Return value of project.capture.run() or session.capture.run()."""
@@ -155,56 +168,39 @@ class FacadeCaptureApi:
         **kwargs,  # Accept com_port, host_ip, dca_ip for backward compat
     ) -> dict:
         """Calculate and report capture plan without touching hardware."""
-        from awr2944_dca.api.profile import RadarProfile as PubProfile
+        from awr2944_dca.api._config_resolver import resolve_capture_config
+        import dataclasses
 
-        # Step 1: Resolve profile
-        resolved_profile = _resolve_profile(self._project, profile)
+        resolved_config = resolve_capture_config(
+            project=self._project,
+            profile=profile,
+            frames=frames,
+            guard_frames=guard_frames,
+        )
 
-        # Step 2: Resolve frames/guard_frames
-        resolved_frames = _resolve_frames(self._project, resolved_profile, frames)
-        resolved_guard = _resolve_guard_frames(self._project, guard_frames)
-
-        # Step 3: Build effective profile
-        effective = resolved_profile.with_frame(frame_count=resolved_frames)
-
-        # Step 4: Compile
-        cmds = effective.to_sdk_cli()
-
-        # Step 5: Byte plan
-        plan = effective.byte_plan(guard_frames=resolved_guard)
-
-        # Compute legacy-compatible fields
-        dsp = effective.to_dsp_profile()
-        from awr2944_dca.awr2944_adc import expected_raw_dca_bytes, active_payload_bytes, AWR2944AdcLayout
-        # In old API: total_frames = frames (the profile/arg value, includes guard)
-        # canonical_frames = total_frames - guard_frames
-        total_frames = resolved_frames
-        canonical_frames = resolved_frames - resolved_guard
-        native_per_frame = expected_raw_dca_bytes(1, dsp.chirps_per_frame, dsp.rx_count, dsp.adc_samples, AWR2944AdcLayout())
-        logical_per_frame = active_payload_bytes(1, dsp.chirps_per_frame, dsp.rx_count, dsp.adc_samples)
-        native_bytes = native_per_frame * total_frames
-        canonical_native_bytes = native_per_frame * canonical_frames
-        logical_bytes = logical_per_frame * total_frames
-        canonical_logical_bytes = logical_per_frame * canonical_frames
-        cube_shape = [canonical_frames, dsp.chirps_per_frame, dsp.rx_count, dsp.adc_samples]
-        expansion = native_per_frame // logical_per_frame if logical_per_frame else 0
+        plan = dataclasses.asdict(resolved_config.byte_plan)
 
         result = {
-            "profile_name": resolved_profile.name,
-            "effective_frames": resolved_frames,
-            "guard_frames": resolved_guard,
-            "sdk_cli_command_count": len(cmds),
+            "profile_name": resolved_config.source_path.name if resolved_config.source_path else ("smoke_v1" if isinstance(profile, str) else "programmatic"),
+            "effective_frames": resolved_config.byte_plan.total_frames,
+            "guard_frames": resolved_config.byte_plan.guard_frames,
+            "sdk_cli_command_count": len(resolved_config.cli_commands),
             **plan,
             "hardware_touched": False,
             # Legacy-compatible keys
-            "total_frames": total_frames,
-            "canonical_frames": canonical_frames,
-            "expected_native_dca_bytes": native_bytes,
-            "expected_canonical_dca_bytes": canonical_native_bytes,
-            "logical_depacked_bytes": logical_bytes,
-            "canonical_logical_bytes": canonical_logical_bytes,
-            "canonical_cube": cube_shape,
-            "dca_storage_expansion_factor": expansion,
+            "total_frames": resolved_config.byte_plan.total_frames,
+            "canonical_frames": resolved_config.byte_plan.canonical_frames,
+            "expected_native_dca_bytes": resolved_config.byte_plan.native_dca_bytes,
+            "expected_canonical_dca_bytes": resolved_config.byte_plan.canonical_dca_bytes,
+            "logical_depacked_bytes": resolved_config.byte_plan.native_active_payload_bytes,
+            "canonical_logical_bytes": resolved_config.byte_plan.canonical_active_payload_bytes,
+            "canonical_cube": [
+                resolved_config.byte_plan.canonical_frames,
+                resolved_config.byte_plan.chirps_per_frame,
+                resolved_config.byte_plan.rx_channels,
+                resolved_config.byte_plan.samples_per_chirp,
+            ],
+            "dca_storage_expansion_factor": resolved_config.byte_plan.dca_expansion_factor,
         }
         # Add toolchain DCA paths if available
         try:
@@ -302,25 +298,29 @@ def _run_capture_facade(
     # Validate capture name
     _validate_capture_name(name)
 
-    # Step 1: Resolve profile
-    resolved_profile = _resolve_profile(project, profile)
+    from awr2944_dca.api._config_resolver import resolve_capture_config
+    import dataclasses
 
-    # Step 2: Validate
-    validation = resolved_profile.validate()
-    validation.raise_for_errors()
-
-    # Step 3: Resolve frames and build effective profile
-    resolved_frames = _resolve_frames(project, resolved_profile, frames)
-    resolved_guard = _resolve_guard_frames(project, guard_frames)
-    effective = resolved_profile.with_frame(frame_count=resolved_frames)
-
-    # Step 3b: Compile SDK commands (fails before hardware!)
-    sdk_cli_commands = effective.to_sdk_cli()
-
-    # Step 4: Calculate byte/capture plan
-    capture_plan = effective.byte_plan(guard_frames=resolved_guard)
-    capture_plan["frames"] = resolved_frames
-    capture_plan["guard_frames"] = resolved_guard
+    # Step 1-4: Resolve capture configuration and preflight
+    resolved_config = resolve_capture_config(
+        project=project,
+        profile=profile,
+        frames=frames,
+        guard_frames=guard_frames,
+    )
+    
+    sdk_cli_commands = resolved_config.cli_commands
+    effective = resolved_config.structured_profile # Might be None
+    
+    # Rebuild capture_plan for backward compatibility
+    capture_plan = {
+        "frames": resolved_config.byte_plan.total_frames,
+        "guard_frames": resolved_config.byte_plan.guard_frames,
+        "expected_canonical_dca_bytes": resolved_config.byte_plan.canonical_dca_bytes,
+        "expected_native_dca_bytes": resolved_config.byte_plan.native_dca_bytes,
+        "canonical_logical_bytes": resolved_config.byte_plan.canonical_active_payload_bytes,
+        "logical_depacked_bytes": resolved_config.byte_plan.native_active_payload_bytes,
+    }
 
     # Step 5: Resolve connection
     auto_session = session is None
@@ -372,13 +372,50 @@ def _run_capture_facade(
 
         # Step 7: Create capture directory
         capture_id, output_dir = _create_capture_manifest_facade(project, name)
+        
+        # Step 7b: Write provenance artifacts atomically
+        config_summary = {
+            "config_summary_schema_version": 1,
+            "target_device": "AWR2944",
+            "sdk_version": "04.07.02.01",
+            "firmware_config_target": "awr294x_mmw_demo",
+            "source_config_kind": resolved_config.source_kind,
+            "source_config_sha256": resolved_config.source_sha256,
+            "resolved_config_sha256": resolved_config.resolved_sha256,
+            "radar_config_sha256": resolved_config.resolved_sha256,
+            "structured_profile_available": resolved_config.structured_profile is not None,
+            "dsp_profile_available": resolved_config.dsp_profile is not None,
+            "preflight_warnings": resolved_config.preflight_warnings,
+        }
+        
+        # Merge byte plan into summary
+        import dataclasses
+        config_summary.update(dataclasses.asdict(resolved_config.byte_plan))
+        
+        # Write resolved config text
+        _write_atomic(output_dir / "resolved_config.cfg", resolved_config.resolved_cfg_text.encode("utf-8"))
+        
+        if resolved_config.source_kind == "cfg_file" and resolved_config.source_path:
+            config_summary["source_config_path_rel"] = "source_config.cfg"
+            _write_atomic(output_dir / "source_config.cfg", resolved_config.source_path.read_bytes())
+            
+        elif resolved_config.source_kind == "toml_file" and resolved_config.source_path:
+            config_summary["source_config_path_rel"] = "source_profile.toml"
+            _write_atomic(output_dir / "source_profile.toml", resolved_config.source_path.read_bytes())
+            
+        if resolved_config.structured_profile:
+            config_summary["resolved_profile_path_rel"] = "resolved_profile.toml"
+            _write_atomic(output_dir / "resolved_profile.toml", resolved_config.structured_profile.to_toml().encode("utf-8"))
+            
+        summary_path = output_dir / "config_summary.json"
+        _write_atomic(summary_path, json.dumps(config_summary, indent=2).encode("utf-8"))
 
         # Step 8: Call frozen run_capture
         internal_result = run_capture(
             output_dir=output_dir,
             sdk_cli_commands=sdk_cli_commands,
             profile=dsp_profile,
-            guard_frames=resolved_guard,
+            guard_frames=resolved_config.byte_plan.guard_frames,
             com_port=conn.com_port,
             host_ip=conn.host_ip,
             dca_ip=conn.dca_ip,
@@ -391,8 +428,7 @@ def _run_capture_facade(
         _update_project_record(
             project.root,
             capture_id,
-            resolved_profile,
-            effective,
+            resolved_config,
             capture_plan,
             conn,
         )
@@ -425,8 +461,7 @@ def _run_capture_facade(
 def _update_project_record(
     root: Path,
     capture_id: str,
-    source_profile: Any,
-    effective_profile: Any,
+    resolved_config: Any,
     capture_plan: dict,
     connection: Any,
 ) -> None:
@@ -448,8 +483,25 @@ def _update_project_record(
             data = {"capture_id": capture_id}
 
     # Add reproducibility fields
-    data["source_profile_name"] = source_profile.name
-    data["effective_structured_profile"] = _profile_to_dict(effective_profile)
+    data["source_profile_name"] = resolved_config.source_name if resolved_config.source_name else "programmatic"
+    data["effective_structured_profile"] = _profile_to_dict(resolved_config.structured_profile)
+    
+    # V4 provenance fields
+    data["manifest_schema_version"] = 4
+    data["source_config_kind"] = resolved_config.source_kind
+    data["source_config_sha256"] = resolved_config.source_sha256
+    data["resolved_config_sha256"] = resolved_config.resolved_sha256
+    data["radar_config_sha256"] = resolved_config.resolved_sha256
+    data["config_summary_path_rel"] = "config_summary.json"
+    data["resolved_config_path_rel"] = "resolved_config.cfg"
+    
+    if resolved_config.source_kind == "cfg_file":
+        data["source_config_path_rel"] = "source_config.cfg"
+    elif resolved_config.source_kind == "toml_file":
+        data["source_profile_path_rel"] = "source_profile.toml"
+        
+    if resolved_config.structured_profile:
+        data["resolved_profile_path_rel"] = "resolved_profile.toml"
     data["run_frames"] = capture_plan.get("frames")
     data["run_guard_frames"] = capture_plan.get("guard_frames")
     data["capture_plan"] = capture_plan

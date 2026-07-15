@@ -64,6 +64,17 @@ class CaptureManifest:
     packet_metadata_format: Optional[str] = None
     packet_record_count: Optional[int] = None
     
+    # V4 schema fields for config provenance
+    source_config_kind: Optional[str] = None
+    source_config_sha256: Optional[str] = None
+    resolved_config_sha256: Optional[str] = None
+    radar_config_sha256: Optional[str] = None
+    config_summary_path_rel: Optional[str] = None
+    resolved_config_path_rel: Optional[str] = None
+    source_config_path_rel: Optional[str] = None
+    resolved_profile_path_rel: Optional[str] = None
+    source_profile_path_rel: Optional[str] = None
+
     # Legacy fields
     byte_counter_gaps: Optional[int] = None
 

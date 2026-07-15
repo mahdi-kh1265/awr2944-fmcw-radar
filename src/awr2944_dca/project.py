@@ -113,6 +113,12 @@ def atomic_json_write(path: Path, data: Any, indent: int = 2) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=indent, default=str)
             f.write("\n")
+        import stat
+        if path.exists():
+            try:
+                path.chmod(stat.S_IWRITE)
+            except Exception:
+                pass
         os.replace(tmp, str(path))
     except BaseException:
         try:

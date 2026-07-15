@@ -78,6 +78,7 @@ target-version = "py312"
 markers = [
     "legacy_mmws: marks tests as part of the optional legacy mmWave Studio suite",
     "matlab_live: marks tests that require a real MATLAB installation and COM automation; never run in CI",
+    "hardware_live: marks tests that require live radar hardware",
 ]
 testpaths = [
     "tests",
