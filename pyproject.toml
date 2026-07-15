@@ -77,6 +77,7 @@ target-version = "py312"
 [tool.pytest.ini_options]
 markers = [
     "legacy_mmws: marks tests as part of the optional legacy mmWave Studio suite",
+    "matlab_live: marks tests that require a real MATLAB installation and COM automation; never run in CI",
 ]
 testpaths = [
     "tests",

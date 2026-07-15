@@ -16,5 +16,10 @@
     "iq_order": "iq",
     "layout": "frame_chirp_rx_sample",
     "layout_assumption_confirmed": false
-  }
+  },
+  "defaults": {
+    "firmware_run_id": "df1f275c",
+    "config_run_id": "4b87faae"
+  },
+  "updated_at": "2026-07-10T15:26:05.282569"
 }
