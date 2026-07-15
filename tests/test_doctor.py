@@ -29,16 +29,24 @@ def test_hardware_doctor_offline_missing_struct(tmp_path):
     assert not report.success
 
 def test_hardware_doctor_diagnostics_mocked(tmp_path, monkeypatch):
-    project = RadarProject.create(name="test_proj", parent=tmp_path)
+    # Mock platformdirs to use tmp_path
+    monkeypatch.setattr("platformdirs.user_state_dir", lambda *args, **kwargs: str(tmp_path / "state"))
     
+    project = RadarProject.create(name="test_proj", parent=tmp_path)
+
     # Let's write dummy exe and cf.json so offline checks pass
     project.config.local.dca_control_exe = str(project.root / "dca_control.exe")
     project.config.local.dca_record_exe = str(project.root / "dca_record.exe")
     project.config.local.cf_json_path = str(project.root / "cf.json")
-    
+    project.config.local.com_port = "COM8"  # Required for resolve_connection
+    project.config.local.host_ip = "192.168.33.30"
+    project.config.portable.dca_ip = "192.168.33.180"
+    project.config.portable.data_port = 4098
+    project.config.portable.config_port = 4096
+
     (project.root / "dca_control.exe").touch()
     (project.root / "dca_record.exe").touch()
-    
+
     # We need a valid cf.json to pass cf.json checks
     import json
     with open(project.root / "cf.json", "w") as f:
@@ -52,13 +60,48 @@ def test_hardware_doctor_diagnostics_mocked(tmp_path, monkeypatch):
                 }
             }
         }, f)
-        
+
     project.config.save()
-    
+
     report = project.doctor(include_hardware=False)
     # The offline should now pass for everything
     assert all(c.status in ("PASS", "SKIP") for c in report.checks)
     assert report.success
+
+def test_doctor_detects_session_lock(tmp_path, monkeypatch):
+    monkeypatch.setattr("platformdirs.user_state_dir", lambda *args, **kwargs: str(tmp_path / "state"))
+    project = RadarProject.create(name="lock_proj", parent=tmp_path)
+    project.config.local.com_port = "COM8"
+    project.config.local.host_ip = "192.168.33.30"
+    project.config.portable.dca_ip = "192.168.33.180"
+    project.config.portable.data_port = 4098
+    project.config.portable.config_port = 4096
+    project.config.save()
+    
+    # 1. Unlocked state
+    report = project.doctor(include_hardware=False)
+    lock_check = next(c for c in report.checks if c.name == "no_active_session_lock")
+    assert lock_check.status == "PASS"
+    assert "unlocked" in lock_check.detail.lower()
+
+    # 2. Acquire lock via RadarSession simulation
+    from awr2944_dca.api._lock import HardwareLease
+    import os
+    lease = HardwareLease(
+        project_root=str(project.root),
+        com_port="COM8",
+        host_ip="192.168.33.30",
+        data_port=4098,
+        dca_ip="192.168.33.180",
+        cmd_port=4096,
+    )
+    with lease:
+        # Doctor should see "owned by this process"
+        report2 = project.doctor(include_hardware=False)
+        lock_check2 = next(c for c in report2.checks if c.name == "no_active_session_lock")
+        assert lock_check2.status == "PASS"
+        assert str(os.getpid()) in lock_check2.detail
+        assert "held by this process" in lock_check2.detail
 
 def test_import_boundary_cli():
     """Verify that running `awr doctor` does not import mmws GUI/Lua stuff."""

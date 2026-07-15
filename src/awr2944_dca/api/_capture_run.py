@@ -1,0 +1,553 @@
+"""CaptureRunResult and SessionCaptureApi — facade delegation to frozen run_capture.
+
+Implements the exact 10-step delegation order:
+1. Resolve profile
+2. Validate
+3. Compile SDK commands
+4. Calculate byte/capture plan
+5. Resolve connection settings
+6. Acquire global lock
+7. Create capture directory
+8. Call frozen run_capture
+9. Package result
+10. Release lock (auto-session only)
+
+Unsupported profiles fail before hardware access or directory creation.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    from awr2944_dca.lab import RadarProject, RadarCapture
+    from awr2944_dca.api._session import RadarSession
+
+logger = logging.getLogger(__name__)
+
+# Illegal capture name patterns
+_UNSAFE_NAME_RE = re.compile(r'[/\\]|^\.\.|\.\.(?=[/\\])|^[A-Za-z]:|^(CON|PRN|AUX|NUL|COM\d|LPT\d)(\..*)?$', re.IGNORECASE)
+
+
+def _validate_capture_name(name: str) -> None:
+    """Reject capture names with path traversal or reserved forms."""
+    if not name or not name.strip():
+        raise ValueError("Capture name cannot be empty.")
+    if _UNSAFE_NAME_RE.search(name):
+        raise ValueError(
+            f"Unsafe capture name: {name!r}. "
+            f"Must not contain slashes, backslashes, dot-traversal, "
+            f"absolute paths, or Windows reserved names."
+        )
+
+
+def _get_api_version() -> str:
+    """Get the installed package version."""
+    try:
+        from awr2944_dca import __version__
+        return __version__
+    except Exception:
+        return "unknown"
+
+
+@dataclass
+class CaptureRunResult:
+    """Return value of project.capture.run() or session.capture.run()."""
+    capture: RadarCapture
+    session_result: Any  # frozen CaptureResult from capture_session
+    effective_profile: Any  # public immutable RadarProfile
+    capture_plan: dict
+
+    @property
+    def success(self) -> bool:
+        return self.session_result.success
+
+
+class SessionCaptureApi:
+    """Capture API accessed through an explicit RadarSession."""
+
+    def __init__(self, session: RadarSession):
+        self._session = session
+
+    def run(
+        self,
+        profile: str | Any = "smoke_v1",
+        frames: int | None = None,
+        guard_frames: int | None = None,
+        preserve_packet_metadata: bool = True,
+        name: str = "dca_capture",
+    ) -> CaptureRunResult:
+        """Execute a capture through the owning session."""
+        return _run_capture_facade(
+            project=self._session.project,
+            profile=profile,
+            frames=frames,
+            guard_frames=guard_frames,
+            preserve_packet_metadata=preserve_packet_metadata,
+            name=name,
+            session=self._session,
+            connection_overrides=None,
+        )
+
+
+class FacadeCaptureApi:
+    """Production capture API accessible as project.capture.
+
+    Supports both auto-session (one-shot) and explicit session modes.
+    """
+
+    def __init__(self, project: RadarProject):
+        self._project = project
+
+    def run(
+        self,
+        profile: str | Any = "smoke_v1",
+        frames: int | None = None,
+        guard_frames: int | None = None,
+        preserve_packet_metadata: bool = True,
+        name: str = "dca_capture",
+        session: RadarSession | None = None,
+        connection_overrides: Any = None,
+        **kwargs,  # Accept com_port, host_ip, dca_ip for backward compat
+    ) -> CaptureRunResult:
+        """Execute a full production capture.
+
+        If session is provided, connection_overrides must be None.
+        If session is None, auto-connects from local.toml.
+        """
+        if session is not None and connection_overrides is not None:
+            raise ValueError(
+                "Cannot specify both session and connection_overrides. "
+                "Use session settings or auto-connect with overrides, not both."
+            )
+
+        # Backward compat: convert legacy kwargs to ConnectionOverrides
+        if connection_overrides is None and kwargs:
+            from awr2944_dca.api._session import ConnectionOverrides as CO
+            co_kwargs = {}
+            for k in ('com_port', 'host_ip', 'dca_ip', 'data_port', 'cmd_port'):
+                if k in kwargs:
+                    co_kwargs[k] = kwargs.pop(k)
+            if co_kwargs:
+                connection_overrides = CO(**co_kwargs)
+
+        return _run_capture_facade(
+            project=self._project,
+            profile=profile,
+            frames=frames,
+            guard_frames=guard_frames,
+            preserve_packet_metadata=preserve_packet_metadata,
+            name=name,
+            session=session,
+            connection_overrides=connection_overrides,
+        )
+
+    def dry_run(
+        self,
+        profile: str | Any = "smoke_v1",
+        frames: int | None = None,
+        guard_frames: int | None = None,
+        **kwargs,  # Accept com_port, host_ip, dca_ip for backward compat
+    ) -> dict:
+        """Calculate and report capture plan without touching hardware."""
+        from awr2944_dca.api.profile import RadarProfile as PubProfile
+
+        # Step 1: Resolve profile
+        resolved_profile = _resolve_profile(self._project, profile)
+
+        # Step 2: Resolve frames/guard_frames
+        resolved_frames = _resolve_frames(self._project, resolved_profile, frames)
+        resolved_guard = _resolve_guard_frames(self._project, guard_frames)
+
+        # Step 3: Build effective profile
+        effective = resolved_profile.with_frame(frame_count=resolved_frames)
+
+        # Step 4: Compile
+        cmds = effective.to_sdk_cli()
+
+        # Step 5: Byte plan
+        plan = effective.byte_plan(guard_frames=resolved_guard)
+
+        # Compute legacy-compatible fields
+        dsp = effective.to_dsp_profile()
+        from awr2944_dca.awr2944_adc import expected_raw_dca_bytes, active_payload_bytes, AWR2944AdcLayout
+        # In old API: total_frames = frames (the profile/arg value, includes guard)
+        # canonical_frames = total_frames - guard_frames
+        total_frames = resolved_frames
+        canonical_frames = resolved_frames - resolved_guard
+        native_per_frame = expected_raw_dca_bytes(1, dsp.chirps_per_frame, dsp.rx_count, dsp.adc_samples, AWR2944AdcLayout())
+        logical_per_frame = active_payload_bytes(1, dsp.chirps_per_frame, dsp.rx_count, dsp.adc_samples)
+        native_bytes = native_per_frame * total_frames
+        canonical_native_bytes = native_per_frame * canonical_frames
+        logical_bytes = logical_per_frame * total_frames
+        canonical_logical_bytes = logical_per_frame * canonical_frames
+        cube_shape = [canonical_frames, dsp.chirps_per_frame, dsp.rx_count, dsp.adc_samples]
+        expansion = native_per_frame // logical_per_frame if logical_per_frame else 0
+
+        result = {
+            "profile_name": resolved_profile.name,
+            "effective_frames": resolved_frames,
+            "guard_frames": resolved_guard,
+            "sdk_cli_command_count": len(cmds),
+            **plan,
+            "hardware_touched": False,
+            # Legacy-compatible keys
+            "total_frames": total_frames,
+            "canonical_frames": canonical_frames,
+            "expected_native_dca_bytes": native_bytes,
+            "expected_canonical_dca_bytes": canonical_native_bytes,
+            "logical_depacked_bytes": logical_bytes,
+            "canonical_logical_bytes": canonical_logical_bytes,
+            "canonical_cube": cube_shape,
+            "dca_storage_expansion_factor": expansion,
+        }
+        # Add toolchain DCA paths if available
+        try:
+            from awr2944_dca.lab import CaptureApi
+            legacy_api = CaptureApi(self._project)
+            toolchain = legacy_api._load_toolchain()
+            dca_control_exe = "NOT_CONFIGURED"
+            dca_config_source = "NOT_CONFIGURED"
+            dca_config_runtime_path = "NOT_CONFIGURED"
+            if toolchain:
+                from pathlib import Path as _P
+                dca_control_exe = toolchain.get("dca_cli_control_exe", "NOT_CONFIGURED")
+                dca_config_source = toolchain.get("dca_cli_cf_json", "NOT_CONFIGURED")
+                cf_json_path = _P(toolchain.get("dca_cli_cf_json", ""))
+                if not cf_json_path.exists():
+                    cf_json_path = self._project.root / "tools" / "dca1000" / "cf.json"
+                if not cf_json_path.exists():
+                    cf_json_path = _P("C:\\ti\\cf.json")
+                dca_config_runtime_path = str(cf_json_path)
+            result["dca_control_executable"] = dca_control_exe
+            result["dca_config_source"] = dca_config_source
+            result["dca_config_runtime_path"] = dca_config_runtime_path
+        except Exception:
+            pass
+        return result
+
+    def run_smoke(self, name: str = "dca_capture", **kwargs) -> CaptureRunResult:
+        """Convenience wrapper for the smoke_v1 profile."""
+        return self.run(profile="smoke_v1", name=name, **kwargs)
+
+    # Backward-compatibility bridges for old CaptureApi callers
+    def _load_toolchain(self) -> dict | None:
+        """Compatibility: delegates to the old CaptureApi._load_toolchain."""
+        from awr2944_dca.lab import CaptureApi
+        return CaptureApi(self._project)._load_toolchain()
+
+    def _build_dca_cli(self, toolchain: dict):
+        """Compatibility: delegates to the old CaptureApi._build_dca_cli."""
+        from awr2944_dca.lab import CaptureApi
+        return CaptureApi(self._project)._build_dca_cli(toolchain)
+
+    def _resolve_profile(self, profile: str):
+        """Compatibility: delegates to the old CaptureApi._resolve_profile."""
+        from awr2944_dca.lab import CaptureApi
+        return CaptureApi(self._project)._resolve_profile(profile)
+
+
+def _resolve_profile(project: RadarProject, profile: str | Any) -> Any:
+    """Step 1: Resolve profile name or object."""
+    from awr2944_dca.api.profile import RadarProfile as PubProfile
+
+    if isinstance(profile, str):
+        return project.profiles.get(profile)
+    if isinstance(profile, PubProfile):
+        return profile
+    raise TypeError(f"profile must be str or RadarProfile, got {type(profile).__name__}")
+
+
+def _resolve_frames(project: RadarProject, profile: Any, explicit: int | None) -> int:
+    """Resolve frames: explicit → profile → project default."""
+    if explicit is not None:
+        return explicit
+    if profile.frame.frame_count:
+        return profile.frame.frame_count
+    return project.config.portable.frames
+
+
+def _resolve_guard_frames(project: RadarProject, explicit: int | None) -> int:
+    """Resolve guard_frames: explicit → project default."""
+    if explicit is not None:
+        return explicit
+    return project.config.portable.guard_frames
+
+
+def _run_capture_facade(
+    project: RadarProject,
+    profile: str | Any,
+    frames: int | None,
+    guard_frames: int | None,
+    preserve_packet_metadata: bool,
+    name: str,
+    session: RadarSession | None,
+    connection_overrides: Any,
+) -> CaptureRunResult:
+    """Core facade delegation implementing the 10-step order."""
+    from awr2944_dca.capture_session import run_capture
+    from awr2944_dca.api._session import (
+        RadarSession as SessionClass,
+        resolve_connection,
+        ConnectionOverrides,
+    )
+    from awr2944_dca.api._lock import HardwareLease
+    import dataclasses
+
+    # Validate capture name
+    _validate_capture_name(name)
+
+    # Step 1: Resolve profile
+    resolved_profile = _resolve_profile(project, profile)
+
+    # Step 2: Validate
+    validation = resolved_profile.validate()
+    validation.raise_for_errors()
+
+    # Step 3: Resolve frames and build effective profile
+    resolved_frames = _resolve_frames(project, resolved_profile, frames)
+    resolved_guard = _resolve_guard_frames(project, guard_frames)
+    effective = resolved_profile.with_frame(frame_count=resolved_frames)
+
+    # Step 3b: Compile SDK commands (fails before hardware!)
+    sdk_cli_commands = effective.to_sdk_cli()
+
+    # Step 4: Calculate byte/capture plan
+    capture_plan = effective.byte_plan(guard_frames=resolved_guard)
+    capture_plan["frames"] = resolved_frames
+    capture_plan["guard_frames"] = resolved_guard
+
+    # Step 5: Resolve connection
+    auto_session = session is None
+    if auto_session:
+        conn = resolve_connection(project.root, connection_overrides)
+        lease = HardwareLease(
+            com_port=conn.com_port,
+            host_ip=conn.host_ip,
+            data_port=conn.data_port,
+            dca_ip=conn.dca_ip,
+            cmd_port=conn.cmd_port,
+            project_root=str(project.root),
+        )
+    else:
+        conn = session.connection
+        lease = None
+        # Transition to CAPTURING before toolchain resolution
+        # so that construction failures move it to ERROR
+        session._enter_capturing()
+
+    try:
+        # Step 6: Acquire global lock (for auto-session)
+        if lease:
+            lease.acquire()
+
+        # Get internal DspRadarProfile
+        dsp_profile = effective.to_dsp_profile()
+
+        # Build DCA CLI
+        dca_cli = None
+        dca_configuration = {}
+        if conn.dca_control_exe:
+            from awr2944_dca.dca_cli import DcaCli
+            cf_path = Path(conn.cf_json_path) if conn.cf_json_path else None
+            if cf_path and not cf_path.exists():
+                cf_path = project.root / "tools" / "dca1000" / "cf.json"
+            
+            # Build toolchain dict exactly like legacy _load_toolchain / from_toolchain does
+            if cf_path and cf_path.exists():
+                dca_cli = DcaCli(
+                    control_exe=Path(conn.dca_control_exe),
+                    record_exe=Path(conn.dca_record_exe),
+                    rf_api_dll=Path(conn.rf_api_dll) if conn.rf_api_dll else Path(""),
+                    cf_json_path=cf_path,
+                )
+                dca_cli.dry_run = False
+                # Render config safely (no hardware calls)
+                dca_configuration = dca_cli.render_config()
+
+        # Step 7: Create capture directory
+        capture_id, output_dir = _create_capture_manifest_facade(project, name)
+
+        # Step 8: Call frozen run_capture
+        internal_result = run_capture(
+            output_dir=output_dir,
+            sdk_cli_commands=sdk_cli_commands,
+            profile=dsp_profile,
+            guard_frames=resolved_guard,
+            com_port=conn.com_port,
+            host_ip=conn.host_ip,
+            dca_ip=conn.dca_ip,
+            dca_cli=dca_cli,
+            dca_configuration=dca_configuration,
+        )
+
+        # Step 9: Package result
+        # Update project record with reproducibility metadata
+        _update_project_record(
+            project.root,
+            capture_id,
+            resolved_profile,
+            effective,
+            capture_plan,
+            conn,
+        )
+
+        from awr2944_dca.lab import RadarCapture
+        capture_obj = RadarCapture(project.root, capture_id)
+
+        result = CaptureRunResult(
+            capture=capture_obj,
+            session_result=internal_result,
+            effective_profile=effective,
+            capture_plan=capture_plan,
+        )
+
+        if session is not None:
+            session._exit_capturing(internal_result.success)
+
+        return result
+
+    except Exception:
+        if session is not None:
+            session._enter_error()
+        raise
+    finally:
+        # Step 10: Release lock for auto-session
+        if lease:
+            lease.release()
+
+
+def _update_project_record(
+    root: Path,
+    capture_id: str,
+    source_profile: Any,
+    effective_profile: Any,
+    capture_plan: dict,
+    connection: Any,
+) -> None:
+    """Update capture_manifest.json with reproducibility metadata.
+
+    Never modifies production manifest.json.
+    """
+    manifest_path = root / "captures" / capture_id / "capture_manifest.json"
+    if not manifest_path.exists():
+        # If project layer manifest doesn't exist, create minimal one
+        data = {
+            "capture_id": capture_id,
+            "status": "complete",
+        }
+    else:
+        try:
+            data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, IOError):
+            data = {"capture_id": capture_id}
+
+    # Add reproducibility fields
+    data["source_profile_name"] = source_profile.name
+    data["effective_structured_profile"] = _profile_to_dict(effective_profile)
+    data["run_frames"] = capture_plan.get("frames")
+    data["run_guard_frames"] = capture_plan.get("guard_frames")
+    data["capture_plan"] = capture_plan
+    data["connection_source"] = connection.source
+    data["resolved_endpoints"] = {
+        "com_port": connection.com_port,
+        "host_ip": connection.host_ip,
+        "dca_ip": connection.dca_ip,
+    }
+    data["api_version"] = _get_api_version()
+
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, default=str)
+        f.write("\n")
+
+
+def _profile_to_dict(profile: Any) -> dict:
+    """Serialize public RadarProfile to dict."""
+    import dataclasses
+    if dataclasses.is_dataclass(profile):
+        return dataclasses.asdict(profile)
+    return {}
+
+
+def _create_capture_manifest_facade(project: Any, capture_name: str) -> tuple[str, Path]:
+    """Lightweight capture scaffolding for Phase D bypassing legacy project.json.
+    
+    Uses already-resolved RadarProject config to generate the standard manifest.
+    Returns (capture_id, output_dir).
+    """
+    import datetime
+    from awr2944_dca.project import safe_slug, atomic_json_write, SCHEMA_VERSION
+
+    now = datetime.datetime.now()
+    ts = now.strftime("%Y%m%d_%H%M%S")
+    slug = safe_slug(capture_name)
+    capture_id = f"{ts}_{slug}"
+
+    output_dir = project.root / "captures" / capture_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    (output_dir / "raw").mkdir(exist_ok=True)
+    (output_dir / "metadata" / "mmws_logs").mkdir(parents=True, exist_ok=True)
+    (output_dir / "processed").mkdir(exist_ok=True)
+
+    notes_path = output_dir / "notes.md"
+    notes_content = f"# {capture_name}\n\nCreated: {now.isoformat()}\n"
+    notes_path.write_text(notes_content, encoding="utf-8")
+
+    # Handle TOML configs
+    expected_bytes = getattr(project.config.portable, "expected_bytes", 4_194_304)
+    project_name = getattr(project.config.portable, "name", project.root.name)
+    project_id = getattr(project.config.portable, "project_id", project_name)
+
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "capture_id": capture_id,
+        "capture_name": capture_name,
+        "project_id": project_id,
+        "project_name": project_name,
+        "created_at": now.isoformat(),
+        "updated_at": now.isoformat(),
+        "status": "created",
+        "mode": "direct",
+        "root_path_abs": str(project.root),
+        "capture_dir_rel": f"captures/{capture_id}",
+        "capture_dir_abs": str(output_dir),
+        "raw_dir_rel": f"captures/{capture_id}/raw",
+        "metadata_dir_rel": f"captures/{capture_id}/metadata",
+        "processed_dir_rel": f"captures/{capture_id}/processed",
+        "notes_path_rel": f"captures/{capture_id}/notes.md",
+        "postproc_dir_abs": getattr(project.config.local, "postproc_dir", ""),
+        "expected_bytes": expected_bytes,
+        "actual_raw_file_size": None,
+        "raw_file_name": None,
+        "raw_file_rel": None,
+        "raw_file_sha256": None,
+        "radar_config_name": None,
+        "radar_config_path": None,
+        "radar_config_sha256": None,
+        "radar_config_lua_path": None,
+        "radar_config_lua_sha256": None,
+        "adc_inspect_path_rel": None,
+        "validation_records": [],
+        "copied_mmws_files": [],
+        "mmws_output_snapshot_path_rel": None,
+        "firmware_run_id": None,
+        "config_run_id": None,
+        "dca_setup_run_id": None,
+        "capture_trigger_run_id": None,
+        "postproc_run_id": None,
+        "workflow_id": None,
+        "warnings": [],
+        "errors": [],
+        "tags": [],
+        "notes": "",
+    }
+
+    atomic_json_write(output_dir / "capture_manifest.json", manifest)
+    return capture_id, output_dir

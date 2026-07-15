@@ -22,6 +22,20 @@ def _make_minimal_project(tmp_path):
     }))
     # Create captures dir
     (proj_dir / "captures").mkdir()
+    # Add awr2944.toml and local.toml for Phase D facade
+    (proj_dir / "awr2944.toml").write_text(
+        '[project]\nname = "test_project"\nid = "test-001"\n'
+        '[radar]\ndca_ip = "192.168.33.180"\ndata_port = 4098\nconfig_port = 4096\n',
+        encoding="utf-8",
+    )
+    local_dir = proj_dir / ".awr2944"
+    local_dir.mkdir(parents=True, exist_ok=True)
+    (local_dir / "local.toml").write_text(
+        '[serial]\ncom_port = "COM8"\nbaud_rate = 115200\n\n'
+        '[network]\nhost_ip = "192.168.33.30"\n\n'
+        '[dca_tools]\ndca_control_exe = ""\ndca_record_exe = ""\ncf_json_path = ""\n',
+        encoding="utf-8",
+    )
     return proj_dir
 
 
@@ -229,20 +243,34 @@ class TestCliDebugFlag:
         """--debug must show full traceback on failure, not just [FATAL]."""
         import subprocess
         
-        # Create a project that will fail during capture (no hardware)
         proj_dir = _make_minimal_project(tmp_path)
         
+        # Inject an exception at the Phase D facade seam by creating a runner script
+        runner_py = tmp_path / "runner.py"
+        runner_py.write_text(f'''
+import sys
+from unittest.mock import patch
+import awr2944_dca.capture_cli
+
+def mock_facade(*args, **kwargs):
+    raise RuntimeError("Synthetic Phase D facade exception")
+
+with patch("awr2944_dca.api._capture_run._run_capture_facade", side_effect=mock_facade):
+    sys.argv = ["capture_cli", "--project-root", r"{proj_dir}", "--debug"]
+    try:
+        awr2944_dca.capture_cli.main()
+    except Exception as e:
+        # capture_cli.main already catches Exception if --debug is present
+        pass
+        ''', encoding="utf-8")
+        
         result = subprocess.run(
-            [sys.executable, "-m", "awr2944_dca.capture_cli",
-             "--project-root", str(proj_dir),
-             "--debug"],
+            [sys.executable, str(runner_py)],
             capture_output=True, text=True, timeout=15
         )
         
-        # Should fail (no hardware) but should show traceback
-        assert result.returncode != 0
-        # Debug mode should include "Traceback" in output
         combined = result.stdout + result.stderr
+        assert result.returncode != 0
+        assert "Synthetic Phase D facade exception" in combined
         assert "Traceback" in combined or "[FATAL]" in combined
-        # Should still have the [FATAL] line
         assert "[FATAL]" in combined

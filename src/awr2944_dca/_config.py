@@ -51,6 +51,7 @@ class LocalConfig:
     # DCA Tools
     dca_control_exe: str = ""
     dca_record_exe: str = ""
+    rf_api_dll: str = ""
     cf_json_path: str = ""
 
     def update(self, **kwargs):
@@ -114,6 +115,7 @@ class ProjectConfig:
                 host_ip=net.get("host_ip", self.local.host_ip),
                 dca_control_exe=tools.get("control_exe", self.local.dca_control_exe),
                 dca_record_exe=tools.get("record_exe", self.local.dca_record_exe),
+                rf_api_dll=tools.get("rf_api_dll", self.local.rf_api_dll),
                 cf_json_path=tools.get("cf_json", self.local.cf_json_path),
             )
 
@@ -149,6 +151,7 @@ class ProjectConfig:
             "dca_tools": {
                 "control_exe": self.local.dca_control_exe,
                 "record_exe": self.local.dca_record_exe,
+                "rf_api_dll": self.local.rf_api_dll,
                 "cf_json": self.local.cf_json_path,
             }
         }

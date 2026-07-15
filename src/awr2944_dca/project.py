@@ -306,7 +306,20 @@ def project_status(root: Path | str) -> dict:
     Counts only managed captures (those with ``capture_manifest.json``).
     """
     root = Path(root).resolve()
-    proj = load_project(root)
+    try:
+        proj = load_project(root)
+        postproc_exists = Path(proj["postproc_dir_abs"]).exists()
+        probe_exists = (root / proj["probe_dir_rel"]).exists()
+    except FileNotFoundError:
+        proj = {
+            "name": root.name,
+            "project_id": "unknown",
+            "postproc_dir_abs": "",
+            "probe_dir_rel": "ti/probe_logs",
+            "expected_bytes": 0,
+        }
+        postproc_exists = False
+        probe_exists = False
 
     captures_dir = root / "captures"
     managed_captures: list[dict] = []
@@ -322,9 +335,6 @@ def project_status(root: Path | str) -> dict:
                 })
             except (json.JSONDecodeError, IOError):
                 pass
-
-    postproc_exists = Path(proj["postproc_dir_abs"]).exists()
-    probe_exists = (root / proj["probe_dir_rel"]).exists()
 
     # Check gitignore
     gi = root / ".gitignore"

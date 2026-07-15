@@ -1311,6 +1311,220 @@ def experiment_init(
         raise typer.Exit(code=1)
 
 # ===========================================================================
+# awr capture run  (acquisition)
+# ===========================================================================
+
+@capture_mgmt_app.command("run")
+def capture_run_cmd(
+    profile: str = typer.Option("smoke_v1", help="Profile name"),
+    frames: Optional[int] = typer.Option(None, help="Number of frames (overrides profile)"),
+    guard_frames: Optional[int] = typer.Option(None, help="Guard frames (default from project)"),
+    name: str = typer.Option("dca_capture", help="Capture name"),
+    project_root: Optional[Path] = typer.Option(None, help="Project root (auto-detected if omitted)"),
+) -> None:
+    """Execute a full production capture."""
+    from awr2944_dca.lab import RadarProject
+    console = Console()
+    try:
+        if project_root:
+            proj = RadarProject.open(project_root)
+        else:
+            proj = RadarProject.open_here()
+        result = proj.capture.run(
+            profile=profile,
+            frames=frames,
+            guard_frames=guard_frames,
+            name=name,
+        )
+        if result.success:
+            console.print(f"[green]✓ Capture successful: {result.capture.capture_id}[/green]")
+        else:
+            console.print(f"[red]✗ Capture failed: {result.session_result.manifest.get('failure_reason', 'unknown')}[/red]")
+            raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1)
+
+
+# ===========================================================================
+# awr captures ...  (persisted artifact management)
+# ===========================================================================
+
+captures_app = typer.Typer(help="Capture artifact management.", no_args_is_help=True)
+app.add_typer(captures_app, name="captures")
+
+
+@captures_app.command("list")
+def captures_list_cmd(
+    project_root: Optional[Path] = typer.Option(None, help="Project root (auto-detected if omitted)"),
+) -> None:
+    """List all managed captures."""
+    from awr2944_dca.lab import RadarProject
+    console = Console()
+    try:
+        if project_root:
+            proj = RadarProject.open(project_root)
+        else:
+            proj = RadarProject.open_here()
+        caps = proj.captures.list()
+        if not caps:
+            console.print("[dim]No captures found.[/dim]")
+            return
+        table = Table(title="Captures")
+        table.add_column("ID", style="cyan")
+        table.add_column("Name")
+        table.add_column("Status")
+        for cap in caps:
+            s = cap.status()
+            table.add_row(s.get('capture_id', ''), s.get('capture_name', ''), s.get('status', ''))
+        console.print(table)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1)
+
+
+@captures_app.command("show")
+def captures_show_cmd(
+    query: str = typer.Argument(..., help="Capture ID or name substring"),
+    project_root: Optional[Path] = typer.Option(None, help="Project root (auto-detected if omitted)"),
+) -> None:
+    """Show details of a specific capture."""
+    from awr2944_dca.lab import RadarProject
+    console = Console()
+    try:
+        if project_root:
+            proj = RadarProject.open(project_root)
+        else:
+            proj = RadarProject.open_here()
+        cap = proj.captures.get(query)
+        console.print(f"[bold]Capture:[/bold] {cap.capture_id}")
+        s = cap.status()
+        for k, v in s.items():
+            console.print(f"  {k}: {v}")
+        prod = cap.manifest
+        if prod:
+            console.print(f"\n  [bold]Production Manifest:[/bold]")
+            for key in ('native_byte_count', 'canonical_native_byte_count',
+                        'packet_count', 'sequence_gaps', 'native_sha256',
+                        'canonical_sha256', 'logical_cube_shape', 'success'):
+                if key in prod:
+                    console.print(f"    {key}: {prod[key]}")
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1)
+
+
+@captures_app.command("verify")
+def captures_verify_cmd(
+    query: str = typer.Argument(..., help="Capture ID or name substring"),
+    strict: bool = typer.Option(False, "--strict", help="Raise on failure"),
+    project_root: Optional[Path] = typer.Option(None, help="Project root (auto-detected if omitted)"),
+) -> None:
+    """Verify a capture's integrity."""
+    from awr2944_dca.lab import RadarProject
+    console = Console()
+    try:
+        if project_root:
+            proj = RadarProject.open(project_root)
+        else:
+            proj = RadarProject.open_here()
+        cap = proj.captures.get(query)
+        report = cap.verify(strict=strict)
+        console.print(report.summary())
+        if not report.success:
+            raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1)
+
+
+# ===========================================================================
+# awr profiles ...
+# ===========================================================================
+
+profiles_app = typer.Typer(help="Structured profile management (Offline).", no_args_is_help=True)
+app.add_typer(profiles_app, name="profiles")
+
+@profiles_app.command("list")
+def profiles_list() -> None:
+    """List all available profiles."""
+    from awr2944_dca.lab import RadarProject
+    proj = RadarProject.open_here()
+    entries = proj.profiles.list()
+    
+    table = Table(title="Structured Profiles")
+    table.add_column("Name", style="cyan")
+    table.add_column("Origin")
+    table.add_column("Path")
+    
+    for e in sorted(entries, key=lambda x: x.name):
+        origin_str = "[blue]built-in[/blue]" if e.origin == "built_in" else "[green]project[/green]"
+        if e.shadows_built_in:
+            origin_str += " (shadows built-in)"
+        table.add_row(e.name, origin_str, str(e.path) if e.path else "-")
+        
+    console.print(table)
+
+
+@profiles_app.command("show")
+def profiles_show(name: str = typer.Argument(..., help="Profile name")) -> None:
+    """Show details of a structured profile."""
+    from awr2944_dca.lab import RadarProject
+    proj = RadarProject.open_here()
+    try:
+        prof = proj.profiles.get(name)
+        console.print(prof.to_toml())
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1)
+
+
+@profiles_app.command("validate")
+def profiles_validate(name: str = typer.Argument(..., help="Profile name")) -> None:
+    """Validate a structured profile and display its derived parameters."""
+    from awr2944_dca.lab import RadarProject
+    proj = RadarProject.open_here()
+    try:
+        prof = proj.profiles.get(name)
+        report = prof.validate()
+        
+        console.print(f"[bold]Validation for {name}[/bold]")
+        console.print(report.summary())
+        
+        if report.derived:
+            console.print("\n[bold]Derived Parameters:[/bold]")
+            for k, v in report.derived.items():
+                console.print(f"  {k}: {v}")
+                
+        if not report.success:
+            raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1)
+
+
+@profiles_app.command("export")
+def profiles_export(
+    name: str = typer.Argument(..., help="Profile name"),
+    format: str = typer.Option("sdk-cli", "--format", help="Export format")
+) -> None:
+    """Export profile to SDK CLI commands (offline)."""
+    from awr2944_dca.lab import RadarProject
+    proj = RadarProject.open_here()
+    try:
+        prof = proj.profiles.get(name)
+        if format != "sdk-cli":
+            console.print("[red]Error: Only --format sdk-cli is currently supported.[/red]")
+            raise typer.Exit(code=1)
+            
+        cmds = prof.to_sdk_cli()
+        for c in cmds:
+            console.print(c)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1)
+
+# ===========================================================================
 # awr ti ...
 # ===========================================================================
 

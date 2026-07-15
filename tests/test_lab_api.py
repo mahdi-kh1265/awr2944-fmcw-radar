@@ -154,7 +154,7 @@ def test_verify_wraps_verify_capture(tmp_path):
     inspect_capture(tmp_path, manifest['capture_id'], refresh_adc_inspect=True)
     cap = RadarCapture(tmp_path, manifest['capture_id'])
     result = cap.verify()
-    assert isinstance(result, dict)
+    # CaptureVerificationReport supports dict-style access
     assert 'passed' in result
 
 def test_inspect_adc_wraps_inspect_capture(tmp_path):
@@ -184,7 +184,7 @@ def test_add_tags_updates_manifest(tmp_path):
     assert 'baseline' in result
     assert 'corner-reflector' in result
     cap.refresh()
-    assert 'baseline' in cap.manifest['tags']
+    assert 'baseline' in cap.project_record['tags']
 
 def test_notes_reads_content(tmp_path):
     _make_project(tmp_path)

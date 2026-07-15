@@ -90,6 +90,14 @@ class RadarProject:
         return self._config.portable.project_id
 
     @property
+    def profiles(self):
+        """Access the profile collection for this project."""
+        if not hasattr(self, '_profiles'):
+            from awr2944_dca.api.profile_collection import ProfileCollection
+            self._profiles = ProfileCollection(self._root / "profiles")
+        return self._profiles
+
+    @property
     def headless(self) -> 'HeadlessApi':
         """Access the headless capture API (AWR2944 mmw demo + DCA CLI).
 
@@ -102,10 +110,11 @@ class RadarProject:
         return self._headless_api
 
     @property
-    def capture(self) -> 'CaptureApi':
+    def capture(self) -> 'FacadeCaptureApi':
         """Production capture API (direct UDP + UART)."""
         if not hasattr(self, '_capture_api'):
-            self._capture_api = CaptureApi(self)
+            from awr2944_dca.api._capture_run import FacadeCaptureApi
+            self._capture_api = FacadeCaptureApi(self)
         return self._capture_api
 
     @property
@@ -119,6 +128,61 @@ class RadarProject:
     def doctor(self, include_hardware: bool = True) -> 'HardwareReport':
         """Run project health and hardware diagnostics."""
         return self.hardware.verify(include_hardware=include_hardware)
+
+    def connect(self, force: bool = False) -> 'RadarSession':
+        """Create a RadarSession with resolved settings and global lock.
+
+        The session is NOT a persistent connection. It resolves settings
+        from local.toml, acquires a global hardware lock, and provides
+        a capture API.
+        """
+        from awr2944_dca.api._session import (
+            RadarSession, resolve_connection, ConnectionOverrides,
+        )
+        from awr2944_dca.api._lock import HardwareLease
+
+        conn = resolve_connection(self._root)
+        lease = HardwareLease(
+            com_port=conn.com_port,
+            host_ip=conn.host_ip,
+            data_port=conn.data_port,
+            dca_ip=conn.dca_ip,
+            cmd_port=conn.cmd_port,
+            project_root=str(self._root),
+        )
+        lock_info = lease.acquire(force=force)
+
+        # Write breadcrumb
+        breadcrumb_path = self._root / ".awr2944" / "session.breadcrumb"
+        breadcrumb_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            breadcrumb_path.write_text(str(lease.lock_path), encoding="utf-8")
+        except Exception:
+            pass
+
+        return RadarSession(
+            project=self,
+            connection=conn,
+            lease=lease,
+            lock_info=lock_info,
+        )
+
+    def emergency_stop(self, force: bool = False) -> 'EmergencyStopReport':
+        """Send sensorStop + DCA stop_record using existing proven helpers.
+
+        Respects lock ownership unless force=True.
+        """
+        from awr2944_dca.api._emergency import emergency_stop as _estop
+        cfg = self._config
+        return _estop(
+            com_port=cfg.local.com_port or "COM8",
+            host_ip=cfg.local.host_ip or "192.168.33.30",
+            dca_ip=cfg.portable.dca_ip,
+            data_port=cfg.portable.data_port,
+            cmd_port=cfg.portable.config_port,
+            force=force,
+            project_root=str(self._root),
+        )
 
     def status(self) -> dict:
         """Return project status summary dict."""
@@ -136,41 +200,27 @@ class RadarProject:
         """
         return _set_defaults(self._root, **kwargs)
 
-    def captures(self) -> list['RadarCapture']:
-        """Return list of RadarCapture objects for all managed captures."""
-        st = project_status(self._root)
-        return [RadarCapture(self._root, c['capture_id']) for c in st.get('captures', [])]
+    @property
+    def captures(self) -> 'CaptureCollection':
+        """Access the capture collection for this project."""
+        if not hasattr(self, '_captures_collection'):
+            from awr2944_dca.api._collection import CaptureCollection
+            self._captures_collection = CaptureCollection(self._root)
+        return self._captures_collection
 
     def get_capture(self, query: str) -> 'RadarCapture':
         """Fuzzy lookup: match by capture_id prefix, name substring, or date.
 
-        - 0 matches → ValueError with helpful message
-        - 1 match   → return RadarCapture
-        - >1 matches → ValueError listing all matches
+        Compatibility alias for project.captures.get(query).
         """
-        st = project_status(self._root)
-        all_captures = st.get('captures', [])
-        matches = []
-        for c in all_captures:
-            cid = c.get('capture_id', '')
-            cname = c.get('capture_name', '')
-            if cid == query or cid.startswith(query) or query.lower() in cname.lower():
-                matches.append(c)
-        if len(matches) == 0:
-            available = [c.get('capture_id', '') for c in all_captures]
-            raise ValueError(f"No capture matching '{query}'. Available: {available}")
-        if len(matches) > 1:
-            listing = [f"  {c['capture_id']}  ({c.get('capture_name', '')})" for c in matches]
-            raise ValueError(f"Ambiguous: '{query}' matches {len(matches)} captures. Use the full capture_id:\n" + '\n'.join(listing))
-        return RadarCapture(self._root, matches[0]['capture_id'])
+        return self.captures.get(query)
 
     def latest_capture(self) -> 'RadarCapture':
-        """Return the newest managed capture."""
-        st = project_status(self._root)
-        newest = st.get('newest_capture')
-        if newest is None:
-            raise ValueError('No captures in this project.')
-        return RadarCapture(self._root, newest['capture_id'])
+        """Return the newest managed capture.
+
+        Compatibility alias for project.captures.latest().
+        """
+        return self.captures.latest()
 
     def _probe_dir(self) -> Path:
         """Return the probe directory for this project."""
@@ -244,28 +294,47 @@ class RadarCapture:
 
     def status(self) -> dict:
         """Return capture status as a dict."""
-        if self._manifest is None:
-            return {'capture_id': self._capture_id, 'status': 'not_found'}
-        return {'capture_id': self._capture_id, 'capture_name': self._manifest.get('capture_name', ''), 'status': self._manifest.get('status', ''), 'created_at': self._manifest.get('created_at', ''), 'workflow_id': self._manifest.get('workflow_id'), 'raw_file_rel': self._manifest.get('raw_file_rel'), 'tags': self._manifest.get('tags', [])}
+        from awr2944_dca.api._status_resolver import resolve_capture_status
+        prod_manifest = self._load_production_manifest()
+        return resolve_capture_status(self._manifest, prod_manifest)
 
-    def verify(self) -> dict:
-        """Run capture verification. Returns result dict."""
-        return verify_capture(self._root, self._capture_id)
+    def verify(self, strict: bool = False):
+        """Run capture verification.
 
-    def open_viewer(self):
-        """Open the standalone MATLAB viewer for this capture."""
-        canonical_path = self._root / 'captures' / self._capture_id / 'adc_data_canonical.bin'
-        if not canonical_path.exists():
-            print(f'Canonical raw data missing: {canonical_path}')
-            return
-        from awr2944_dca.dsp.config import RadarProfile
-        from awr2944_dca.viewer import export_viewer_payload_and_launch
-        import awr2944_dca
-        from pathlib import Path
-        import dataclasses
+        Returns CaptureVerificationReport.
+        If strict=True, raises CaptureVerificationError on failure.
+        """
+        prod_manifest = self._load_production_manifest()
+        if prod_manifest is not None:
+            from awr2944_dca.api._verification import verify_production_capture
+            cap_dir = self._root / 'captures' / self._capture_id
+            report = verify_production_capture(cap_dir, prod_manifest)
+            if strict:
+                report.raise_for_errors()
+            return report
+        # Fallback to legacy project-level verify for old captures
+        result = verify_capture(self._root, self._capture_id)
+        from awr2944_dca.api._verification import CaptureVerificationReport, VerificationCheck
+        checks = []
+        for err in result.get('errors', []):
+            checks.append(VerificationCheck('legacy', 'FAIL', err))
+        for warn in result.get('warnings', []):
+            checks.append(VerificationCheck('legacy', 'WARN', warn))
+        if not checks:
+            checks.append(VerificationCheck('legacy', 'PASS', 'All checks passed'))
+        report = CaptureVerificationReport(
+            success=result.get('passed', False),
+            checks=checks,
+        )
+        if strict:
+            report.raise_for_errors()
+        return report
+
+
+    def _resolve_viewer_profile(self):
+        """Shared helper to resolve RadarProfile from manifests for viewer launch."""
         import json
         prof = None
-        
         prod_manifest_path = self._root / 'captures' / self._capture_id / 'manifest.json'
         if prod_manifest_path.exists():
             with open(prod_manifest_path, 'r', encoding='utf-8') as f:
@@ -281,12 +350,29 @@ class RadarCapture:
                 prof = self._reconstruct_profile_from_config_lines(self._manifest['radar_config'])
 
         if prof is None:
+            return None
+
+        if 'prod_manifest' in locals() and prod_manifest.get('canonical_frame_count'):
+            import dataclasses
+            prof = dataclasses.replace(prof, frame_count=prod_manifest['canonical_frame_count'])
+            
+        return prof
+
+    def open_viewer(self):
+        """Open the standalone MATLAB viewer for this capture."""
+        canonical_path = self._root / 'captures' / self._capture_id / 'adc_data_canonical.bin'
+        if not canonical_path.exists():
+            print(f'Canonical raw data missing: {canonical_path}')
+            return
+        prof = self._resolve_viewer_profile()
+        if prof is None:
             print('Could not find or reconstruct radar profile from manifest.')
             return
 
-        if 'prod_manifest' in locals() and prod_manifest.get('canonical_frame_count'):
-            prof = dataclasses.replace(prof, frame_count=prod_manifest['canonical_frame_count'])
-
+        from awr2944_dca.viewer import export_viewer_payload_and_launch
+        import awr2944_dca
+        from pathlib import Path
+        
         matlab_dir = Path(awr2944_dca.__file__).parent.parent.parent / 'matlab'
         export_viewer_payload_and_launch(capture_path=canonical_path, profile=prof, mode='standalone', matlab_script_dir=matlab_dir / 'viewer')
 
@@ -339,8 +425,33 @@ class RadarCapture:
         return p if p.exists() else None
 
     @property
+    def raw(self) -> 'CaptureRawData':
+        """Typed accessor for raw binary capture data."""
+        if not hasattr(self, '_raw_data'):
+            from awr2944_dca.api._capture_raw import CaptureRawData
+            cap_dir = self._root / 'captures' / self._capture_id
+            prod_manifest = self._load_production_manifest()
+            self._raw_data = CaptureRawData(cap_dir, prod_manifest)
+        return self._raw_data
+
+    def _load_production_manifest(self) -> dict | None:
+        """Load production manifest.json (written by frozen run_capture)."""
+        path = self._root / 'captures' / self._capture_id / 'manifest.json'
+        if path.exists():
+            try:
+                return json.loads(path.read_text(encoding='utf-8'))
+            except (json.JSONDecodeError, IOError):
+                return None
+        return None
+
+    @property
     def manifest(self) -> dict | None:
-        """Return the capture manifest dict."""
+        """Return the production manifest.json dict."""
+        return self._load_production_manifest()
+
+    @property
+    def project_record(self) -> dict | None:
+        """Return the project capture_manifest.json dict."""
         return self._manifest
 
     @property
@@ -354,7 +465,32 @@ class RadarCapture:
                 return None
         return None
 
+
+    def open_controlled_viewer(
+        self,
+        clim_mode: str = "fixed_global",
+        display_dynamic_range_db: float = 40.0,
+    ) -> Any:
+        """Launch the MATLAB viewer via COM Automation for Python control.
+        
+        Returns a ControlledViewer context manager.
+        """
+        import awr2944_dca.viewer_ctrl as viewer_ctrl
+
+        return viewer_ctrl.open_controlled_viewer(
+            self,
+            clim_mode=clim_mode,
+            display_dynamic_range_db=display_dynamic_range_db,
+        )
+
+    @property
+    def viewer_data(self) -> Any:
+        """Read-only accessor for the existing viewer payload."""
+        import awr2944_dca.viewer_ctrl as viewer_ctrl
+        return viewer_ctrl.ViewerData(self._root / 'captures' / self._capture_id)
+
     def __repr__(self) -> str:
+
         status = self._manifest.get('status', '?') if self._manifest else 'not_found'
         name = self._manifest.get('capture_name', '') if self._manifest else ''
         return f"RadarCapture('{self._capture_id}', name='{name}', status='{status}')"

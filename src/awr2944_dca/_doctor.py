@@ -235,8 +235,31 @@ class HardwareManager:
             except Exception as e:
                 self._add("cf_json_consistency", "FAIL", "OFFLINE", str(e))
 
-        # 15. Session Lock (Placeholder)
-        self._add("no_active_session_lock", "SKIP", "OFFLINE", "Session locking not yet implemented", req=False)
+        # 15. Session Lock
+        from awr2944_dca.api._lock import HardwareLease
+        from awr2944_dca.api._session import resolve_connection
+        try:
+            conn = resolve_connection(self._project.root)
+            state, lock_info = HardwareLease.inspect_owner(
+                com_port=conn.com_port,
+                host_ip=conn.host_ip,
+                data_port=conn.data_port,
+                dca_ip=conn.dca_ip,
+                cmd_port=conn.cmd_port,
+            )
+            
+            if state == "owned_by_us":
+                self._add("no_active_session_lock", "PASS", "OFFLINE", f"Session lock held by this process ({lock_info.pid})", req=False)
+            elif state == "owned_by_other_live":
+                self._add("no_active_session_lock", "FAIL", "OFFLINE", f"Hardware locked by live process {lock_info.pid} (Project: {lock_info.project_root})", req=False)
+            elif state == "stale":
+                self._add("no_active_session_lock", "WARN", "OFFLINE", f"Stale lock found from dead process {lock_info.pid} (Project: {lock_info.project_root})", req=False)
+            elif state == "malformed":
+                self._add("no_active_session_lock", "WARN", "OFFLINE", "Malformed lock file found", req=False)
+            else:
+                self._add("no_active_session_lock", "PASS", "OFFLINE", "Hardware is currently unlocked", req=False)
+        except Exception as e:
+            self._add("no_active_session_lock", "FAIL", "OFFLINE", f"Failed to check lock status: {e}", req=False)
 
         if not include_hardware:
             return HardwareReport(list(self._checks.values()), datetime.now(timezone.utc).isoformat(), "OFFLINE_ONLY")
