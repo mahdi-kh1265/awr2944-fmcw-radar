@@ -1,9 +1,0 @@
-{
-  "run_id": "3ecac52f",
-  "stage": "smoke_config",
-  "lua_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe\\ti\\probe_logs\\3ecac52f_smoke_known_awr2944.lua",
-  "result_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe\\ti\\probe_logs\\3ecac52f_smoke_known_awr2944_result.json",
-  "progress_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe\\ti\\probe_logs\\3ecac52f_smoke_known_awr2944_progress.jsonl",
-  "dofile": "dofile([[C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe\\ti\\probe_logs\\3ecac52f_smoke_known_awr2944.lua]])",
-  "created_at": "2026-07-07T12:45:14.341408"
-}

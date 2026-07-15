@@ -1,5 +1,0 @@
-{"step": "script_started"}
-{"step": "before_startup_lite"}
-{"step": "after_startup_lite", "detail": "true nil"}
-{"step": "before_Connect", "detail": "COM6 baud=115200 timeout=1000"}
-{"step": "after_Connect", "detail": "ERROR: System.NullReferenceException: Object reference not set to an instance of an object.\r\n   at AR1xController.DllOps.Connect_Ext(UInt32 RadarDeviceId, UInt32 con_type, UInt32 com_port, UInt32 baud_rate, UInt32 timeout, UInt32 board_type, UInt32 dest)\r\n   at AR1xController.AR1xxxWrapper.Connect(UInt32 com_port, UInt32 baud_rate, UInt32 timeout): 35320229"}

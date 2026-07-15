@@ -7510,10 +7510,10 @@ def mmws_post_guided_validate(
             console.print(f"{cwd.resolve()}")
             console.print(f"\nRefusing to continue to avoid writing run artifacts into the wrong ti/probe_logs folder.")
             console.print(f"\nUse one of:")
-            console.print(f"  cd exp_lau_probe")
+            console.print(f"  cd <project_dir>")
             console.print(f"  awr mmws post guided-validate --pid <PID> --label \"<label>\"")
             console.print(f"\nor:")
-            console.print(f"  awr mmws post guided-validate --pid <PID> --label \"<label>\" --probe-dir C:\\...\\exp_lau_probe\\ti\\probe_logs\n")
+            console.print(f"  awr mmws post guided-validate --pid <PID> --label \"<label>\" --probe-dir C:\\...\\ti\\probe_logs\n")
             raise typer.Exit(1)
             
     from .legacy_mmws.guided_runner import run_guided_workflow

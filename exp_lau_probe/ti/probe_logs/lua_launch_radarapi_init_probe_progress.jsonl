@@ -1,5 +1,0 @@
-{"step": "script_started"}
-{"step": "before_startup_lite"}
-{"step": "after_startup_lite", "detail": "true nil"}
-{"step": "before_ShowGui"}
-{"step": "after_ShowGui", "detail": "false System.Exception: \n\n... MWMCR::EvaluateFunction error ... \nAttempt to reference field of non-structure array.\nError in => select_capture_device.m at line 20.\n\n... Matlab M-code Stack Trace ...\n    at\nfile C:\\Users\\khams008\\AppData\\Local\\Temp\\khams008\\mcrCache8.5.1\\Matlab1\\MatlabPostPr\\select_capture_device.m, name select_capture_device, line 20.\n\n\r\n   at System.Windows.Forms.Control.MarshaledInvoke(Control caller, Delegate method, Object[] args, Boolean synchronous)\r\n   at System.Windows.Forms.Control.Invoke(Delegate method, Object[] args)\r\n   at System.Windows.Forms.Control.Invoke(Delegate method)\r\n   at AR1xController.AR1xxxWrapper.ShowGui(): 35320229"}

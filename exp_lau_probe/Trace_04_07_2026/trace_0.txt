@@ -1,4 +1,0 @@
-[01:43:28:166]: FTDI Port [0] Description = AR-DevPack-EVM-012 A 
-[01:43:28:167]: FTDI Port [1] Description = AR-DevPack-EVM-012 D 
-[01:43:28:167]: FTDI Port [2] Description = AR-DevPack-EVM-012 C 
-[01:43:28:167]: FTDI Port [3] Description = AR-DevPack-EVM-012 B 

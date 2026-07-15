@@ -52,10 +52,10 @@ from awr2944_dca.headless_workflow import (
 
 def _find_headless_dir() -> Path:
     """Locate the headless config directory relative to the project."""
-    # Walk up from this file to find exp_lau_probe/ti/headless
+    # Walk up from this file to find ti/headless
     src_dir = Path(__file__).resolve().parent
     project_root = src_dir.parent  # src/ -> project root
-    headless_dir = project_root / "exp_lau_probe" / "ti" / "headless"
+    headless_dir = project_root / "ti" / "headless"
     if headless_dir.exists():
         return headless_dir
     return project_root / "headless"
@@ -130,7 +130,7 @@ class HeadlessApi:
 
     def __init__(self, project_root: Path):
         self._root = Path(project_root).resolve()
-        self._headless_dir = self._root / "exp_lau_probe" / "ti" / "headless"
+        self._headless_dir = self._root / "ti" / "headless"
         self._tc: dict | None = None
         self._radar: _HeadlessRadarApi | None = None
         self._dca: _HeadlessDcaApi | None = None

@@ -1,9 +1,0 @@
-{
-  "run_id": "9edb8754",
-  "stage": "capture_trigger",
-  "lua_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe\\ti\\probe_logs\\9edb8754_capture_trigger.lua",
-  "result_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe\\ti\\probe_logs\\9edb8754_capture_trigger_result.json",
-  "progress_path": "C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe\\ti\\probe_logs\\9edb8754_capture_trigger_progress.jsonl",
-  "dofile": "dofile([[C:\\Users\\khams008\\Documents\\awr2944-fmcw-radar\\exp_lau_probe\\ti\\probe_logs\\9edb8754_capture_trigger.lua]])",
-  "created_at": "2026-07-09T09:45:22.940925"
-}

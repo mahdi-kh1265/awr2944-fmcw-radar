@@ -26,7 +26,7 @@ def test_production_modules_do_not_import_mmws():
     assert len(mmws_imports) == 0, f"Production code imported legacy mmws modules: {mmws_imports}"
 
 def test_build_smoke_v1_cli_parity():
-    """Verify generated SDK CLI commands against smoke_v1_headless_candidate.cfg."""
+    """Verify generated SDK CLI commands."""
     from awr2944_dca.sdk_cli_profile import build_smoke_v1_cli
     
     # Generate for 9 frames

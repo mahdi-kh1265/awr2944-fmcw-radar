@@ -43,7 +43,7 @@ def _make_toolchain_config(proj_dir, control_exe="C:\\ti\\PostProc\\DCA1000EVM_C
                            record_exe="C:\\ti\\PostProc\\DCA1000EVM_CLI_Record.exe",
                            cf_json="C:\\ti\\PostProc\\cf.json"):
     """Create a toolchain.local.json in the expected location."""
-    headless_dir = proj_dir / "exp_lau_probe" / "ti" / "headless"
+    headless_dir = proj_dir / "ti" / "headless"
     headless_dir.mkdir(parents=True, exist_ok=True)
     tc = {
         "dca_cli_control_exe": control_exe,

@@ -1,9 +1,0 @@
-{
-  "executed": true,
-  "status": "LUA_SET_ONLY_SUCCESS",
-  "frequencyBandSelection_return": "0",
-  "SelectChipVersion_return": "0",
-  "deviceVariantSelection_return": "0",
-  "SOPControl_return": "0",
-  "error": null
-}

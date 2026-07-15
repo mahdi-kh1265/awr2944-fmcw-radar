@@ -10,7 +10,7 @@ Usage::
 
     from awr2944_dca.lab import RadarProject
 
-    lab = RadarProject.open("exp_lau_probe")
+    lab = RadarProject.open(".")
     lab.set_defaults(firmware_run_id="df1f275c", config_run_id="4b87faae")
 
     run = lab.capture_smoke("my_capture")
@@ -631,7 +631,7 @@ class CaptureApi:
         Returns None if toolchain.local.json does not exist.
         """
         from awr2944_dca.headless import load_toolchain
-        candidates = [self._root / 'ti' / 'headless' / 'toolchain.local.json', self._root / 'exp_lau_probe' / 'ti' / 'headless' / 'toolchain.local.json']
+        candidates = [self._root / 'ti' / 'headless' / 'toolchain.local.json']
         for tc_path in candidates:
             if tc_path.exists():
                 try:

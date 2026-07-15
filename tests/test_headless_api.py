@@ -23,7 +23,7 @@ def project_root(tmp_path):
     }
     (tmp_path / "project.json").write_text(json.dumps(proj))
     (tmp_path / "captures").mkdir()
-    (tmp_path / "exp_lau_probe" / "ti" / "headless").mkdir(parents=True)
+    (tmp_path / "ti" / "headless").mkdir(parents=True)
 
     # Create toolchain.local.json
     tc = {
@@ -37,7 +37,7 @@ def project_root(tmp_path):
         "sbl_uart_uniflash_tiimage": str(tmp_path / "sbl_uart_uniflash.release.tiimage"),
         "sbl_qspi_tiimage": str(tmp_path / "sbl_qspi.release.tiimage"),
     }
-    tc_path = tmp_path / "exp_lau_probe" / "ti" / "headless" / "toolchain.local.json"
+    tc_path = tmp_path / "ti" / "headless" / "toolchain.local.json"
     tc_path.write_text(json.dumps(tc))
 
     return tmp_path
