@@ -217,3 +217,13 @@ matlab_log.txt
 *.svg
 *.pdf
 
+# Batch 1 cleanups
+awrDispatchOneTick.p
+awrQueueDispatcher.p
+CLI_LogFile.txt
+cli_test_out.txt
+local_oracle/
+tmp_test_dir/
+test_doc_tmp/
+standalone_verify/
+
