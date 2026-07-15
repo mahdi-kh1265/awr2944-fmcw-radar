@@ -57,6 +57,11 @@ _POLL_INTERVAL_S  = 0.05    # 50 ms between filesystem polls
 _WAIT_SLEEP_S     = 0.10    # sleep between wait_ready re-enqueues
 
 
+class ViewerExportUnsupportedError(NotImplementedError):
+    """Raised when an automated MATLAB graphics export is attempted."""
+    pass
+
+
 class ViewerData:
     """Read-only access to the generated viewer payload."""
 
@@ -353,21 +358,11 @@ class ControlledViewer:
         resolution: int = 300,
     ) -> Path:
         """Export a single axes image from the existing MATLAB viewer."""
-        if name not in self.PLOT_MAP:
-            raise ValueError(f"Unknown plot '{name}'")
-        fmt = _validate_format(format)
-        if path is None:
-            frame = self.get_frame()
-            path = self.exports_dir / f"{name}_frame{frame:03d}.{fmt}"
-        out_path = Path(path).resolve()
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        self._enqueue(
-            "export_plot",
-            plot_name=self.PLOT_MAP[name],
-            out_path=str(out_path),
-            resolution=resolution,
+        raise ViewerExportUnsupportedError(
+            "Automated MATLAB graphics export is unavailable in this headless COM environment.\n"
+            "Please open the MATLAB dashboard and use the built-in export functionality, "
+            "or take an OS screenshot."
         )
-        return out_path
 
     def export_all(
         self,
@@ -377,48 +372,32 @@ class ControlledViewer:
         resolution: int = 300,
     ) -> dict[str, Path]:
         """Export all four axes images from the existing MATLAB viewer."""
-        fmt = _validate_format(format)
-        frame = self.get_frame()
-        base_dir = Path(directory).resolve() if directory else self.exports_dir
-        base_dir.mkdir(parents=True, exist_ok=True)
-        return {
-            name: self.export_plot(
-                name,
-                path=base_dir / f"{name}_frame{frame:03d}.{fmt}",
-                format=fmt,
-                resolution=resolution,
-            )
-            for name in self.PLOT_MAP
-        }
+        raise ViewerExportUnsupportedError(
+            "Automated MATLAB graphics export is unavailable in this headless COM environment.\n"
+            "Please open the MATLAB dashboard and use the built-in export functionality, "
+            "or take an OS screenshot."
+        )
 
     def export_window(
         self,
         *,
         path: Path | None = None,
         format: str = "png",
-        resolution: int = 300,
+        resolution: int = 150,
     ) -> Path:
         """Export the full MATLAB dashboard window."""
-        fmt = _validate_format(format)
-        if path is None:
-            frame = self.get_frame()
-            path = self.exports_dir / f"dashboard_frame{frame:03d}.{fmt}"
-        out_path = Path(path).resolve()
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        self._enqueue(
-            "export_window",
-            out_path=str(out_path),
-            resolution=resolution,
+        raise ViewerExportUnsupportedError(
+            "Automated MATLAB graphics export is unavailable in this headless COM environment.\n"
+            "Please open the MATLAB dashboard and use the built-in export functionality, "
+            "or take an OS screenshot."
         )
-        return out_path
 
-    def save_figure(self, path: Path | None = None) -> Path:
+    def save_figure(self, *, path: Path | None = None) -> Path:
         """Save the MATLAB figure as a .fig file."""
-        if path is None:
-            path = self.exports_dir / "viewer.fig"
-        out_path = Path(path).resolve()
-        self._enqueue("save_figure", out_path=str(out_path))
-        return out_path
+        raise ViewerExportUnsupportedError(
+            "Automated MATLAB .fig saving is unavailable in this headless COM environment.\n"
+            "Please open the MATLAB dashboard and use the File -> Save option."
+        )
 
     def close(self) -> None:
         """Close the viewer. Idempotent: safe to call multiple times."""

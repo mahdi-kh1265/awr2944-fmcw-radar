@@ -160,39 +160,7 @@ function [resp, mat_payload] = awr_execute(action, req, target_fig, data_dir, to
             end
             resp = awr_resp(action, 'actual_frame', guidata(target_fig).currentFrame);
 
-        % ------------------------------------------------------------------
-        case 'export_plot'
-            plot_name  = req.args.plot_name;
-            out_path   = req.args.out_path;
-            resolution = req.args.resolution;
-            state = guidata(target_fig);
-            if ~isfield(state.handles, plot_name)
-                error('AWR:dispatcher:unknownPlot', 'Unknown plot: %s', plot_name);
-            end
-            awr_log_event(log_path, 'exportgraphics_started', token, req_id, action, out_path, '');
-            exportgraphics(state.handles.(plot_name), out_path, 'Resolution', resolution);
-            awr_log_event(log_path, 'exportgraphics_finished', token, req_id, action, out_path, '');
-            resp = awr_resp(action, 'actual_frame', state.currentFrame, ...
-                            'output_path', out_path);
 
-        % ------------------------------------------------------------------
-        case 'export_window'
-            out_path   = req.args.out_path;
-            resolution = req.args.resolution;
-            state = guidata(target_fig);
-            awr_log_event(log_path, 'exportgraphics_started', token, req_id, action, out_path, '');
-            exportgraphics(target_fig, out_path, 'Resolution', resolution);
-            awr_log_event(log_path, 'exportgraphics_finished', token, req_id, action, out_path, '');
-            resp = awr_resp(action, 'actual_frame', state.currentFrame, ...
-                            'output_path', out_path);
-
-        % ------------------------------------------------------------------
-        case 'save_figure'
-            out_path = req.args.out_path;
-            state = guidata(target_fig);
-            savefig(target_fig, out_path);
-            resp = awr_resp(action, 'actual_frame', state.currentFrame, ...
-                            'output_path', out_path);
 
         % ------------------------------------------------------------------
         case 'close'

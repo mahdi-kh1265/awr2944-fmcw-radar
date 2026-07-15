@@ -194,3 +194,26 @@ exp_lau_probe/ti/headless/*.bin
 # MATLAB figure files
 *.fig
 adc_data.fig
+# AWR project: large binary artifacts (auto-managed)
+captures/**/raw/*.bin
+captures/**/raw/*.dat
+captures/**/processed/*.npy
+captures/**/processed/*.npz
+captures/**/processed/*.mat
+captures/**/processed/*.fig
+captures/**/processed/*.png
+captures/**/metadata/mmws_logs/*.mat
+captures/**/metadata/mmws_logs/*.fig
+captures/**/metadata/mmws_logs/*.png
+
+# User requested ignores
+awr2944-live-project/
+viewer_payload/
+.awr2944/local.toml
+matlab_crash_dump.*
+matlab_log.txt
+*.jpeg
+*.jpg
+*.svg
+*.pdf
+

@@ -43,7 +43,7 @@ def _inject_win32com():
     return mock_eng
 
 _mock_eng = _inject_win32com()
-from awr2944_dca.viewer_ctrl import ControlledViewer, _validate_format
+from awr2944_dca.viewer_ctrl import ControlledViewer, _validate_format, ViewerExportUnsupportedError
 
 
 # ---------------------------------------------------------------------------
@@ -165,57 +165,28 @@ def _ready_viewer(viewer, dispatcher, frame_count=8):
 # ===========================================================================
 # 1. Export API
 # ===========================================================================
+# ===========================================================================
+# 1. Export API
+# ===========================================================================
 class TestExportAPI:
 
-    def test_export_plot_accepts_png(self, session, tmp_path):
+    def test_export_plot_raises(self, session, tmp_path):
         viewer, dispatcher, _ = session
         _ready_viewer(viewer, dispatcher)
-        dispatcher.add_response("get_frame", {"success": True, "actual_frame": 1})
-        dispatcher.add_response("export_plot", {"success": True, "output_path": ""})
-        out = viewer.export_plot("range_doppler", format="png")
-        assert out.suffix == ".png"
+        with pytest.raises(ViewerExportUnsupportedError):
+            viewer.export_plot("range_doppler", format="png")
 
-    def test_export_plot_accepts_jpeg(self, session, tmp_path):
+    def test_export_all_raises(self, session, tmp_path):
         viewer, dispatcher, _ = session
         _ready_viewer(viewer, dispatcher)
-        dispatcher.add_response("get_frame", {"success": True, "actual_frame": 1})
-        dispatcher.add_response("export_plot", {"success": True, "output_path": ""})
-        out = viewer.export_plot("range_doppler", format="jpeg")
-        assert out.suffix == ".jpeg"
+        with pytest.raises(ViewerExportUnsupportedError):
+            viewer.export_all(directory=tmp_path / "my_exports", format="png")
 
-    def test_export_plot_rejects_bad_format(self, session):
+    def test_export_window_raises(self, session):
         viewer, dispatcher, _ = session
         _ready_viewer(viewer, dispatcher)
-        with pytest.raises(ValueError, match="bmp"):
-            viewer.export_plot("range_doppler", format="bmp")
-
-    def test_export_plot_deterministic_path(self, session):
-        viewer, dispatcher, _ = session
-        _ready_viewer(viewer, dispatcher)
-        dispatcher.add_response("get_frame", {"success": True, "actual_frame": 3})
-        dispatcher.add_response("export_plot", {"success": True, "output_path": ""})
-        out = viewer.export_plot("range_doppler", format="png")
-        assert "range_doppler_frame002" in out.name   # 0-based frame 2
-
-    def test_export_all_with_directory(self, session, tmp_path):
-        viewer, dispatcher, _ = session
-        _ready_viewer(viewer, dispatcher)
-        out_dir = tmp_path / "my_exports"
-        dispatcher.add_response("get_frame", {"success": True, "actual_frame": 1})
-        for _ in range(4):
-            dispatcher.add_response("export_plot", {"success": True, "output_path": ""})
-        results = viewer.export_all(directory=out_dir, format="png")
-        assert len(results) == 4
-        for p in results.values():
-            assert p.parent.resolve() == out_dir.resolve()
-
-    def test_export_window_format_propagated(self, session):
-        viewer, dispatcher, _ = session
-        _ready_viewer(viewer, dispatcher)
-        dispatcher.add_response("get_frame", {"success": True, "actual_frame": 1})
-        dispatcher.add_response("export_window", {"success": True, "output_path": ""})
-        out = viewer.export_window(format="jpeg")
-        assert out.suffix == ".jpeg"
+        with pytest.raises(ViewerExportUnsupportedError):
+            viewer.export_window(format="jpeg")
 
 
 # ===========================================================================
@@ -379,9 +350,9 @@ class TestNotebookSignatures:
         _ready_viewer(viewer, dispatcher)
         dispatcher.add_response("get_frame", {"success": True, "actual_frame": 1})
         dispatcher.add_response("export_plot", {"success": True, "output_path": ""})
-        # Must not raise TypeError
-        out = viewer.export_plot("range_doppler", format="png", resolution=300)
-        assert out.suffix == ".png"
+        # Must raise ViewerExportUnsupportedError
+        with pytest.raises(ViewerExportUnsupportedError):
+            viewer.export_plot("range_doppler", format="png", resolution=300)
 
     def test_export_all_kwargs_accepted(self, session, tmp_path):
         viewer, dispatcher, _ = session
@@ -389,16 +360,16 @@ class TestNotebookSignatures:
         dispatcher.add_response("get_frame", {"success": True, "actual_frame": 1})
         for _ in range(4):
             dispatcher.add_response("export_plot", {"success": True, "output_path": ""})
-        results = viewer.export_all(directory=tmp_path / "out", format="png", resolution=300)
-        assert len(results) == 4
+        with pytest.raises(ViewerExportUnsupportedError):
+            viewer.export_all(directory=tmp_path / "out", format="png", resolution=300)
 
     def test_export_window_kwargs_accepted(self, session):
         viewer, dispatcher, _ = session
         _ready_viewer(viewer, dispatcher)
         dispatcher.add_response("get_frame", {"success": True, "actual_frame": 1})
         dispatcher.add_response("export_window", {"success": True, "output_path": ""})
-        out = viewer.export_window(format="png", resolution=300)
-        assert out.suffix == ".png"
+        with pytest.raises(ViewerExportUnsupportedError):
+            viewer.export_window(format="png", resolution=300)
 
     def test_zero_hardware_calls(self):
         """Verify viewer_ctrl imports zero hardware entry points."""
@@ -620,15 +591,15 @@ class TestLiveMatlabViewer:
         data = live_viewer.get_displayed_plot("range_doppler")
         assert not np.array_equal(data["CData"], TestLiveMatlabViewer._cdata_frame0)
 
-    def test_06_export_range_doppler_png(self, live_viewer, tmp_path):
-        out = live_viewer.export_plot("range_doppler", format="png", resolution=300)
-        assert out.exists()
-        assert out.stat().st_size > 4096
+    def test_06_export_range_doppler_raises(self, live_viewer, tmp_path):
+        import awr2944_dca.viewer_ctrl as vc
+        with pytest.raises(vc.ViewerExportUnsupportedError):
+            live_viewer.export_plot("range_doppler", format="png", resolution=300)
 
-    def test_07_export_full_dashboard(self, live_viewer, tmp_path):
-        out = live_viewer.export_window(format="png", resolution=300)
-        assert out.exists()
-        assert out.stat().st_size > 16384
+    def test_07_export_full_dashboard_raises(self, live_viewer, tmp_path):
+        import awr2944_dca.viewer_ctrl as vc
+        with pytest.raises(vc.ViewerExportUnsupportedError):
+            live_viewer.export_window(format="png", resolution=300)
 
     def test_08_return_to_frame_0(self, live_viewer):
         live_viewer.set_frame(0)
