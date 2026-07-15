@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 import pytest
 
-from awr2944_dca.mmws.executor import (
+from awr2944_dca.legacy_mmws.executor import (
     ExecutionMode,
     ExecutionResult,
     TransportInfo,
@@ -16,8 +16,8 @@ from awr2944_dca.mmws.executor import (
     execute_script,
     wait_for_result_json,
 )
-from awr2944_dca.mmws.lua_builder import build_smoke_script, write_smoke_script
-from awr2944_dca.mmws.bridge import StudioBridge, StageStatus
+from awr2944_dca.legacy_mmws.lua_builder import build_smoke_script, write_smoke_script
+from awr2944_dca.legacy_mmws.bridge import StudioBridge, StageStatus
 
 
 # ---------------------------------------------------------------------------
@@ -44,8 +44,8 @@ def test_execute_auto_no_transport_raises(tmp_path):
     script = tmp_path / "test.lua"
     script.write_text("-- test")
 
-    with patch("awr2944_dca.mmws.executor._HAVE_PYTHONNET", False), \
-         patch("awr2944_dca.mmws.executor._HAVE_PYWINAUTO", False):
+    with patch("awr2944_dca.legacy_mmws.executor._HAVE_PYTHONNET", False), \
+         patch("awr2944_dca.legacy_mmws.executor._HAVE_PYWINAUTO", False):
         with pytest.raises(RuntimeError, match="No automatic execution transport"):
             execute_script(script, mode="auto")
 
@@ -55,9 +55,9 @@ def test_execute_auto_no_transport_message(tmp_path):
     script = tmp_path / "test.lua"
     script.write_text("-- test")
 
-    with patch("awr2944_dca.mmws.executor._find_csharp_bridge", return_value=None), \
-         patch("awr2944_dca.mmws.executor._HAVE_PYWINAUTO", False), \
-         patch("awr2944_dca.mmws.executor._HAVE_PYTHONNET", False):
+    with patch("awr2944_dca.legacy_mmws.executor._find_csharp_bridge", return_value=None), \
+         patch("awr2944_dca.legacy_mmws.executor._HAVE_PYWINAUTO", False), \
+         patch("awr2944_dca.legacy_mmws.executor._HAVE_PYTHONNET", False):
         with pytest.raises(RuntimeError) as exc_info:
             execute_script(script, mode="auto")
         msg = str(exc_info.value)
@@ -97,9 +97,9 @@ def test_auto_mode_prefers_csharp_bridge(tmp_path):
     )
 
     from pathlib import Path
-    with patch("awr2944_dca.mmws.executor._find_csharp_bridge", return_value=Path("fake.exe")), \
-         patch("awr2944_dca.mmws.executor._is_rstd_port_open", return_value=True), \
-         patch("awr2944_dca.mmws.executor._execute_via_csharp_bridge", return_value=mock_result):
+    with patch("awr2944_dca.legacy_mmws.executor._find_csharp_bridge", return_value=Path("fake.exe")), \
+         patch("awr2944_dca.legacy_mmws.executor._is_rstd_port_open", return_value=True), \
+         patch("awr2944_dca.legacy_mmws.executor._execute_via_csharp_bridge", return_value=mock_result):
         result = execute_script(script, mode="auto")
         assert result.mode == ExecutionMode.CSHARP_RSTD
         assert result.success is True
@@ -121,10 +121,10 @@ def test_auto_mode_fallback_pywinauto(tmp_path):
         success=True,
     )
 
-    with patch("awr2944_dca.mmws.executor._HAVE_PYTHONNET", False), \
-         patch("awr2944_dca.mmws.executor._HAVE_PYWINAUTO", True), \
-         patch("awr2944_dca.mmws.executor._is_mmws_running", return_value=True), \
-         patch("awr2944_dca.mmws.executor._execute_via_pywinauto", return_value=mock_result):
+    with patch("awr2944_dca.legacy_mmws.executor._HAVE_PYTHONNET", False), \
+         patch("awr2944_dca.legacy_mmws.executor._HAVE_PYWINAUTO", True), \
+         patch("awr2944_dca.legacy_mmws.executor._is_mmws_running", return_value=True), \
+         patch("awr2944_dca.legacy_mmws.executor._execute_via_pywinauto", return_value=mock_result):
         result = execute_script(script, mode="auto")
         assert result.mode == ExecutionMode.UI_LUA_SHELL
         assert result.success is True
@@ -137,10 +137,10 @@ def test_auto_mode_fallback_pywinauto(tmp_path):
 
 def test_run_rstd_worker_subprocess_timeout(tmp_path):
     """If the worker subprocess times out, parent catches it and returns SENDCOMMAND_TIMEOUT."""
-    from awr2944_dca.mmws.executor import _run_rstd_worker_subprocess, _VerboseLog
+    from awr2944_dca.legacy_mmws.executor import _run_rstd_worker_subprocess, _VerboseLog
     import subprocess
     
-    with patch("awr2944_dca.mmws.executor._find_rtttnet_dll", return_value=tmp_path / "RtttNetClientAPI.dll"), \
+    with patch("awr2944_dca.legacy_mmws.executor._find_rtttnet_dll", return_value=tmp_path / "RtttNetClientAPI.dll"), \
          patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=["python"], timeout=1.0)):
         
         vlog = _VerboseLog(False)
@@ -172,8 +172,8 @@ def test_rstd_return_code_not_proof_of_success(tmp_path):
     result_path = tmp_path / "test_result.json"
     result_path.write_text(json.dumps({"error": "Connect failed", "run_id": "x"}))
 
-    with patch("awr2944_dca.mmws.executor.execute_script", return_value=exec_result), \
-         patch("awr2944_dca.mmws.executor.wait_for_result_json", return_value=json.loads(result_path.read_text())):
+    with patch("awr2944_dca.legacy_mmws.executor.execute_script", return_value=exec_result), \
+         patch("awr2944_dca.legacy_mmws.executor.wait_for_result_json", return_value=json.loads(result_path.read_text())):
         result = bridge.execute(script, mode="auto", timeout=1)
         assert result["status"] == StageStatus.ERROR
 
@@ -222,7 +222,7 @@ def test_write_smoke_script_creates_file(tmp_path):
 def test_write_smoke_script_rejects_ar1():
     """If ar1 calls somehow leak in, safety check should catch it."""
     import re
-    from awr2944_dca.mmws.lua_builder import build_smoke_script
+    from awr2944_dca.legacy_mmws.lua_builder import build_smoke_script
     script = build_smoke_script("test", ".")
     ar1_calls = re.findall(r"ar1\.\w+", script)
     assert ar1_calls == [], f"Smoke script has ar1 function calls: {ar1_calls}"
@@ -279,8 +279,8 @@ def test_bridge_execute_timeout(tmp_path):
         return_code=30000,
     )
 
-    with patch("awr2944_dca.mmws.executor.execute_script", return_value=exec_ok), \
-         patch("awr2944_dca.mmws.executor.wait_for_result_json", return_value=None):
+    with patch("awr2944_dca.legacy_mmws.executor.execute_script", return_value=exec_ok), \
+         patch("awr2944_dca.legacy_mmws.executor.wait_for_result_json", return_value=None):
         result = bridge.execute(script, mode="auto", timeout=1)
         assert result["status"] == StageStatus.TIMEOUT
 
@@ -320,8 +320,8 @@ def test_inspect_execution_no_experiment():
 
 def test_missing_pythonnet_helpful_message():
     """When pythonnet is missing, RSTD_NET_REMOTING should not appear in modes."""
-    with patch("awr2944_dca.mmws.executor._HAVE_PYTHONNET", False), \
-         patch("awr2944_dca.mmws.executor._pythonnet_error", "No module named 'clr'"):
+    with patch("awr2944_dca.legacy_mmws.executor._HAVE_PYTHONNET", False), \
+         patch("awr2944_dca.legacy_mmws.executor._pythonnet_error", "No module named 'clr'"):
         modes = detect_available_modes()
         # Pythonnet RSTD should not appear when pythonnet is not installed
         rstd_modes = [m for m in modes if m.mode == ExecutionMode.RSTD_NET_REMOTING]
@@ -330,8 +330,8 @@ def test_missing_pythonnet_helpful_message():
 
 def test_missing_pywinauto_helpful_message():
     """When pywinauto is missing, error should include install instructions."""
-    with patch("awr2944_dca.mmws.executor._HAVE_PYWINAUTO", False), \
-         patch("awr2944_dca.mmws.executor._pywinauto_error", "No module named 'pywinauto'"):
+    with patch("awr2944_dca.legacy_mmws.executor._HAVE_PYWINAUTO", False), \
+         patch("awr2944_dca.legacy_mmws.executor._pywinauto_error", "No module named 'pywinauto'"):
         modes = detect_available_modes()
         ui = [m for m in modes if m.mode == ExecutionMode.UI_LUA_SHELL][0]
         assert ui.available is False
@@ -344,7 +344,7 @@ def test_missing_pywinauto_helpful_message():
 
 
 def test_manual_one_shot_bridge_alias():
-    from awr2944_dca.mmws.bridge import ManualOneShotBridge
+    from awr2944_dca.legacy_mmws.bridge import ManualOneShotBridge
     assert ManualOneShotBridge is StudioBridge
 
 
@@ -357,7 +357,7 @@ def test_lua_launch_scripts_no_raw_newlines():
     """Verify that generated lua-launch scripts don't contain raw newlines
     inside string literals, which causes Lua syntax errors.
     """
-    from awr2944_dca.mmws.lua_builder import build_lua_launch_smoke, build_lua_launch_env_probe
+    from awr2944_dca.legacy_mmws.lua_builder import build_lua_launch_smoke, build_lua_launch_env_probe
     
     smoke = build_lua_launch_smoke("run123", "C:/tmp/result.json")
     probe = build_lua_launch_env_probe("run123", "C:/tmp/result.json")

@@ -34,20 +34,44 @@ class RadarProject:
 
     def __init__(self, root: Path):
         self._root = Path(root).resolve()
-        self._proj = load_project(self._root)
+        try:
+            self._proj = load_project(self._root)
+        except FileNotFoundError:
+            if not (self._root / "awr2944.toml").exists():
+                raise
+            self._proj = {}
         self._mmws_manager: 'MmWaveStudioManager | None' = None
         self._headless_api: 'HeadlessApi | None' = None
+        
+        # New API structure
+        from awr2944_dca._config import ProjectConfig
+        self._config = ProjectConfig(self._root)
+
+    @classmethod
+    def create(cls, name: str, parent: str | Path, git_init: bool = False) -> 'RadarProject':
+        from awr2944_dca._project import create_project
+        return create_project(name, parent, git_init)
+
+    @classmethod
+    def create_at(cls, path: str | Path, git_init: bool = False) -> 'RadarProject':
+        from awr2944_dca._project import create_project_at
+        return create_project_at(path, git_init)
 
     @classmethod
     def open(cls, root: str | Path) -> 'RadarProject':
         """Open a project by path."""
-        return cls(Path(root))
+        from awr2944_dca._project import open_project
+        return open_project(root)
 
     @classmethod
     def open_here(cls) -> 'RadarProject':
         """Find project.json by walking up from cwd."""
-        root = find_project_root(Path.cwd())
-        return cls(root)
+        from awr2944_dca._project import open_project_here
+        return open_project_here()
+
+    @property
+    def config(self):
+        return self._config
 
     @property
     def root(self) -> Path:
@@ -55,11 +79,15 @@ class RadarProject:
 
     @property
     def name(self) -> str:
-        return self._proj.get('name', '')
+        if self._proj and 'name' in self._proj:
+            return self._proj['name']
+        return self._config.portable.project_name
 
     @property
     def project_id(self) -> str:
-        return self._proj.get('project_id', '')
+        if self._proj and 'project_id' in self._proj:
+            return self._proj['project_id']
+        return self._config.portable.project_id
 
     @property
     def headless(self) -> 'HeadlessApi':
@@ -79,6 +107,18 @@ class RadarProject:
         if not hasattr(self, '_capture_api'):
             self._capture_api = CaptureApi(self)
         return self._capture_api
+
+    @property
+    def hardware(self) -> 'HardwareManager':
+        """Hardware inspection and discovery (read-only checks)."""
+        if not hasattr(self, '_hardware'):
+            from awr2944_dca._doctor import HardwareManager
+            self._hardware = HardwareManager(self)
+        return self._hardware
+
+    def doctor(self, include_hardware: bool = True) -> 'HardwareReport':
+        """Run project health and hardware diagnostics."""
+        return self.hardware.verify(include_hardware=include_hardware)
 
     def status(self) -> dict:
         """Return project status summary dict."""

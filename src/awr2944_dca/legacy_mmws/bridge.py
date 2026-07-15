@@ -15,8 +15,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from awr2944_dca.mmws.lua_builder import write_connection_diag_script, write_smoke_script
-from awr2944_dca.mmws.stages import StageName
+from awr2944_dca.legacy_mmws.lua_builder import write_connection_diag_script, write_smoke_script
+from awr2944_dca.legacy_mmws.stages import StageName
 
 
 class StageStatus(str, Enum):
@@ -113,7 +113,7 @@ class StudioBridge:
         Raises RuntimeError if mode="auto" and no transport is available
         (never silently falls back to manual).
         """
-        from awr2944_dca.mmws.executor import (
+        from awr2944_dca.legacy_mmws.executor import (
             execute_script, wait_for_result_json, classify_execution_status,
         )
 

@@ -1,7 +1,7 @@
 import pytest
 pytestmark = pytest.mark.legacy_mmws
 import pytest
-from awr2944_dca.mmws.config_parser import parse_ar1_call, AR1ParseError
+from awr2944_dca.legacy_mmws.config_parser import parse_ar1_call, AR1ParseError
 
 def test_parse_simple_call():
     cmd = "ar1.ProfileConfig(0, 77.0, 256)"

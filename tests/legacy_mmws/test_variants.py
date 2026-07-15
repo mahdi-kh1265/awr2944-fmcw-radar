@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typer.testing import CliRunner
 from awr2944_dca.cli import mmws_post_app
-from awr2944_dca.mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0
+from awr2944_dca.legacy_mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0
 
 runner = CliRunner()
 

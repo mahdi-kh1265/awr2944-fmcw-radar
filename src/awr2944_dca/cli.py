@@ -23,14 +23,19 @@ TI bridge:
     awr ti compare <yaml> <ti_file>    ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Compare our config vs TI config
     awr ti export-lua-template <yaml>  ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Generate Lua template
     awr ti export-dca-config <yaml>    ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Generate DCA1000 JSON config
+    awr ti inspect <file>              ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â  Inspect TI Lua/JSON config file
+    awr ti import <file>               ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â  Import TI config to capture.yaml
+    awr ti compare <yaml> <ti_file>    ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â  Compare our config vs TI config
+    awr ti export-lua-template <yaml>  ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â  Generate Lua template
+    awr ti export-dca-config <yaml>    ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â  Generate DCA1000 JSON config
 """
 
 from __future__ import annotations
 
 import platform
 import sys
-import re
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import typer
@@ -44,6 +49,8 @@ app = typer.Typer(
 )
 ports_app = typer.Typer(help="Hardware COM port discovery and management")
 app.add_typer(ports_app, name="ports")
+hardware_app = typer.Typer(help="Hardware discovery and diagnostics")
+app.add_typer(hardware_app, name="hardware")
 mmws_app = typer.Typer(help="mmWave Studio backend controller")
 app.add_typer(mmws_app, name="mmws")
 mmws_conn_app = typer.Typer(help="Connection-tab control (Lua-based, DIAGNOSTIC ONLY)")
@@ -84,12 +91,89 @@ app.add_typer(project_app, name="project")
 capture_mgmt_app = typer.Typer(help="Capture management commands", no_args_is_help=True)
 app.add_typer(capture_mgmt_app, name="capture")
 
+# ---------------------------------------------------------------------------
+# Hardware Doctor Commands
+# ---------------------------------------------------------------------------
+
+@app.command("doctor")
+def doctor_cmd(
+    project_root: Optional[Path] = typer.Option(None, help="Project root (auto-detected if omitted)"),
+    offline: bool = typer.Option(False, "--offline", help="Run only offline checks"),
+) -> None:
+    """Run project health and hardware diagnostics (alias for 'hardware verify')."""
+    from awr2944_dca.lab import RadarProject
+    
+    if project_root:
+        project = RadarProject.open(project_root)
+    else:
+        project = RadarProject.open_here()
+        
+    report = project.doctor(include_hardware=not offline)
+    report.print()
+    report.raise_for_errors(strict=False)
+
+@hardware_app.command("discover")
+def hardware_discover_cmd(
+    project_root: Optional[Path] = typer.Option(None, help="Project root (auto-detected if omitted)"),
+) -> None:
+    """Discover connected hardware without comparing to configuration."""
+    from awr2944_dca.lab import RadarProject
+    
+    if project_root:
+        project = RadarProject.open(project_root)
+    else:
+        project = RadarProject.open_here()
+        
+    report = project.hardware.discover()
+    
+    from rich.console import Console
+    console = Console()
+    
+    console.print(f"[bold cyan]Hardware Discovery[/bold cyan] (Timestamp: {report.timestamp})")
+    
+    console.print("\n[bold]Serial Ports (pyserial)[/bold]")
+    for p in report.serial_ports:
+        console.print(f"  {p.port:8s} {p.name}")
+        
+    console.print("\n[bold]COM Port Roles (heuristics)[/bold]")
+    for p in report.com_ports:
+        console.print(f"  {p.com:8s} -> {p.likely_role} (conf={p.confidence})")
+        
+    console.print("\n[bold]Network Adapters[/bold]")
+    for a in report.network_adapters:
+        alias = a.get("InterfaceAlias", "")
+        ip = a.get("IPAddress", "")
+        console.print(f"  {alias}: {ip}")
+
+@hardware_app.command("verify")
+def hardware_verify_cmd(
+    project_root: Optional[Path] = typer.Option(None, help="Project root (auto-detected if omitted)"),
+    offline: bool = typer.Option(False, "--offline", help="Run only offline checks"),
+    strict: bool = typer.Option(False, "--strict", help="Raise error on any FAIL, WARN, or SKIP"),
+) -> None:
+    """Run project health and hardware diagnostics."""
+    from awr2944_dca.lab import RadarProject
+    
+    if project_root:
+        project = RadarProject.open(project_root)
+    else:
+        project = RadarProject.open_here()
+        
+    report = project.hardware.verify(include_hardware=not offline)
+    report.print()
+    report.raise_for_errors(strict=strict)
+
+
+# ---------------------------------------------------------------------------
+# mmWave Studio Commands
+# ---------------------------------------------------------------------------
+
 @mmws_internals_app.command("lua-dotnet-probe")
 def mmws_internals_lua_dotnet_probe(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Generate a Lua script to test luanet reflection in mmWave Studio."""
-    from .mmws.internals import build_lua_dotnet_probe_script
+    from .legacy_mmws.internals import build_lua_dotnet_probe_script
     import uuid
 
     run_id = str(uuid.uuid4())[:8]
@@ -118,7 +202,7 @@ def mmws_internals_lua_dotnet_connect_probe(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Generate a Lua script that connects via WinForms controls using luanet."""
-    from .mmws.internals import build_lua_dotnet_connect_script
+    from .legacy_mmws.internals import build_lua_dotnet_connect_script
     import uuid
 
     run_id = str(uuid.uuid4())[:8]
@@ -147,7 +231,7 @@ def mmws_win32_conn_inspect(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Dump the Win32 HWND tree of mmWave Studio."""
-    from .mmws.win32_connect import inspect_win32
+    from .legacy_mmws.win32_connect import inspect_win32
     vlog_lines: list[str] = []
     def vlog(msg: str):
         vlog_lines.append(msg)
@@ -174,7 +258,7 @@ def mmws_win32_conn_click_flow(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Execute the Connection tab flow using Win32 API messages."""
-    from .mmws.win32_connect import click_flow_win32
+    from .legacy_mmws.win32_connect import click_flow_win32
     
     vlog_lines: list[str] = []
     def vlog(msg: str):
@@ -213,7 +297,7 @@ def mmws_manual_connect_script(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Generate a connect script for manual copy/paste into an initialized mmWave Studio."""
-    from .mmws.lua_builder import build_lua_manual_connect_script
+    from .legacy_mmws.lua_builder import build_lua_manual_connect_script
     import uuid
     from pathlib import Path
 
@@ -526,13 +610,31 @@ def parse(
 # ---------------------------------------------------------------------------
 
 @app.command("init")
-def init_alias(
-    name: str = typer.Argument(..., help="Experiment name"),
-    preset: str = typer.Option("first-capture", "--preset", "-p", help="Config preset"),
-    root: Path = typer.Option(Path("."), "--root", "-r", help="Experiments root dir"),
+def init_project(
+    name: Optional[str] = typer.Argument(None, help="Project name"),
+    parent: Optional[Path] = typer.Option(None, "--parent", help="Parent directory (defaults to CWD)"),
+    at: Optional[Path] = typer.Option(None, "--at", help="Exact path to create project at"),
 ) -> None:
-    """Scaffold a new experiment (alias for 'awr experiment init')."""
-    experiment_init(name, preset, root)
+    """Scaffold a new AWR2944 hardware project."""
+    from awr2944_dca.lab import RadarProject
+    import os
+    
+    if at:
+        if name or parent:
+            console.print("[red]Error: Cannot provide name/parent when using --at.[/red]")
+            raise typer.Exit(code=1)
+        project = RadarProject.create_at(at, git_init=True)
+    else:
+        if not name:
+            console.print("[red]Error: Must provide a project name or use --at.[/red]")
+            raise typer.Exit(code=1)
+        if parent is None:
+            parent = Path(os.getcwd())
+        project = RadarProject.create(name=name, parent=parent, git_init=True)
+        
+    console.print(f"[green]Successfully initialized project '{project.name}'[/green]")
+    console.print(f"Location: {project.root}")
+    console.print("You can now enter the directory and run 'awr doctor' to verify hardware.")
 
 
 @app.command("check")
@@ -819,20 +921,6 @@ def compare_layouts(
 # Context-Aware Aliases (awr init, awr check, awr summary, awr set)
 # ---------------------------------------------------------------------------
 
-@app.command("init")
-def init_alias(
-    name: str = typer.Argument(..., help="Experiment name"),
-    preset: str = typer.Option("first-capture", "--preset", "-p", help="Config preset"),
-    root: Path = typer.Option(Path("."), "--root", "-r", help="Experiments root dir"),
-) -> None:
-    """Scaffold a new experiment."""
-    from awr2944_dca.api.experiment import Experiment
-    try:
-        exp = Experiment.init(name, preset, root)
-        console.print(f"[green]OK[/green] Scaffolded experiment at {exp.root_dir}")
-    except Exception as e:
-        console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(code=1)
 
 
 @app.command("check")
@@ -1214,9 +1302,13 @@ def experiment_init(
     preset: str = typer.Option("first-capture", "--preset", "-p", help="Config preset"),
     root: Path = typer.Option(Path("experiments"), "--root", "-r", help="Experiments root dir"),
 ) -> None:
-    """Scaffold an experiment directory with config, folders, and notes template."""
-    init_alias(name=name, preset=preset, root=root)
-
+    from awr2944_dca.api.experiment import Experiment
+    try:
+        exp = Experiment.init(name, preset, root)
+        console.print(f"[green]OK[/green] Scaffolded experiment at {exp.root_dir}")
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1)
 
 # ===========================================================================
 # awr ti ...
@@ -1882,7 +1974,7 @@ def ti_connection_status() -> None:
 def mmws_scan_scripts() -> None:
     """Scan TI mmWave Studio scripts for ar1 API calls and build a catalog."""
     from awr2944_dca.api.experiment import Experiment
-    from awr2944_dca.mmws.catalog import discover_mmws_installations, scan_scripts, write_catalog
+    from awr2944_dca.legacy_mmws.catalog import discover_mmws_installations, scan_scripts, write_catalog
 
     try:
         exp = Experiment.open(".")
@@ -1942,7 +2034,7 @@ def _resolve_com(com: str | None) -> str:
 @mmws_conn_app.command("plan")
 def mmws_connection_plan() -> None:
     """Show the dry-run plan for connection-only stage (no script generated)."""
-    from awr2944_dca.mmws.stages import get_stage, StageName
+    from awr2944_dca.legacy_mmws.stages import get_stage, StageName
 
     stage = get_stage(StageName.CONNECTION_ONLY)
 
@@ -1992,7 +2084,7 @@ def mmws_connection_script_cmd(
     Without either: generate script and print next-step instructions.
     """
     from awr2944_dca.api.experiment import Experiment
-    from awr2944_dca.mmws.bridge import StudioBridge, StageStatus
+    from awr2944_dca.legacy_mmws.bridge import StudioBridge, StageStatus
     import re
 
     try:
@@ -2023,7 +2115,7 @@ def mmws_connection_script_cmd(
     console.print(f"[green]Generated {script.name}[/green] (COM{com_num}, baud={baud})")
 
     if manual:
-        from awr2944_dca.mmws.executor import build_dofile_command
+        from awr2944_dca.legacy_mmws.executor import build_dofile_command
         console.print(f"\n[cyan]{build_dofile_command(script)}[/cyan]")
         return
 
@@ -2070,8 +2162,8 @@ def mmws_connection_script_cmd(
 def mmws_connection_status() -> None:
     """Check the result of the connection-only stage."""
     from awr2944_dca.api.experiment import Experiment
-    from awr2944_dca.mmws.bridge import StudioBridge, StageStatus
-    from awr2944_dca.mmws.stages import StageName
+    from awr2944_dca.legacy_mmws.bridge import StudioBridge, StageStatus
+    from awr2944_dca.legacy_mmws.stages import StageName
 
     try:
         exp = Experiment.open(".")
@@ -2112,7 +2204,7 @@ def mmws_connection_status() -> None:
 def mmws_connection_preflight() -> None:
     """Run pre-flight checks before attempting connection."""
     from awr2944_dca.api.experiment import Experiment
-    from awr2944_dca.mmws.executor import _is_mmws_running, _find_csharp_bridge
+    from awr2944_dca.legacy_mmws.executor import _is_mmws_running, _find_csharp_bridge
     from awr2944_dca.hardware.ports import get_local_hardware_config, scan_ports
     
     try:
@@ -2156,8 +2248,8 @@ def mmws_connection_preflight() -> None:
 
 def _run_diag_step(com_num: int, baud: int, mode: str, timeout: float, verbose: bool, steps: list[str], script_name: str) -> None:
     from awr2944_dca.api.experiment import Experiment
-    from awr2944_dca.mmws.lua_builder import write_connection_diag_script
-    from awr2944_dca.mmws.executor import execute_script
+    from awr2944_dca.legacy_mmws.lua_builder import write_connection_diag_script
+    from awr2944_dca.legacy_mmws.executor import execute_script
     import uuid
     
     exp = Experiment.open(".")
@@ -2339,7 +2431,7 @@ def mmws_static_plan(
     Does NOT generate an executable Lua script.
     """
     from awr2944_dca.config.schema import RadarConfig
-    from awr2944_dca.mmws.stages import STATIC_CONFIG_FIELD_MAP, get_stage, StageName
+    from awr2944_dca.legacy_mmws.stages import STATIC_CONFIG_FIELD_MAP, get_stage, StageName
 
     if not config.exists():
         console.print(f"[red]Config file not found: {config}[/red]")
@@ -2412,7 +2504,7 @@ def mmws_inspect_execution() -> None:
 
     Does NOT require an experiment context (.awr-experiment).
     """
-    from awr2944_dca.mmws.executor import detect_available_modes
+    from awr2944_dca.legacy_mmws.executor import detect_available_modes
 
     modes = detect_available_modes()
 
@@ -2454,7 +2546,7 @@ def mmws_run_script(
     With --mode auto (default): tries RSTD, then pywinauto. Errors if none available.
     With --mode manual: prints dofile command only.
     """
-    from awr2944_dca.mmws.executor import execute_script, build_dofile_command, wait_for_result_json
+    from awr2944_dca.legacy_mmws.executor import execute_script, build_dofile_command, wait_for_result_json
 
     if not script.exists():
         console.print(f"[red]Script not found: {script}[/red]")
@@ -2510,7 +2602,7 @@ def mmws_smoke(
     Contains NO ar1 hardware calls.
     """
     from awr2944_dca.api.experiment import Experiment
-    from awr2944_dca.mmws.bridge import StudioBridge, StageStatus
+    from awr2944_dca.legacy_mmws.bridge import StudioBridge, StageStatus
 
     try:
         exp = Experiment.open(".")
@@ -2525,7 +2617,7 @@ def mmws_smoke(
     console.print(f"[green]Generated {script.name}[/green] (no ar1 hardware calls)")
 
     if manual:
-        from awr2944_dca.mmws.executor import build_dofile_command
+        from awr2944_dca.legacy_mmws.executor import build_dofile_command
         console.print(f"\n[cyan]{build_dofile_command(script)}[/cyan]")
         return
 
@@ -2603,7 +2695,7 @@ def mmws_rstd_ping(
     Does NOT require an experiment context.
     """
     import json
-    from awr2944_dca.mmws.executor import (
+    from awr2944_dca.legacy_mmws.executor import (
         _is_rstd_port_open, _find_rtttnet_dll, _RSTD_PORT,
         _HAVE_PYTHONNET, rstd_ping_diagnostic,
     )
@@ -2792,7 +2884,7 @@ def mmws_rstd_env() -> None:
     """
     import platform
     import struct
-    from awr2944_dca.mmws.executor import (
+    from awr2944_dca.legacy_mmws.executor import (
         _is_rstd_port_open, _find_rtttnet_dll, _find_mmws_dir,
         _RSTD_PORT, _HAVE_PYTHONNET,
     )
@@ -2858,7 +2950,7 @@ def mmws_rstd_methods(
     Does NOT require an experiment context.
     Runs introspection in a separate process so hangs are safely killed.
     """
-    from awr2944_dca.mmws.executor import run_rstd_introspect, _find_rtttnet_dll
+    from awr2944_dca.legacy_mmws.executor import run_rstd_introspect, _find_rtttnet_dll
 
     dll = _find_rtttnet_dll()
     if not dll:
@@ -2929,7 +3021,7 @@ def mmws_rstd_worker_test(
       runscript-file    - RtttNetClient.RunScript(lua_file_path)
       sendcommand-dofile - RtttNetClient.SendCommand('dofile([[path]])')
     """
-    from awr2944_dca.mmws.executor import run_rstd_worker_test as _run_test
+    from awr2944_dca.legacy_mmws.executor import run_rstd_worker_test as _run_test
 
     valid_steps = [
         "import-clr", "add-reference", "import-api", "init", "connect",
@@ -3011,7 +3103,7 @@ def mmws_rstd_last_error(
     Runs Init + Connect (no Send), then calls GetLastError/GetErrMsg.
     Does NOT require an experiment context.
     """
-    from awr2944_dca.mmws.executor import run_rstd_get_last_error, _find_rtttnet_dll
+    from awr2944_dca.legacy_mmws.executor import run_rstd_get_last_error, _find_rtttnet_dll
 
     dll = _find_rtttnet_dll()
     if not dll:
@@ -3045,7 +3137,7 @@ def mmws_rstd_last_error(
 @mmws_studio_app.command("launch")
 def mmws_studio_launch() -> None:
     """Launch mmWave Studio from the discovered installation."""
-    from awr2944_dca.mmws.executor import _find_mmws_exe
+    from awr2944_dca.legacy_mmws.executor import _find_mmws_exe
     import subprocess
 
     exe = _find_mmws_exe()
@@ -3062,7 +3154,7 @@ def mmws_studio_launch() -> None:
 @mmws_studio_app.command("attach")
 def mmws_studio_attach() -> None:
     """Check if Python can reach a running mmWave Studio instance."""
-    from awr2944_dca.mmws.executor import (
+    from awr2944_dca.legacy_mmws.executor import (
         _is_mmws_running, _is_rstd_port_open, _RSTD_PORT,
         _HAVE_PYTHONNET, _HAVE_PYWINAUTO,
     )
@@ -3107,7 +3199,7 @@ def mmws_studio_status(
     come from the same mmwave_studio_* installation.
     Does NOT require an experiment context (.awr-experiment).
     """
-    from awr2944_dca.mmws.executor import (
+    from awr2944_dca.legacy_mmws.executor import (
         _is_mmws_running, _is_rstd_port_open, _find_mmws_exe,
         _find_rtttnet_dll, _find_mmws_dir, _get_mmws_process_path,
         _extract_version_from_path, _RSTD_PORT,
@@ -3185,7 +3277,7 @@ def mmws_lua_command(
     copy: bool = typer.Option(False, "--copy", help="Copy dofile command to clipboard (Windows)"),
 ) -> None:
     """Print or copy the dofile([[...]]) command for manual use."""
-    from awr2944_dca.mmws.executor import build_dofile_command
+    from awr2944_dca.legacy_mmws.executor import build_dofile_command
 
     if not script.exists():
         console.print(f"[red]Script not found: {script}[/red]")
@@ -3222,7 +3314,7 @@ def mmws_matlab_bridge_locate(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Locate MATLAB installations and runtimes."""
-    from .mmws.matlab_bridge import locate_matlab
+    from .legacy_mmws.matlab_bridge import locate_matlab
     
     console.print("[cyan]Locating MATLAB...[/cyan]")
     info = locate_matlab()
@@ -3254,7 +3346,7 @@ def mmws_matlab_bridge_ping(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Test MATLAB-to-Studio connection (Init + Connect)."""
-    from .mmws.executor import _execute_matlab_bridge
+    from .legacy_mmws.executor import _execute_matlab_bridge
     import tempfile
     from pathlib import Path
     
@@ -3278,7 +3370,7 @@ def mmws_matlab_bridge_send_inline(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Test MATLAB-to-Studio send-inline command."""
-    from .mmws.executor import _execute_matlab_bridge
+    from .legacy_mmws.executor import _execute_matlab_bridge
     import tempfile
     from pathlib import Path
     
@@ -3302,7 +3394,7 @@ def mmws_matlab_bridge_smoke(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Test MATLAB-to-Studio RunScript via smoke script."""
-    from .mmws.executor import _execute_matlab_bridge
+    from .legacy_mmws.executor import _execute_matlab_bridge
     import tempfile
     from pathlib import Path
     
@@ -3327,7 +3419,7 @@ def mmws_matlab_bridge_dofile_test(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Test MATLAB-to-Studio dofile command."""
-    from .mmws.executor import _execute_matlab_bridge
+    from .legacy_mmws.executor import _execute_matlab_bridge
     import tempfile
     from pathlib import Path
     
@@ -3394,8 +3486,8 @@ def mmws_lua_launch_smoke(
     Verifies io.open writes a result JSON.  Process exit is NOT required.
     Generated script and result JSON are saved to ti/probe_logs/.
     """
-    from .mmws.executor import _execute_lua_launch
-    from .mmws.lua_builder import build_lua_launch_smoke
+    from .legacy_mmws.executor import _execute_lua_launch
+    from .legacy_mmws.lua_builder import build_lua_launch_smoke
     import uuid
     from pathlib import Path
     
@@ -3450,8 +3542,8 @@ def mmws_lua_launch_env_probe(
     The Startup.lua warning is expected and harmless for standalone scripts.
     Generated script and result are saved to ti/probe_logs/.
     """
-    from .mmws.executor import _execute_lua_launch
-    from .mmws.lua_builder import build_lua_launch_env_probe
+    from .legacy_mmws.executor import _execute_lua_launch
+    from .legacy_mmws.lua_builder import build_lua_launch_env_probe
     import uuid
     import json
     from pathlib import Path
@@ -3547,7 +3639,7 @@ def mmws_bridge_build(
     Compiles the C# source using .NET Framework csc.exe (x86).
     Requires RtttNetClientAPI.dll from mmWave Studio installation.
     """
-    from awr2944_dca.mmws.executor import build_csharp_bridge
+    from awr2944_dca.legacy_mmws.executor import build_csharp_bridge
 
     console.print("[cyan]Building C# RSTD bridge...[/cyan]")
     success, message = build_csharp_bridge(verbose=verbose)
@@ -3571,7 +3663,7 @@ def mmws_csharp_bridge_send_inline(
     apartment: str = typer.Option("mta", "--apartment", help="ApartmentState (mta or sta)"),
 ) -> None:
     """Test C# bridge send-inline command."""
-    from .mmws.executor import _execute_via_csharp_bridge
+    from .legacy_mmws.executor import _execute_via_csharp_bridge
     import tempfile
     from pathlib import Path
     
@@ -3609,7 +3701,7 @@ def mmws_bridge_ping(
     import json
     import subprocess
     import tempfile
-    from awr2944_dca.mmws.executor import _find_csharp_bridge, _find_rtttnet_dll, _RSTD_HOST, _RSTD_PORT
+    from awr2944_dca.legacy_mmws.executor import _find_csharp_bridge, _find_rtttnet_dll, _RSTD_HOST, _RSTD_PORT
 
     bridge = _find_csharp_bridge()
     if bridge is None:
@@ -3678,7 +3770,7 @@ def mmws_bridge_introspect(
     import json
     import subprocess
     import tempfile
-    from awr2944_dca.mmws.executor import _find_csharp_bridge, _find_rtttnet_dll
+    from awr2944_dca.legacy_mmws.executor import _find_csharp_bridge, _find_rtttnet_dll
 
     bridge = _find_csharp_bridge()
     if bridge is None:
@@ -3735,8 +3827,8 @@ def mmws_lua_launch_startup_probe(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Explicitly invoke Startup.lua and probe the environment to see if it loads ar1."""
-    from .mmws.executor import _execute_lua_launch
-    from .mmws.lua_builder import build_lua_launch_startup_probe
+    from .legacy_mmws.executor import _execute_lua_launch
+    from .legacy_mmws.lua_builder import build_lua_launch_startup_probe
     import uuid
     import json
     from pathlib import Path
@@ -3880,8 +3972,8 @@ def mmws_lua_launch_rstd_env_probe(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Probe the initial /lua environment for RSTD availability without running Startup.lua."""
-    from .mmws.executor import _execute_lua_launch
-    from .mmws.lua_builder import build_lua_launch_rstd_env_probe
+    from .legacy_mmws.executor import _execute_lua_launch
+    from .legacy_mmws.lua_builder import build_lua_launch_rstd_env_probe
     import uuid, json
     
     run_id = str(uuid.uuid4())[:8]
@@ -3912,8 +4004,8 @@ def mmws_lua_launch_registerdll_probe(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Probe environment after calling RSTD.RegisterDllEx."""
-    from .mmws.executor import _execute_lua_launch
-    from .mmws.lua_builder import build_lua_launch_registerdll_probe
+    from .legacy_mmws.executor import _execute_lua_launch
+    from .legacy_mmws.lua_builder import build_lua_launch_registerdll_probe
     import uuid, json
     
     run_id = str(uuid.uuid4())[:8]
@@ -3952,8 +4044,8 @@ def mmws_lua_launch_startup_lite_probe(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Run non-blocking subset of Startup.lua."""
-    from .mmws.executor import _execute_lua_launch
-    from .mmws.lua_builder import build_lua_launch_startup_lite_probe
+    from .legacy_mmws.executor import _execute_lua_launch
+    from .legacy_mmws.lua_builder import build_lua_launch_startup_lite_probe
     import uuid, json
     
     run_id = str(uuid.uuid4())[:8]
@@ -4043,8 +4135,8 @@ def mmws_lua_launch_ar1_readonly_probe(
     force: bool = typer.Option(False, "--force", help="Kill existing mmWaveStudio.exe before running"),
 ) -> None:
     """Run startup-lite + read-only ar1 checks."""
-    from .mmws.executor import _execute_lua_launch, _is_mmws_running
-    from .mmws.lua_builder import build_lua_launch_ar1_readonly_probe
+    from .legacy_mmws.executor import _execute_lua_launch, _is_mmws_running
+    from .legacy_mmws.lua_builder import build_lua_launch_ar1_readonly_probe
     import uuid
     import json
 
@@ -4150,8 +4242,8 @@ def mmws_lua_launch_connect_only(
     skip_gate: bool = typer.Option(False, "--skip-gate", help="Skip ar1-readonly-probe safety gate"),
 ) -> None:
     """Connect to radar via ar1.Connect only (no SOPControl, no firmware, no DCA)."""
-    from .mmws.executor import _execute_lua_launch, _is_mmws_running
-    from .mmws.lua_builder import build_lua_launch_connect_only
+    from .legacy_mmws.executor import _execute_lua_launch, _is_mmws_running
+    from .legacy_mmws.lua_builder import build_lua_launch_connect_only
     import uuid
     import json
 
@@ -4331,8 +4423,8 @@ def mmws_lua_launch_ar1_methods(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """List methods available in the ar1 table."""
-    from .mmws.executor import _execute_lua_launch
-    from .mmws.lua_builder import build_lua_launch_ar1_methods
+    from .legacy_mmws.executor import _execute_lua_launch
+    from .legacy_mmws.lua_builder import build_lua_launch_ar1_methods
     import uuid, json
     
     run_id = str(uuid.uuid4())[:8]
@@ -4373,8 +4465,8 @@ def mmws_lua_launch_radarapi_init_probe(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Run startup-lite and the normal GUI initialization sequence."""
-    from .mmws.executor import _execute_lua_launch
-    from .mmws.lua_builder import build_lua_launch_radarapi_init_probe
+    from .legacy_mmws.executor import _execute_lua_launch
+    from .legacy_mmws.lua_builder import build_lua_launch_radarapi_init_probe
     import uuid, json
 
     run_id = str(uuid.uuid4())[:8]
@@ -4432,8 +4524,8 @@ def mmws_lua_launch_radarapi_connect_probe(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Run radarapi init sequence and then connect."""
-    from .mmws.executor import _execute_lua_launch
-    from .mmws.lua_builder import build_lua_launch_radarapi_connect_probe
+    from .legacy_mmws.executor import _execute_lua_launch
+    from .legacy_mmws.lua_builder import build_lua_launch_radarapi_connect_probe
     import uuid, json
     
     com_upper = com.upper()
@@ -4500,8 +4592,8 @@ def mmws_lua_launch_startup_lite_v3_probe(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Run startup-lite-v3 (exact Startup.lua reproduction with RTTT, AR1_GUI, GuiVersion)."""
-    from .mmws.executor import _execute_lua_launch
-    from .mmws.lua_builder import build_lua_launch_startup_lite_v3_probe
+    from .legacy_mmws.executor import _execute_lua_launch
+    from .legacy_mmws.lua_builder import build_lua_launch_startup_lite_v3_probe
     import uuid, json
 
     run_id = str(uuid.uuid4())[:8]
@@ -4560,8 +4652,8 @@ def mmws_lua_launch_path_env_probe(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Dump RSTD paths, package.path, and type info before/after startup-lite-v3."""
-    from .mmws.executor import _execute_lua_launch
-    from .mmws.lua_builder import build_lua_launch_path_env_probe
+    from .legacy_mmws.executor import _execute_lua_launch
+    from .legacy_mmws.lua_builder import build_lua_launch_path_env_probe
     import uuid, json
 
     run_id = str(uuid.uuid4())[:8]
@@ -4608,8 +4700,8 @@ def mmws_lua_launch_radarapi_v3_connect_probe(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Startup-lite-v3 + optional ShowGui + ar1.Connect."""
-    from .mmws.executor import _execute_lua_launch
-    from .mmws.lua_builder import build_lua_launch_radarapi_v3_connect_probe
+    from .legacy_mmws.executor import _execute_lua_launch
+    from .legacy_mmws.lua_builder import build_lua_launch_radarapi_v3_connect_probe
     import uuid, json
 
     com_upper = com.upper()
@@ -4713,8 +4805,8 @@ def mmws_connection_connect_gui(
     It can return 0 with invalid device identity or return 3 after valid
     GUI Set. Use 'awr mmws gui-connect click-flow' instead.
     """
-    from .mmws.executor import _execute_lua_launch
-    from .mmws.lua_builder import build_lua_launch_connection_sequenced, CONNECT_SEQUENCES
+    from .legacy_mmws.executor import _execute_lua_launch
+    from .legacy_mmws.lua_builder import build_lua_launch_connection_sequenced, CONNECT_SEQUENCES
     import uuid, json
 
     console.print(
@@ -4824,8 +4916,8 @@ def mmws_connection_connect_return3_diag(
     It can return 0 with invalid device identity or return 3 after valid
     GUI Set. Use 'awr mmws gui-connect click-flow' instead.
     """
-    from .mmws.executor import _execute_lua_launch
-    from .mmws.lua_builder import build_lua_launch_connection_sequenced, CONNECT_SEQUENCES
+    from .legacy_mmws.executor import _execute_lua_launch
+    from .legacy_mmws.lua_builder import build_lua_launch_connection_sequenced, CONNECT_SEQUENCES
     import uuid, json
 
     com_upper = com.upper()
@@ -4917,8 +5009,8 @@ def mmws_connection_sop_set_only(
     Use 'awr mmws gui-connect click-flow' for the official connection path.
     SOPControl(2) alone does NOT reproduce the GUI Set(1) button behavior.
     """
-    from .mmws.executor import _execute_lua_launch
-    from .mmws.lua_builder import build_lua_launch_connection_sop_set_only
+    from .legacy_mmws.executor import _execute_lua_launch
+    from .legacy_mmws.lua_builder import build_lua_launch_connection_sop_set_only
     import uuid, json
 
     run_id = str(uuid.uuid4())[:8]
@@ -4977,8 +5069,8 @@ def mmws_connection_set1_discovery(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Dump ar1 methods matching Set(1) keywords to discover the true API."""
-    from .mmws.executor import _execute_lua_launch
-    from .mmws.lua_builder import build_lua_launch_connection_set1_discovery
+    from .legacy_mmws.executor import _execute_lua_launch
+    from .legacy_mmws.lua_builder import build_lua_launch_connection_set1_discovery
     import uuid, json
 
     if force:
@@ -5086,7 +5178,7 @@ def mmws_gui_connect_inspect(
     Does NOT click anything. Identifies candidate controls for:
     frequency, device, Set(1), COM, baud, RS232 Connect, Device Status.
     """
-    from .mmws.gui_connect import (
+    from .legacy_mmws.gui_connect import (
         attach_mmwave_studio, dump_control_tree, inspect_connection_tab,
     )
 
@@ -5191,7 +5283,7 @@ def mmws_gui_connect_click_flow(
 
     Use --dry-run to preview what would be clicked without actually clicking.
     """
-    from .mmws.gui_connect import (
+    from .legacy_mmws.gui_connect import (
         attach_mmwave_studio, click_flow,
     )
     import json
@@ -5290,7 +5382,7 @@ def mmws_gui_connect_status(
     Success requires Device Status containing AWR2944, GP, and SOP:2.
     Does NOT use Connect_return == 0 as the success criterion.
     """
-    from .mmws.gui_connect import (
+    from .legacy_mmws.gui_connect import (
         attach_mmwave_studio, inspect_connection_tab, read_device_status,
     )
     import json
@@ -5355,7 +5447,7 @@ def mmws_gui_connect_manual_check(
     This reads the Output document and RS232 status label to verify a
     valid AWR2944 connection (AWR2944/GP/SOP:2) established by human clicking.
     """
-    from .mmws.gui_connect import (
+    from .legacy_mmws.gui_connect import (
         attach_mmwave_studio, manual_check
     )
 
@@ -5405,8 +5497,8 @@ def mmws_post_status(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Print mmWave Studio's post-connection state using live snapshot dump."""
-    from .mmws.post_connect import get_post_status, parse_post_status_text
-    from .mmws.gui_connect import attach_mmwave_studio
+    from .legacy_mmws.post_connect import get_post_status, parse_post_status_text
+    from .legacy_mmws.gui_connect import attach_mmwave_studio
     import json
     import uuid
     import dataclasses
@@ -5466,7 +5558,7 @@ def mmws_post_parser_test(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Test the post-status parser offline using a saved snapshot."""
-    from .mmws.post_connect import parse_post_status_text
+    from .legacy_mmws.post_connect import parse_post_status_text
     import json
     
     snap_path = Path(snapshot)
@@ -5505,8 +5597,8 @@ def mmws_post_output_snapshot(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Dump the full mmWave Studio Output document."""
-    from .mmws.gui_connect import attach_mmwave_studio
-    from .mmws.post_connect import dump_output_snapshot
+    from .legacy_mmws.gui_connect import attach_mmwave_studio
+    from .legacy_mmws.post_connect import dump_output_snapshot
     
     vlog_lines: list[str] = []
     def vlog(msg: str):
@@ -5534,8 +5626,8 @@ def mmws_post_extract_ar1(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Extract and classify ar1.* commands from the live Output document."""
-    from .mmws.gui_connect import attach_mmwave_studio
-    from .mmws.post_connect import connection_gate, dump_output_snapshot, extract_ar1_commands, generate_replay_lua
+    from .legacy_mmws.gui_connect import attach_mmwave_studio
+    from .legacy_mmws.post_connect import connection_gate, dump_output_snapshot, extract_ar1_commands, generate_replay_lua
     import uuid
     import json
     
@@ -5587,8 +5679,8 @@ def mmws_post_session_audit(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Audit the session state: detect dirty events and determine stage readiness."""
-    from .mmws.gui_connect import attach_mmwave_studio
-    from .mmws.post_connect import connection_gate, dump_output_snapshot, audit_session
+    from .legacy_mmws.gui_connect import attach_mmwave_studio
+    from .legacy_mmws.post_connect import connection_gate, dump_output_snapshot, audit_session
     import json
     import uuid
     import dataclasses
@@ -5664,8 +5756,8 @@ def mmws_post_preflight_firmware(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Check if the session is clean enough for firmware-power-script."""
-    from .mmws.gui_connect import attach_mmwave_studio
-    from .mmws.post_connect import connection_gate, dump_output_snapshot, audit_session, preflight_firmware
+    from .legacy_mmws.gui_connect import attach_mmwave_studio
+    from .legacy_mmws.post_connect import connection_gate, dump_output_snapshot, audit_session, preflight_firmware
     import uuid
     
     vlog_lines: list[str] = []
@@ -5729,8 +5821,8 @@ def mmws_post_preflight_config(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Check if the session is clean enough for config scripts."""
-    from .mmws.gui_connect import attach_mmwave_studio
-    from .mmws.post_connect import connection_gate, dump_output_snapshot, audit_session, preflight_config
+    from .legacy_mmws.gui_connect import attach_mmwave_studio
+    from .legacy_mmws.post_connect import connection_gate, dump_output_snapshot, audit_session, preflight_config
     import uuid
     
     vlog_lines: list[str] = []
@@ -5798,7 +5890,7 @@ def mmws_post_firmware_power_script(
     If --pid or --snapshot or --audit is provided, runs preflight-firmware before generating.
     If preflight fails, refuses to generate unless --force is set.
     """
-    from .mmws.post_connect import generate_firmware_power_script
+    from .legacy_mmws.post_connect import generate_firmware_power_script
     import uuid
     
     run_id = str(uuid.uuid4())[:8]
@@ -5806,8 +5898,8 @@ def mmws_post_firmware_power_script(
     
     # Preflight gate
     if pid is not None or snapshot or audit:
-        from .mmws.gui_connect import attach_mmwave_studio
-        from .mmws.post_connect import connection_gate, dump_output_snapshot, audit_session, preflight_firmware, SessionAudit
+        from .legacy_mmws.gui_connect import attach_mmwave_studio
+        from .legacy_mmws.post_connect import connection_gate, dump_output_snapshot, audit_session, preflight_firmware, SessionAudit
         import json
         
         vlog_lines: list[str] = []
@@ -5893,7 +5985,7 @@ def mmws_post_ar1_help_probe(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Generate a Lua script to probe types and help strings for ar1 commands."""
-    from .mmws.post_connect import generate_ar1_help_probe
+    from .legacy_mmws.post_connect import generate_ar1_help_probe
     import uuid
     
     run_id = str(uuid.uuid4())[:8]
@@ -5977,7 +6069,7 @@ def mmws_post_inspect_extracted(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Inspect extracted ar1 commands: counts, signatures, failures, missing commands."""
-    from .mmws.post_connect import AR1Command, inspect_extracted_commands
+    from .legacy_mmws.post_connect import AR1Command, inspect_extracted_commands
     import json
     import dataclasses
     
@@ -6051,7 +6143,7 @@ def mmws_post_generate_smoke_from_extracted(
     verbose: bool = typer.Option(False, "--verbose", help="Show verbose output"),
 ) -> None:
     """Generate Lua smoke config from exact extracted commands."""
-    from .mmws.post_connect import AR1Command, generate_smoke_from_extracted
+    from .legacy_mmws.post_connect import AR1Command, generate_smoke_from_extracted
     import json
     import uuid
     
@@ -6104,7 +6196,7 @@ def mmws_post_smoke_from_known_awr2944(
     If --pid or --snapshot or --audit is provided, runs preflight-config before generating.
     If preflight fails, refuses to generate unless --force is set.
     """
-    from .mmws.post_connect import generate_smoke_known_awr2944
+    from .legacy_mmws.post_connect import generate_smoke_known_awr2944
     import json
     import uuid
     
@@ -6113,8 +6205,8 @@ def mmws_post_smoke_from_known_awr2944(
     
     # Preflight gate
     if pid is not None or snapshot or audit:
-        from .mmws.gui_connect import attach_mmwave_studio
-        from .mmws.post_connect import connection_gate, dump_output_snapshot, audit_session, preflight_config, SessionAudit
+        from .legacy_mmws.gui_connect import attach_mmwave_studio
+        from .legacy_mmws.post_connect import connection_gate, dump_output_snapshot, audit_session, preflight_config, SessionAudit
         
         vlog_lines: list[str] = []
         def vlog(msg: str):
@@ -6199,7 +6291,7 @@ def mmws_post_smoke_from_known_awr2944(
 @mmws_post_app.command("print-known-awr2944-commands")
 def mmws_post_print_known_awr2944_commands() -> None:
     """Print the exact frozen GUI-derived AWR2944 command list."""
-    from .mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0
+    from .legacy_mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0
     
     console.print("[bold]Frozen GUI-Derived AWR2944 Commands:[/bold]")
     console.print("[dim]These are the EXACT strings that smoke-from-known-awr2944 emits.[/dim]\n")
@@ -6216,7 +6308,7 @@ def mmws_post_verify_known_script(
     Checks that every frozen command appears in an executable (non-comment)
     line, and that no known bad patterns appear.
     """
-    from .mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0, _KNOWN_BAD_PATTERNS
+    from .legacy_mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0, _KNOWN_BAD_PATTERNS
     
     script_path = Path(script)
     if not script_path.exists():
@@ -6403,7 +6495,7 @@ def watch_run_impl(run_id: str, timeout: int, probe_dir: str = None) -> None:
     import json
     import time
     import sys
-    from .mmws.post_connect import load_run_result
+    from .legacy_mmws.post_connect import load_run_result
     
     probe_dir_path = _lua_launch_probe_dir(probe_dir)
     manifest_path = probe_dir_path / f"{run_id}_manifest.json"
@@ -6565,7 +6657,7 @@ def mmws_post_smoke_config_script(
     AWR2944 (e.g. ChanNAdcConfig takes 11 args, not 10).
     Use 'smoke-from-known-awr2944' or 'generate-smoke-from-extracted' instead.
     """
-    from .mmws.post_connect import generate_smoke_config_script
+    from .legacy_mmws.post_connect import generate_smoke_config_script
     import uuid
     import yaml
     
@@ -6721,8 +6813,8 @@ def mmws_post_frozen_config_inspect(
     format: str = typer.Option("text", "--format", help="Output format: text or json")
 ) -> None:
     """Print the frozen AWR2944 config in grouped, human-readable form."""
-    from .mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0
-    from .mmws.config_parser import parse_ar1_call
+    from .legacy_mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0
+    from .legacy_mmws.config_parser import parse_ar1_call
     import json
     
     parsed_cmds = {parse_ar1_call(cmd)["name"]: parse_ar1_call(cmd) for cmd in VALIDATED_AWR2944_SMOKE_V0.commands}
@@ -6812,8 +6904,8 @@ def mmws_post_frozen_config_explain(
     format: str = typer.Option("text", "--format", help="Output format: text or json")
 ) -> None:
     """Explain each frozen ar1 command."""
-    from .mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0, AWR2944_ARG_COUNTS
-    from .mmws.config_parser import parse_ar1_call
+    from .legacy_mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0, AWR2944_ARG_COUNTS
+    from .legacy_mmws.config_parser import parse_ar1_call
     import json
     
     explanations = []
@@ -6864,8 +6956,8 @@ def mmws_post_frozen_config_explain(
 @mmws_post_app.command("validate-frozen-config")
 def mmws_post_validate_frozen_config() -> None:
     """Validate that the frozen baseline is exactly correct and ordered."""
-    from .mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0, AWR2944_ARG_COUNTS
-    from .mmws.config_parser import parse_ar1_call
+    from .legacy_mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0, AWR2944_ARG_COUNTS
+    from .legacy_mmws.config_parser import parse_ar1_call
     
     expected_order = [
         "ChanNAdcConfig", "LPModConfig", "RfLdoBypassConfig", "SetCalMonFreqLimitConfig",
@@ -6900,8 +6992,8 @@ def mmws_post_generate_config_variant(
     format: str = typer.Option("text", "--format", help="Output format: text or json")
 ) -> None:
     """Generate a modified dry-run config variant."""
-    from .mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0, AWR2944_ARG_COUNTS
-    from .mmws.config_parser import parse_ar1_call
+    from .legacy_mmws.post_connect import VALIDATED_AWR2944_SMOKE_V0, AWR2944_ARG_COUNTS
+    from .legacy_mmws.config_parser import parse_ar1_call
     import json
     
     if not dry_run:
@@ -7022,7 +7114,7 @@ def mmws_post_generate_config_variant(
 @mmws_post_app.command("list-windows")
 def mmws_post_list_windows() -> None:
     """List candidate mmWave Studio processes and their window states."""
-    from .mmws.gui_connect import _get_powershell_candidates, _is_strong_candidate
+    from .legacy_mmws.gui_connect import _get_powershell_candidates, _is_strong_candidate
     from rich.table import Table
     
     candidates = _get_powershell_candidates()
@@ -7062,7 +7154,7 @@ def mmws_post_uia_probe(
     but in diagnostic mode, printing strategy results.
     """
     import json as _json
-    from .mmws.gui_connect import uia_probe
+    from .legacy_mmws.gui_connect import uia_probe
 
     vlog = lambda m: console.print(f"  [dim]{m}[/dim]")
     console.print(f"[cyan]UIA Probe for PID={pid}[/cyan]\n")
@@ -7118,7 +7210,7 @@ def mmws_post_manual_status_probe(
     Calls the same status extraction path used by manual-check in guided-validate.
     """
     from pathlib import Path as _Path
-    from .mmws.gui_connect import attach_mmwave_studio, manual_status_probe
+    from .legacy_mmws.gui_connect import attach_mmwave_studio, manual_status_probe
 
     pd = _Path(probe_dir) if probe_dir else _Path("ti") / "probe_logs"
     vlog = lambda m: console.print(f"  [dim]{m}[/dim]")
@@ -7210,7 +7302,7 @@ def mmws_post_guided_validate(
             console.print(f"  awr mmws post guided-validate --pid <PID> --label \"<label>\" --probe-dir C:\\...\\exp_lau_probe\\ti\\probe_logs\n")
             raise typer.Exit(1)
             
-    from .mmws.guided_runner import run_guided_workflow
+    from .legacy_mmws.guided_runner import run_guided_workflow
     run_guided_workflow(
         label=label,
         pid=pid,
@@ -7230,7 +7322,7 @@ def mmws_post_guided_resume(
     probe_dir: str = typer.Option(None, "--probe-dir", help="Override the directory where probe logs are written"),
 ) -> None:
     """Resume an interrupted guided validation workflow."""
-    from .mmws.guided_runner import resume_guided_workflow
+    from .legacy_mmws.guided_runner import resume_guided_workflow
     # probe_dir here is mainly for consistency if the user provides it, but resume gets it from state path.
     resume_guided_workflow(
         state_path=state,
@@ -7250,7 +7342,7 @@ def mmws_post_failure_report(
 ) -> None:
     """Read-only diagnostic tool to detect and report workflow failures."""
     import json
-    from .mmws.failure_report import generate_failure_report
+    from .legacy_mmws.failure_report import generate_failure_report
     
     # "with no arguments, treat it as --latest"
     if not latest and not state and not run_id and not workflow_id:

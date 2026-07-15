@@ -6,16 +6,16 @@ from pathlib import Path
 import json
 import pytest
 
-from awr2944_dca.mmws.stages import (
+from awr2944_dca.legacy_mmws.stages import (
     StageName, get_stage, get_all_allowed_calls, get_all_forbidden_calls,
     STAGES, ALL_KNOWN_CALLS, STATIC_CONFIG_FIELD_MAP,
 )
-from awr2944_dca.mmws.lua_builder import (
+from awr2944_dca.legacy_mmws.lua_builder import (
     build_connection_diag_script, validate_script_safety, write_connection_diag_script,
 )
-from awr2944_dca.mmws.bridge import ManualOneShotBridge, StageStatus
-from awr2944_dca.mmws.models import ConnectionTabConfig, StaticConfig
-from awr2944_dca.mmws.catalog import scan_scripts, CatalogEntry
+from awr2944_dca.legacy_mmws.bridge import ManualOneShotBridge, StageStatus
+from awr2944_dca.legacy_mmws.models import ConnectionTabConfig, StaticConfig
+from awr2944_dca.legacy_mmws.catalog import scan_scripts, CatalogEntry
 
 
 # ---------------------------------------------------------------------------

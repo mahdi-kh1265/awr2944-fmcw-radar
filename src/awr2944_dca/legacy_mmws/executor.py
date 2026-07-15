@@ -258,7 +258,7 @@ def _run_rstd_worker_subprocess(
         vlog.log(f"Lua command string: {lua_cmd!r}")
 
         cmd = [
-            sys.executable, "-m", "awr2944_dca.mmws.rstd_worker",
+            sys.executable, "-m", "awr2944_dca.legacy_mmws.rstd_worker",
             "--dll", str(dll_path),
             "--host", _RSTD_HOST,
             "--port", str(_RSTD_PORT),
@@ -387,7 +387,7 @@ def run_rstd_worker_test(
             vlog.log(f"Expected result: {lua_result_file}")
 
         cmd = [
-            sys.executable, "-m", "awr2944_dca.mmws.rstd_worker",
+            sys.executable, "-m", "awr2944_dca.legacy_mmws.rstd_worker",
             "--dll", str(dll_path),
             "--host", _RSTD_HOST,
             "--port", str(_RSTD_PORT),
@@ -478,7 +478,7 @@ def run_rstd_get_last_error(timeout: float = 10.0, verbose: bool = False) -> dic
         progress_file = temp_path / "progress.jsonl"
 
         cmd = [
-            sys.executable, "-m", "awr2944_dca.mmws.rstd_worker",
+            sys.executable, "-m", "awr2944_dca.legacy_mmws.rstd_worker",
             "--dll", str(dll_path),
             "--host", _RSTD_HOST,
             "--port", str(_RSTD_PORT),
@@ -546,7 +546,7 @@ def run_rstd_introspect(timeout: float = 10.0, verbose: bool = False) -> dict:
         progress_file = temp_path / "progress.jsonl"
 
         cmd = [
-            sys.executable, "-m", "awr2944_dca.mmws.rstd_worker",
+            sys.executable, "-m", "awr2944_dca.legacy_mmws.rstd_worker",
             "--dll", str(dll_path),
             "--mode", "introspect",
             "--result-file", str(worker_result_file),

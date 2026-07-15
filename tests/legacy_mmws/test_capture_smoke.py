@@ -607,7 +607,7 @@ def test_capture_script_has_correct_sequence(tmp_path, monkeypatch):
 
 def test_no_guided_runner_modifications():
     """Guided runner stages are not modified by workflow module."""
-    from awr2944_dca.mmws.stages import STAGES as GUIDED_STAGES
+    from awr2944_dca.legacy_mmws.stages import STAGES as GUIDED_STAGES
     # Just verify import works and stages exist
     assert len(GUIDED_STAGES) > 0
 

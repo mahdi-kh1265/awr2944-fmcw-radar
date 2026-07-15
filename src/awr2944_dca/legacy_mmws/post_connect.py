@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 
-from awr2944_dca.mmws.gui_connect import read_device_status, inspect_connection_tab, _find_by_auto_id
+from awr2944_dca.legacy_mmws.gui_connect import read_device_status, inspect_connection_tab, _find_by_auto_id
 
 
 class PostConnectionGateError(RuntimeError):

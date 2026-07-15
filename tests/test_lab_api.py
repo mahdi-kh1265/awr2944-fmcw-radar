@@ -105,7 +105,8 @@ def test_captures_returns_list(tmp_path):
     lab = RadarProject.open(tmp_path)
     caps = lab.captures()
     assert len(caps) == 2
-    assert all((isinstance(c, RadarCapture) for c in caps))
+    for c in caps:
+        assert type(c).__name__ == "RadarCapture"
 
 def test_get_capture_exact_match(tmp_path):
     _make_project(tmp_path)

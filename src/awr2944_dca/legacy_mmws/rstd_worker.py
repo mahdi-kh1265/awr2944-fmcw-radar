@@ -11,12 +11,12 @@ Step-level progress is written to --progress-file (JSONL) so the parent
 can determine exactly which API call hung if the worker is killed.
 
 Usage:
-  python -m awr2944_dca.mmws.rstd_worker \\
+  python -m awr2944_dca.legacy_mmws.rstd_worker \\
     --dll <path> --host 127.0.0.1 --port 2777 \\
     --command-file <in.txt> --result-file <out.json> \\
     --progress-file <progress.jsonl>
 
-  python -m awr2944_dca.mmws.rstd_worker \\
+  python -m awr2944_dca.legacy_mmws.rstd_worker \\
     --dll <path> --mode introspect --result-file <out.json> \\
     --progress-file <progress.jsonl>
 """

@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from awr2944_dca.mmws.stages import StageName, get_all_forbidden_calls
+from awr2944_dca.legacy_mmws.stages import StageName, get_all_forbidden_calls
 
 
 def validate_script_safety(script_text: str, stage: StageName) -> list[str]:

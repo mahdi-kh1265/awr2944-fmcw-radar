@@ -20,7 +20,7 @@ from awr2944_dca.ti.import_config import import_ti_config
 from awr2944_dca.ti.inspect import UNKNOWN, inspect_ti_file
 
 runner = CliRunner()
-EXAMPLES_DIR = Path(__file__).parent.parent / "examples" / "configs"
+EXAMPLES_DIR = Path(__file__).parent.parent.parent / "examples" / "configs"
 
 # ---------------------------------------------------------------------------
 # Fake TI files for testing
@@ -334,6 +334,9 @@ class TestTiCompareCLI:
             str(EXAMPLES_DIR / "first_capture.yaml"),
             str(lua_file),
         ])
+        if result.exit_code != 0:
+            print("EXCEPTION:", result.exception)
+            print("OUTPUT:", result.output)
         assert result.exit_code == 0
 
 

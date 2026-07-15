@@ -186,7 +186,7 @@ def test_watch_run_mismatch_reconciliation(tmp_path):
         awr2944_dca.cli._lua_launch_probe_dir = original_probe
 
 def test_guided_summary_option_leak(tmp_path, monkeypatch):
-    from awr2944_dca.mmws.guided_runner import step_summarize, step_record, GuidedWorkflowState
+    from awr2944_dca.legacy_mmws.guided_runner import step_summarize, step_record, GuidedWorkflowState
     from pathlib import Path
 
     # Monkeypatch the impls
@@ -230,7 +230,7 @@ def test_guided_summary_option_leak(tmp_path, monkeypatch):
 # UIA Attach PID Diagnostics Tests
 # ---------------------------------------------------------------------------
 
-import awr2944_dca.mmws.gui_connect as gc
+import awr2944_dca.legacy_mmws.gui_connect as gc
 
 def test_uia_attach_no_candidates(monkeypatch):
     """Auto-resolve with no candidates raises with clear message."""
@@ -500,7 +500,7 @@ def test_read_device_status_descendants_fallback():
 
 def test_manual_override_records_state(tmp_path):
     """--assume-manual-connected should record override in state and not fail."""
-    from awr2944_dca.mmws.guided_runner import step_manual_check, GuidedWorkflowState
+    from awr2944_dca.legacy_mmws.guided_runner import step_manual_check, GuidedWorkflowState
 
     state = GuidedWorkflowState(
         workflow_id="override_test",
@@ -518,7 +518,7 @@ def test_manual_override_records_state(tmp_path):
 
 def test_manual_override_does_not_mark_hardware_touched(tmp_path):
     """Manual override by itself should not mark hardware_touched=True."""
-    from awr2944_dca.mmws.guided_runner import step_manual_check, GuidedWorkflowState
+    from awr2944_dca.legacy_mmws.guided_runner import step_manual_check, GuidedWorkflowState
 
     state = GuidedWorkflowState(
         workflow_id="hw_test",
@@ -535,7 +535,7 @@ def test_manual_override_does_not_mark_hardware_touched(tmp_path):
 
 def test_manual_override_still_requires_firmware_validation(tmp_path, monkeypatch):
     """After manual override, firmware validation must still run (not be skipped)."""
-    from awr2944_dca.mmws.guided_runner import (
+    from awr2944_dca.legacy_mmws.guided_runner import (
         GuidedWorkflowState, step_manual_check, step_preflight_firmware
     )
 
@@ -636,8 +636,8 @@ def test_manual_status_probe_no_attribute_error():
 
 def test_override_bypasses_rs232_gate_in_preflight(tmp_path):
     """--assume-manual-connected should bypass RS232 identity gate in preflight."""
-    from awr2944_dca.mmws.guided_runner import step_preflight_firmware, GuidedWorkflowState
-    from awr2944_dca.mmws.post_connect import SessionAudit
+    from awr2944_dca.legacy_mmws.guided_runner import step_preflight_firmware, GuidedWorkflowState
+    from awr2944_dca.legacy_mmws.post_connect import SessionAudit
 
     state = GuidedWorkflowState(
         workflow_id="gate_test",
@@ -652,7 +652,7 @@ def test_override_bypasses_rs232_gate_in_preflight(tmp_path):
     audit = SessionAudit(rs232_valid=False)
 
     # Without override: should fail
-    from awr2944_dca.mmws.post_connect import preflight_firmware
+    from awr2944_dca.legacy_mmws.post_connect import preflight_firmware
     passed, reasons = preflight_firmware(audit)
     assert not passed
     assert any("RS232 identity gate" in r for r in reasons)
@@ -665,8 +665,8 @@ def test_override_bypasses_rs232_gate_in_preflight(tmp_path):
 
 def test_preflight_strict_without_override(tmp_path):
     """Without override, RS232 identity gate failure must block firmware generation."""
-    from awr2944_dca.mmws.guided_runner import step_preflight_firmware, GuidedWorkflowState
-    from awr2944_dca.mmws.post_connect import SessionAudit
+    from awr2944_dca.legacy_mmws.guided_runner import step_preflight_firmware, GuidedWorkflowState
+    from awr2944_dca.legacy_mmws.post_connect import SessionAudit
 
     state = GuidedWorkflowState(
         workflow_id="strict_test",
@@ -684,8 +684,8 @@ def test_preflight_strict_without_override(tmp_path):
 
 def test_override_does_not_mask_other_preflight_failures(tmp_path):
     """Override should not mask non-RS232 preflight failures like firmware already attempted."""
-    from awr2944_dca.mmws.guided_runner import step_preflight_firmware, GuidedWorkflowState
-    from awr2944_dca.mmws.post_connect import SessionAudit
+    from awr2944_dca.legacy_mmws.guided_runner import step_preflight_firmware, GuidedWorkflowState
+    from awr2944_dca.legacy_mmws.post_connect import SessionAudit
 
     state = GuidedWorkflowState(
         workflow_id="mask_test",

@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from awr2944_dca.mmws.stages import ALL_KNOWN_CALLS
+from awr2944_dca.legacy_mmws.stages import ALL_KNOWN_CALLS
 from awr2944_dca.ti.classify import classify_key
 
 

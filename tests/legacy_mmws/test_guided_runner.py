@@ -6,18 +6,18 @@ import os
 from pathlib import Path
 import pytest
 
-from awr2944_dca.mmws.guided_runner import GuidedWorkflowState, run_guided_workflow, resume_guided_workflow
+from awr2944_dca.legacy_mmws.guided_runner import GuidedWorkflowState, run_guided_workflow, resume_guided_workflow
 from awr2944_dca.cli import mmws_post_app
 from typer.testing import CliRunner
 
 runner = CliRunner()
 
 def test_dry_run_does_not_write_lua(tmp_path, monkeypatch):
-    import awr2944_dca.mmws.guided_runner
+    import awr2944_dca.legacy_mmws.guided_runner
     import awr2944_dca.cli
     
     monkeypatch.setattr(awr2944_dca.cli, "_lua_launch_probe_dir", lambda override=None: tmp_path)
-    monkeypatch.setattr(awr2944_dca.mmws.guided_runner, "_lua_launch_probe_dir", lambda override=None: tmp_path)
+    monkeypatch.setattr(awr2944_dca.legacy_mmws.guided_runner, "_lua_launch_probe_dir", lambda override=None: tmp_path)
     
     res = runner.invoke(mmws_post_app, ["guided-validate", "--label", "test-dry", "--dry-run", "--probe-dir", str(tmp_path)])
     assert res.exit_code == 0, res.output
@@ -59,11 +59,11 @@ def test_atomic_state_write(tmp_path):
     assert not Path(state_path + ".tmp").exists()
 
 def test_manual_check_failure_stops_workflow(tmp_path, monkeypatch):
-    import awr2944_dca.mmws.guided_runner as gr
+    import awr2944_dca.legacy_mmws.guided_runner as gr
     monkeypatch.setattr(gr, "_lua_launch_probe_dir", lambda override=None: tmp_path)
     
     def fake_manual_check(*args, **kwargs):
-        from awr2944_dca.mmws.gui_connect import ClickFlowResult
+        from awr2944_dca.legacy_mmws.gui_connect import ClickFlowResult
         return ClickFlowResult("FAILED", "Simulated failure", None)
         
     monkeypatch.setattr(gr, "manual_check", fake_manual_check)
@@ -87,18 +87,18 @@ def test_manual_check_failure_stops_workflow(tmp_path, monkeypatch):
     assert "manual_check_passed failed" in state.errors[0]
 
 def test_firmware_preflight_failure_stops_workflow(tmp_path, monkeypatch):
-    import awr2944_dca.mmws.guided_runner as gr
+    import awr2944_dca.legacy_mmws.guided_runner as gr
     monkeypatch.setattr(gr, "_lua_launch_probe_dir", lambda override=None: tmp_path)
     monkeypatch.setattr(gr, "attach_mmwave_studio", lambda *a, **kw: (None, None))
     
     def fake_manual_check(*args, **kwargs):
-        from awr2944_dca.mmws.gui_connect import ClickFlowResult
+        from awr2944_dca.legacy_mmws.gui_connect import ClickFlowResult
         return ClickFlowResult("MANUAL_CONNECTION_VALID", "", None)
         
     monkeypatch.setattr(gr, "manual_check", fake_manual_check)
     
     def fake_audit(*args, **kwargs):
-        from awr2944_dca.mmws.post_connect import SessionAudit
+        from awr2944_dca.legacy_mmws.post_connect import SessionAudit
         return SessionAudit(requires_power_cycle=False, rs232_valid=True)
         
     monkeypatch.setattr(gr, "audit_session", fake_audit)
@@ -126,7 +126,7 @@ def test_firmware_preflight_failure_stops_workflow(tmp_path, monkeypatch):
     assert "firmware_preflight_passed failed" in state.errors[0]
 
 def test_resume_from_firmware_script_generated(tmp_path, monkeypatch):
-    import awr2944_dca.mmws.guided_runner as gr
+    import awr2944_dca.legacy_mmws.guided_runner as gr
     
     state_path = tmp_path / "guided_123_state.json"
     state = GuidedWorkflowState(
@@ -153,7 +153,7 @@ def test_resume_from_firmware_script_generated(tmp_path, monkeypatch):
     monkeypatch.setattr(gr, "dump_output_snapshot", lambda *a, **kw: None)
     
     def fake_audit(*args, **kwargs):
-        from awr2944_dca.mmws.post_connect import SessionAudit
+        from awr2944_dca.legacy_mmws.post_connect import SessionAudit
         return SessionAudit(requires_power_cycle=False, rs232_valid=True)
     monkeypatch.setattr(gr, "audit_session", fake_audit)
     
@@ -177,7 +177,7 @@ def test_resume_from_firmware_script_generated(tmp_path, monkeypatch):
     assert final_state.current_stage == "validation_recorded"
 
 def test_resume_records_validation(tmp_path, monkeypatch):
-    import awr2944_dca.mmws.guided_runner as gr
+    import awr2944_dca.legacy_mmws.guided_runner as gr
     
     state_path = tmp_path / "guided_123_state.json"
     state = GuidedWorkflowState(
@@ -209,7 +209,7 @@ def test_resume_records_validation(tmp_path, monkeypatch):
     assert final_state.current_stage == "validation_recorded"
 
 def test_firmware_script_generation(tmp_path, monkeypatch):
-    import awr2944_dca.mmws.guided_runner as gr
+    import awr2944_dca.legacy_mmws.guided_runner as gr
     
     state_path = tmp_path / "guided_123_state.json"
     state = GuidedWorkflowState(
@@ -223,7 +223,7 @@ def test_firmware_script_generation(tmp_path, monkeypatch):
     monkeypatch.setattr(gr, "_lua_launch_probe_dir", lambda override=None: tmp_path)
     
     def fake_generate_fw(run_id, lua_path):
-        from awr2944_dca.mmws.post_connect import GeneratedScript
+        from awr2944_dca.legacy_mmws.post_connect import GeneratedScript
         return GeneratedScript(
             script="-- dummy fw",
             run_id=run_id,

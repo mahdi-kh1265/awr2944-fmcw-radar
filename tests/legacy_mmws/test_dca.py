@@ -15,7 +15,7 @@ from awr2944_dca.dca.scripts import (
     generate_capture_trigger_script,
 )
 from awr2944_dca.dca.validate import check_capture_files
-from awr2944_dca.mmws.stages import STAGES
+from awr2944_dca.legacy_mmws.stages import STAGES
 
 runner = CliRunner()
 
@@ -252,7 +252,7 @@ def test_generate_postproc_script(tmp_path):
 
 def test_lua_json_escape():
     """Verify jsonEscape handles multiline strings correctly in Python generation."""
-    from awr2944_dca.mmws.post_connect import _lua_log_progress, _lua_result_init_and_save
+    from awr2944_dca.legacy_mmws.post_connect import _lua_log_progress, _lua_result_init_and_save
     
     log_lua = _lua_log_progress()
     save_lua = _lua_result_init_and_save("test_id", "out.json")
@@ -266,7 +266,7 @@ def test_lua_json_escape():
 
 def test_check_run_parses_multiline_exception(tmp_path):
     """Check-run can parse a result JSON containing a multiline C# exception."""
-    from awr2944_dca.mmws.post_connect import load_run_result
+    from awr2944_dca.legacy_mmws.post_connect import load_run_result
     
     result_json = tmp_path / "test1_result.json"
     result_json.write_text(r'''{

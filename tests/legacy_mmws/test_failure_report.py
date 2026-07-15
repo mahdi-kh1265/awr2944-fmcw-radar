@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import pytest
 
-from awr2944_dca.mmws.failure_report import generate_failure_report
+from awr2944_dca.legacy_mmws.failure_report import generate_failure_report
 from awr2944_dca.cli import mmws_post_app
 from typer.testing import CliRunner
 
@@ -76,8 +76,8 @@ def test_failure_report_orphan_manifest(tmp_path):
 
 def test_cli_json_output(tmp_path, monkeypatch):
     import awr2944_dca.cli
-    import awr2944_dca.mmws.failure_report
-    monkeypatch.setattr(awr2944_dca.mmws.failure_report, "_lua_launch_probe_dir", lambda: tmp_path)
+    import awr2944_dca.legacy_mmws.failure_report
+    monkeypatch.setattr(awr2944_dca.legacy_mmws.failure_report, "_lua_launch_probe_dir", lambda: tmp_path)
     
     sf = tmp_path / "guided_1234_state.json"
     sf.write_text(json.dumps({
@@ -98,8 +98,8 @@ def test_cli_json_output(tmp_path, monkeypatch):
 
 def test_cli_text_output(tmp_path, monkeypatch):
     import awr2944_dca.cli
-    import awr2944_dca.mmws.failure_report
-    monkeypatch.setattr(awr2944_dca.mmws.failure_report, "_lua_launch_probe_dir", lambda: tmp_path)
+    import awr2944_dca.legacy_mmws.failure_report
+    monkeypatch.setattr(awr2944_dca.legacy_mmws.failure_report, "_lua_launch_probe_dir", lambda: tmp_path)
     
     sf = tmp_path / "guided_1234_state.json"
     sf.write_text(json.dumps({
@@ -132,7 +132,7 @@ def test_semantic_dry_run_bug(tmp_path):
     assert any("validation_recorded reached during dry_run" in e for e in report.errors)
 
 def test_hardware_likely_touched(tmp_path):
-    from awr2944_dca.mmws.failure_report import _check_hardware_touched
+    from awr2944_dca.legacy_mmws.failure_report import _check_hardware_touched
     
     # 1. No run_id
     assert _check_hardware_touched(tmp_path, "") is False
@@ -153,7 +153,7 @@ def test_hardware_likely_touched(tmp_path):
     assert _check_hardware_touched(tmp_path, "hwfw") is True
 
 def test_failure_report_old_mismatch(tmp_path):
-    from awr2944_dca.mmws.failure_report import generate_failure_report
+    from awr2944_dca.legacy_mmws.failure_report import generate_failure_report
     import json
     
     run_id = "testoldmismatch"
@@ -172,7 +172,7 @@ def test_failure_report_old_mismatch(tmp_path):
     
     # Write state JSON (failed at timeout)
     state_path = tmp_path / f"guided_oldmismatch_state.json"
-    from awr2944_dca.mmws.guided_runner import GuidedWorkflowState
+    from awr2944_dca.legacy_mmws.guided_runner import GuidedWorkflowState
     state = GuidedWorkflowState(
         workflow_id="oldmismatch",
         label="test",
@@ -190,7 +190,7 @@ def test_failure_report_old_mismatch(tmp_path):
     assert report.hardware_likely_touched is True
 
 def test_failure_report_new_summary_bug(tmp_path):
-    from awr2944_dca.mmws.failure_report import generate_failure_report
+    from awr2944_dca.legacy_mmws.failure_report import generate_failure_report
     import json
     
     fw_id = "fwsym"
@@ -204,7 +204,7 @@ def test_failure_report_new_summary_bug(tmp_path):
     
     # Write state JSON (failed at summarize_session with OptionInfo error)
     state_path = tmp_path / f"guided_newsummary_state.json"
-    from awr2944_dca.mmws.guided_runner import GuidedWorkflowState
+    from awr2944_dca.legacy_mmws.guided_runner import GuidedWorkflowState
     state = GuidedWorkflowState(
         workflow_id="newsummary",
         label="test",

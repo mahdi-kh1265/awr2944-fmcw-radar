@@ -7,7 +7,7 @@ import ctypes
 from pathlib import Path
 from typing import Callable, Any, Optional
 
-from awr2944_dca.mmws.gui_connect import attach_mmwave_studio, ClickFlowResult, ProgressLogger, read_device_status, inspect_connection_tab
+from awr2944_dca.legacy_mmws.gui_connect import attach_mmwave_studio, ClickFlowResult, ProgressLogger, read_device_status, inspect_connection_tab
 
 try:
     import win32gui  # type: ignore

@@ -12,7 +12,7 @@ from typing import Optional
 
 from typing import Optional, TYPE_CHECKING
 if TYPE_CHECKING:
-    from awr2944_dca.mmws.post_connect import GeneratedScript
+    from awr2944_dca.legacy_mmws.post_connect import GeneratedScript
 
 def generate_dca_setup_script(
     run_id: str,
@@ -25,7 +25,7 @@ def generate_dca_setup_script(
     packet_delay: int = 25,
 ) -> GeneratedScript:
     """Generate DCA1000 setup Lua. State-changing, but no RF transmission."""
-    from awr2944_dca.mmws.post_connect import (
+    from awr2944_dca.legacy_mmws.post_connect import (
         GeneratedScript,
         _atomic_write_manifest,
         _lua_log_progress,
@@ -123,7 +123,7 @@ def generate_capture_trigger_script(
     This script is small and only executes StartRecord and StartFrame.
     Requires radar static configuration to be complete.
     """
-    from awr2944_dca.mmws.post_connect import (
+    from awr2944_dca.legacy_mmws.post_connect import (
         GeneratedScript,
         _atomic_write_manifest,
         _lua_log_progress,
@@ -231,6 +231,14 @@ def generate_postproc_script(
     output_dir: Path,
 ) -> GeneratedScript:
     """Generate Matlab post-processing Lua script."""
+    from awr2944_dca.legacy_mmws.post_connect import (
+        GeneratedScript,
+        _atomic_write_manifest,
+        _lua_log_progress,
+        _lua_result_init_and_save,
+        _lua_safe_call,
+    )
+
     prog_path = out_path.with_name(out_path.stem + "_progress.jsonl")
     res_path = out_path.with_name(out_path.stem + "_result.json")
     _atomic_write_manifest(run_id, "postproc", out_path, res_path, prog_path)

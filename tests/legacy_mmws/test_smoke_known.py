@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from awr2944_dca.mmws.post_connect import (
+from awr2944_dca.legacy_mmws.post_connect import (
     generate_smoke_known_awr2944,
     VALIDATED_AWR2944_SMOKE_V0,
     _KNOWN_BAD_PATTERNS,
