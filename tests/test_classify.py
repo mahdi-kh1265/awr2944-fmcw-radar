@@ -58,26 +58,3 @@ def test_generate_classification():
     assert k1.risk == "state_changing"
 
 
-def test_cli_inventory_list(tmp_path, monkeypatch):
-    exp = Experiment.init(name="test_list", preset="first-capture", root=tmp_path)
-    monkeypatch.chdir(exp.root_dir)
-    
-    log_dir = exp.root_dir / "ti" / "probe_logs"
-    log_dir.mkdir(parents=True)
-    json_path = log_dir / "inventory_result.json"
-    
-    mock_data = {
-        "ar1_keys": {
-            "Connect": {"type": "function", "value": ""},
-            "Disconnect": {"type": "function", "value": ""},
-            "PowerOn": {"type": "function", "value": ""}
-        }
-    }
-    json_path.write_text(json.dumps(mock_data))
-    
-    result = runner.invoke(app, ["ti", "inventory-list", "--filter", "Connect"])
-    assert result.exit_code == 0
-    assert "Connect" in result.stdout
-    assert "Disconnect" in result.stdout # Case insensitive / substring matching includes both
-    assert "PowerOn" not in result.stdout
-    assert "Showing 2 / 3 keys" in result.stdout

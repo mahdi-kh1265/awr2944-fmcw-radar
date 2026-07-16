@@ -118,7 +118,7 @@ The project system:
 ### 1. Create a project
 
 ```bash
-cd C:\Users\khams008\Documents\awr2944-fmcw-radar\exp_lau_probe
+cd C:\Users\khams008\Documents\awr2944-fmcw-radar\my_radar_project
 
 awr project init lau_probe \
     --root . \

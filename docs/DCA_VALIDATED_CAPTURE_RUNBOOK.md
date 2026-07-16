@@ -137,7 +137,7 @@ Use `awr dca check-capture --expected-bytes 4194304` for the validated hardware 
 
 After a successful capture, artifacts should be saved with:
 ```
-exp_lau_probe\captures\first_real_dca_capture_<timestamp>\
+my_radar_project\captures\first_real_dca_capture_<timestamp>\
   adc_data.bin                          (4,194,304 bytes validated)
   cf.json                               (DCA configuration)
   LogFile.txt
