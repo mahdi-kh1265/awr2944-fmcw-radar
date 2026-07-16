@@ -221,3 +221,12 @@ tmp_test_dir/
 test_doc_tmp/
 standalone_verify/
 
+# Local test artifacts
+/pytest_fail.txt
+/pytest_output.txt
+/report.xml
+/report2.xml
+/test_out.txt
+/test_output.txt
+/trace1.txt
+/implementation_plan.md
