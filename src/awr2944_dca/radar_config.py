@@ -406,21 +406,6 @@ class RadarConfig:
         p.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
         return p
 
-    def export_lua(self, name_or_path: str | Path | None = None, project_root: Path | None = None) -> Path:
-        """Export to Lua under configs/mmws/lua/."""
-        if name_or_path is None:
-            name_or_path = self.name or "custom_config"
-        
-        p = Path(name_or_path)
-        if not p.is_absolute() and project_root:
-            out_dir = project_root / "configs" / "mmws" / "lua"
-            out_dir.mkdir(parents=True, exist_ok=True)
-            if not p.suffix:
-                p = p.with_suffix(".lua")
-            p = out_dir / p
-            
-        p.write_text(self.to_lua(), encoding="utf-8")
-        return p
 
 
 # ---------------------------------------------------------------------------

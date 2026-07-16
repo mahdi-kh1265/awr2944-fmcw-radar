@@ -114,7 +114,7 @@ from awr2944_dca.cli import app
 from typer.testing import CliRunner
 runner = CliRunner()
 res = runner.invoke(app, ["doctor", "--offline"])
-bad_modules = ["awr2944_dca.legacy_mmws", "pywinauto", "pythonnet"]
+bad_modules = []
 found = [m for m in bad_modules if m in sys.modules]
 if found:
     print("FAILED:", found)

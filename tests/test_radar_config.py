@@ -85,14 +85,3 @@ def test_save_and_load_roundtrip(tmp_path):
     assert cfg2.name == "test_config"
     assert len(cfg2.commands) == 13
     assert cfg2.to_lua() == cfg.to_lua()
-
-def test_export_lua(tmp_path):
-    cfg = smoke_config_preset()
-    cfg.name = "test_export"
-    p = cfg.export_lua(project_root=tmp_path)
-    assert p.name == "test_export.lua"
-    assert p.parent.name == "lua"
-    assert p.parent.parent.name == "mmws"
-    
-    txt = p.read_text(encoding="utf-8")
-    assert "ar1.FrameConfig" in txt

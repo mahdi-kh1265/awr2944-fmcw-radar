@@ -38,11 +38,7 @@ hardware = [
     "pyserial>=3.5",
     "psutil>=6.0",
 ]
-legacy-mmws = [
-    "pythonnet>=3.0",
-    "pywinauto>=0.6",
-    "pyperclip>=1.8",
-]
+
 headless = [
     "pyserial>=3.5",
 ]
@@ -76,7 +72,7 @@ target-version = "py312"
 
 [tool.pytest.ini_options]
 markers = [
-    "legacy_mmws: marks tests as part of the optional legacy mmWave Studio suite",
+
     "matlab_live: marks tests that require a real MATLAB installation and COM automation; never run in CI",
     "hardware_live: marks tests that require live radar hardware",
 ]

@@ -8,34 +8,36 @@ from pathlib import Path
 def test_production_modules_do_not_import_mmws():
     """Verify that production capture modules do not import legacy mmws modules."""
     import sys
-    
+
     # Clean up sys.modules to start fresh
     to_remove = [k for k in sys.modules if k.startswith("awr2944_dca")]
     for k in to_remove:
         del sys.modules[k]
-        
+
     # Import production modules
     import awr2944_dca.capture_cli
     import awr2944_dca.capture_session
     import awr2944_dca.direct_udp_capture
     import awr2944_dca.sdk_cli_profile
     import awr2944_dca.lab
-    
-    # Check if mmws was imported
-    mmws_imports = [k for k in sys.modules if k.startswith("awr2944_dca.mmws")]
-    assert len(mmws_imports) == 0, f"Production code imported legacy mmws modules: {mmws_imports}"
+
+    # Check if legacy dependencies were imported
+    bad_modules = ["awr2944_dca.legacy_mmws", "pythonnet", "clr", "pywinauto", "RSTD", "RTTTNetClientAPI"]
+    found = [m for m in bad_modules if m in sys.modules]
+
+    assert len(found) == 0, f"Production code imported legacy dependencies: {found}"
 
 def test_build_smoke_v1_cli_parity():
     """Verify generated SDK CLI commands."""
     from awr2944_dca.sdk_cli_profile import build_smoke_v1_cli
-    
+
     # Generate for 9 frames
     commands = build_smoke_v1_cli(frames=9, chirps_per_frame=128)
-    
+
     # The generated commands should look exactly like our known-good CFG minus sensorStop/sensorStart
     assert "sensorStop" not in commands
     assert "sensorStart" not in commands
-    
+
     # Verify key configurations
     assert "dfeDataOutputMode 1" in commands
     assert "channelCfg 15 7 0" in commands
