@@ -1,5 +1,7 @@
 # awr2944-fmcw-radar
 
+[![CI](https://github.com/mahdi-kh1265/awr2944-fmcw-radar/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mahdi-kh1265/awr2944-fmcw-radar/actions/workflows/ci.yml) [![PyPI version](https://img.shields.io/pypi/v/awr2944-dca-lab.svg)](https://pypi.org/project/awr2944-dca-lab/) [![Python versions](https://img.shields.io/pypi/pyversions/awr2944-dca-lab.svg)](https://pypi.org/project/awr2944-dca-lab/) [![License](https://img.shields.io/github/license/mahdi-kh1265/awr2944-fmcw-radar.svg)](LICENSE)
+
 A Python research toolkit for TI AWR2944EVM + DCA1000EVM raw ADC radar captures.
 
 This package provides a robust, native direct-capture pipeline that is free from mmWave Studio GUI automation and Lua scripts.
