@@ -38,6 +38,7 @@ jobs:
           marks = 'not hardware_live and not matlab_live'
           failed = []
           passed = []
+          skipped = []
 
           for tf in test_files:
               name = tf.name
@@ -50,15 +51,23 @@ jobs:
                   creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
               )
               elapsed = time.monotonic() - t0
-              status = 'PASS' if result.returncode == 0 else f'FAIL(rc={result.returncode})'
-              print(f'===== {name}: {status} ({elapsed:.1f}s) =====', flush=True)
-              if result.returncode != 0:
-                  failed.append(name)
-              else:
+              rc = result.returncode
+              if rc == 0:
+                  status = 'PASS'
                   passed.append(name)
+              elif rc == 5:
+                  status = 'SKIP (all deselected)'
+                  skipped.append(name)
+              else:
+                  status = f'FAIL(rc={rc})'
+                  failed.append(name)
+              print(f'===== {name}: {status} ({elapsed:.1f}s) =====', flush=True)
 
           print(f'\n===== SUMMARY =====')
           print(f'Passed: {len(passed)}')
+          print(f'Skipped: {len(skipped)}')
+          for s in skipped:
+              print(f'  SKIP: {s}')
           print(f'Failed: {len(failed)}')
           for f in failed:
               print(f'  FAIL: {f}')
