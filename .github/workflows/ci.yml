@@ -9,6 +9,7 @@ on:
 jobs:
   test-and-build:
     runs-on: windows-latest
+    timeout-minutes: 20
     strategy:
       matrix:
         python-version: ["3.12"]
