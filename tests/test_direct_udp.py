@@ -62,9 +62,17 @@ def run_synthetic_capture(tmp_path, packets, expected_bytes=None):
     mock_sock = MockSocket(packets)
     capture.sock = mock_sock
     
-    # start in background
-    capture_started_event.set()
-    capture.run()
+    try:
+        # start in background
+        capture.start()
+        capture_started_event.set()
+        capture.join(timeout=2.0)
+    finally:
+        capture.stop()
+        if hasattr(capture, 'sock') and capture.sock and getattr(capture.sock, 'closed', False) is False:
+            capture.sock.close()
+        capture.join(timeout=1.0)
+        assert not capture.is_alive(), "UdpReceiverThread leaked!"
     
     return capture
 
