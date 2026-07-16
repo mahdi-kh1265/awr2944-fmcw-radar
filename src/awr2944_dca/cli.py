@@ -52,7 +52,7 @@ app.add_typer(ports_app, name="ports")
 hardware_app = typer.Typer(help="Hardware discovery and diagnostics")
 app.add_typer(hardware_app, name="hardware")
 mmws_app = typer.Typer(help="mmWave Studio backend controller")
-app.add_typer(mmws_app, name="mmws")
+# app.add_typer(mmws_app, name="mmws")
 mmws_conn_app = typer.Typer(help="Connection-tab control (Lua-based, DIAGNOSTIC ONLY)")
 mmws_app.add_typer(mmws_conn_app, name="connection")
 mmws_guiconn_app = typer.Typer(help="GUI-button automation for Connection tab (pywinauto) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â OFFICIAL")
@@ -80,7 +80,7 @@ adc_app = typer.Typer(help="ADC data commands")
 app.add_typer(adc_app, name="adc")
 
 capture_smoke_app = typer.Typer(help="DCA capture smoke workflow")
-dca_app.add_typer(capture_smoke_app, name="capture-smoke")
+# dca_app.add_typer(capture_smoke_app, name="capture-smoke")
 
 manual_app = typer.Typer(help="Manual Lua scripts for the mmWave Studio Lua Shell")
 mmws_app.add_typer(manual_app, name="manual")
@@ -1677,7 +1677,7 @@ def ti_compare(
         console.print("[green]No critical mismatches.[/green]")
 
 
-@ti_app.command("export-lua-template")
+# @ti_app.command("export-lua-template")
 def ti_export_lua_template(
     config_path: Path = typer.Argument(..., help="Path to capture.yaml"),
     out: Path = typer.Option(Path("capture.lua"), "--out", "-o", help="Output Lua path"),
@@ -1729,7 +1729,7 @@ def ti_export_dca_config(
     )
 
 
-@ti_app.command("find-studio")
+# @ti_app.command("find-studio")
 def ti_find_studio() -> None:
     """Search for mmWave Studio installations."""
     from awr2944_dca.ti.probe import find_studio
@@ -2023,7 +2023,7 @@ def ti_workflow_map(
     console.print(f"[green]SUCCESS[/green] - Workflow map written to {log_dir}")
 
 
-@ti_app.command("lua-command")
+# @ti_app.command("lua-command")
 def ti_lua_command(
     script_path: Path = typer.Argument(..., help="Path to Lua script"),
     copy: bool = typer.Option(False, "--copy", help="Copy command to clipboard (Windows only)"),
@@ -2046,7 +2046,7 @@ def ti_lua_command(
             console.print("[yellow]Clipboard copy is only supported on Windows with clip.exe.[/yellow]")
 
 
-@ti_app.command("run-lua")
+# @ti_app.command("run-lua")
 def ti_run_lua(
     script_path: Path = typer.Argument(..., help="Path to Lua script"),
     offline: bool = typer.Option(False, "--offline", help="Required. Run without connecting to hardware"),
@@ -2161,7 +2161,7 @@ def ports_save(
     console.print("This file is gitignored as COM ports are machine-specific.")
 
 
-@ti_app.command("connection-probe", deprecated=True)
+# @ti_app.command("connection-probe", deprecated=True)
 def ti_connection_probe(
     com: str = typer.Option(None, "--com", help="[DEPRECATED] Use 'awr mmws connection script'"),
     baud: int = typer.Option(921600, "--baud", help="Baud rate"),
@@ -2172,7 +2172,7 @@ def ti_connection_probe(
     mmws_connection_script_cmd(com=com, baud=baud, timeout_ms=timeout_ms)
 
 
-@ti_app.command("connection-status", deprecated=True)
+# @ti_app.command("connection-status", deprecated=True)
 def ti_connection_status() -> None:
     """[DEPRECATED] Use 'awr mmws connection status' instead."""
     console.print("[yellow]DEPRECATED: Use 'awr mmws connection status' instead.[/yellow]")
@@ -7651,7 +7651,7 @@ def dca_preflight(
         sys.exit(1)
 
 
-@dca_app.command("generate-setup")
+# @dca_app.command("generate-setup")
 def dca_generate_setup(
     probe_dir: Path = typer.Option(..., "--probe-dir", help="Directory for output files"),
     host_ip: str = typer.Option("192.168.33.30", "--host-ip", help="PC static IP for DCA"),
@@ -7695,7 +7695,7 @@ def get_default_postproc_dir() -> Path:
     return Path(r"C:\ti\mmwave_studio\PostProc")
 
 
-@dca_app.command("generate-capture")
+# @dca_app.command("generate-capture")
 def dca_generate_capture(
     probe_dir: Path = typer.Option(..., "--probe-dir", help="Directory for output files"),
     output_dir: Path = typer.Option(get_default_postproc_dir(), "--output-dir", help="Capture directory"),
@@ -7726,7 +7726,7 @@ def dca_generate_capture(
         sys.exit(1)
 
 
-@dca_app.command("generate-postproc")
+# @dca_app.command("generate-postproc")
 def dca_generate_postproc(
     probe_dir: Path = typer.Option(..., "--probe-dir", help="Directory for output files"),
     output_dir: Path = typer.Option(get_default_postproc_dir(), "--output-dir", help="Capture directory"),
