@@ -48,10 +48,16 @@ def run_synthetic_capture(tmp_path, packets, expected_bytes=None):
     capture = UdpReceiverThread(
         out_file, 
         expected_bytes, 
+        host_ip="127.0.0.1",
+        data_port=0,
         capture_started_event=capture_started_event, 
         ready_event=ready_event
     )
     
+    # Close the real socket to avoid leaks before swapping in the mock
+    if hasattr(capture, 'sock') and capture.sock:
+        capture.sock.close()
+        
     # Mock socket
     mock_sock = MockSocket(packets)
     capture.sock = mock_sock
