@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
-import tomli
+import tomllib
 import tomli_w
 
 logger = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ class ProjectConfig:
         """Load configurations from disk if they exist."""
         if self.portable_path.exists():
             with open(self.portable_path, "rb") as f:
-                p_data = tomli.load(f)
+                p_data = tomllib.load(f)
                 
             proj = p_data.get("project", {})
             defaults = p_data.get("defaults", {})
@@ -102,7 +102,7 @@ class ProjectConfig:
             
         if self.local_path.exists():
             with open(self.local_path, "rb") as f:
-                l_data = tomli.load(f)
+                l_data = tomllib.load(f)
                 
             serial = l_data.get("serial", {})
             net = l_data.get("network", {})

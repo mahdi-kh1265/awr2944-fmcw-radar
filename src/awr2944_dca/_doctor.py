@@ -188,9 +188,9 @@ class HardwareManager:
         # 2. Portable config TOML
         portable_path = self._project.root / "awr2944.toml"
         try:
-            import tomli
+            import tomllib
             with open(portable_path, "rb") as f:
-                tomli.load(f)
+                tomllib.load(f)
             self._add("portable_config_valid", "PASS", "OFFLINE", "awr2944.toml parses successfully")
         except Exception as e:
             self._add("portable_config_valid", "FAIL", "OFFLINE", f"Error parsing awr2944.toml: {e}")
@@ -198,9 +198,9 @@ class HardwareManager:
         # 3. Local config TOML
         local_path = self._project.root / ".awr2944" / "local.toml"
         try:
-            import tomli
+            import tomllib
             with open(local_path, "rb") as f:
-                tomli.load(f)
+                tomllib.load(f)
             self._add("local_config_valid", "PASS", "OFFLINE", "local.toml parses successfully")
         except Exception as e:
             self._add("local_config_valid", "FAIL", "OFFLINE", f"Error parsing local.toml: {e}")

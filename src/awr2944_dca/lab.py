@@ -378,8 +378,8 @@ class RadarCapture:
         import awr2944_dca
         from pathlib import Path
         
-        matlab_dir = Path(awr2944_dca.__file__).parent.parent.parent / 'matlab'
-        export_viewer_payload_and_launch(capture_path=canonical_path, profile=prof, mode='standalone', matlab_script_dir=matlab_dir / 'viewer')
+        matlab_dir = Path(awr2944_dca.__file__).parent / '_matlab_viewer'
+        export_viewer_payload_and_launch(capture_path=canonical_path, profile=prof, mode='standalone', matlab_script_dir=matlab_dir)
 
     def _reconstruct_profile_from_config_lines(self, config_lines: list[str]):
         """Legacy helper to reconstruct RadarProfile from UART command lines."""

@@ -512,7 +512,7 @@ def open_controlled_viewer(
     )
 
     matlab_dir = (
-        Path(__file__).parent.parent.parent / "matlab" / "viewer"
+        Path(__file__).parent / "_matlab_viewer"
     ).resolve()
 
     # Paths for MATLAB (escape backslashes)

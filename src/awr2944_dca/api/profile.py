@@ -327,9 +327,6 @@ class RadarProfile:
         
     @classmethod
     def from_toml(cls, toml_str: str) -> 'RadarProfile':
-        try:
-            import tomllib
-        except ImportError:
-            import tomli as tomllib
+        import tomllib
         data = tomllib.loads(toml_str)
         return cls.from_dict(data)

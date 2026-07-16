@@ -9,7 +9,20 @@ name = "awr2944-dca-lab"
 version = "0.1.0"
 description = "Research toolkit for AWR2944EVM + DCA1000EVM raw ADC radar capture workflows."
 readme = "README.md"
+license = {file = "LICENSE"}
 requires-python = ">=3.12"
+authors = [
+    {name = "Mahdi Khamseh"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+]
+
 dependencies = [
     "numpy>=2.0",
     "scipy>=1.14",
@@ -18,6 +31,7 @@ dependencies = [
     "rich>=13.8",
     "pyyaml>=6.0",
     "matplotlib>=3.9",
+    "tomli_w>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -38,7 +52,6 @@ hardware = [
     "pyserial>=3.5",
     "psutil>=6.0",
 ]
-
 headless = [
     "pyserial>=3.5",
 ]
@@ -47,23 +60,80 @@ flash = [
     "tqdm>=4.66",
     "xmodem>=0.4",
 ]
-
 speed = [
     "numba>=0.60",
+]
+viewer = [
+    "pywin32>=306",
 ]
 dev = [
     "pytest>=8.3",
     "hypothesis>=6.111",
     "ruff>=0.6",
     "mypy>=1.11",
+    "build>=1.2",
+    "twine>=5.1",
 ]
 
 [project.scripts]
 awr = "awr2944_dca.cli:app"
 
+[project.urls]
+Repository = "https://github.com/mahdi-kh1265/awr2944-fmcw-radar"
+
+# ---------------------------------------------------------------------------
+# Hatch build configuration
+# ---------------------------------------------------------------------------
 [tool.hatch.build.targets.wheel]
 packages = [
     "src/awr2944_dca",
+]
+# Include MATLAB viewer runtime .m files as package data
+artifacts = [
+    "src/awr2944_dca/_matlab_viewer/*.m",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/",
+    "matlab/viewer/*.m",
+    "pyproject.toml",
+    "README.md",
+    "LICENSE",
+    "examples/",
+]
+exclude = [
+    "tests/",
+    "captures/",
+    "notebooks/",
+    "scratch/",
+    "docs/",
+    "logs/",
+    "conf/",
+    "configs/",
+    "experiments/",
+    "reference_docs/",
+    "scripts/",
+    "test_data/",
+    "test_output/",
+    "tools/",
+    "/ti/",
+    ".pytest*",
+    ".vscode/",
+    ".awr2944/",
+    "__pycache__/",
+    "*.bin",
+    "*.mat",
+    "*.fig",
+    "*.npz",
+    "*.h5",
+    "*.hdf5",
+    "patch*.py",
+    "*.txt",
+    "*.xml",
+    "dummy.bin",
+    "implementation_plan.md",
+    "exp_lau_probe/",
 ]
 
 [tool.ruff]
@@ -72,7 +142,6 @@ target-version = "py312"
 
 [tool.pytest.ini_options]
 markers = [
-
     "matlab_live: marks tests that require a real MATLAB installation and COM automation; never run in CI",
     "hardware_live: marks tests that require live radar hardware",
 ]
