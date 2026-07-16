@@ -1,6 +1,20 @@
-# Phase 5: TI Headless Capture Discovery Script (Read-Only)
-# Repeatable PowerShell script to inventory TI installations.
-# SAFE: Does not modify any hardware, firmware, or network settings.
+<#
+PURPOSE:
+Discovers and inventories Texas Instruments (TI) SDKs and DCA1000 installations.
+
+USAGE EXAMPLE:
+.\discover_ti_headless.ps1 -TiRoot "C:\ti"
+
+READ-ONLY GUARANTEE:
+This script is strictly read-only. It does not flash or configure hardware, does not alter TI installation files, and contains no personal paths or secrets.
+
+PARAMETERS:
+-TiRoot: The root directory to search for TI installations (default: C:\ti).
+-OutputFile: (Optional) File to write the output to.
+
+OUTPUT DESCRIPTION:
+Prints a categorized list of SDK installations, AppImages, DCA1000 CLI tools, flashing tools, AWR294x configs, documentation, COM ports, network adapters, and Python parser scripts found in the specified directory.
+#>
 
 param(
     [string]$TiRoot = "C:\ti",
