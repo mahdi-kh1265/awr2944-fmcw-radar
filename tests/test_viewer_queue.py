@@ -31,8 +31,12 @@ import scipy.io as sio
 import pytest
 
 # ---------------------------------------------------------------------------
-# Inject win32com stub
+# Inject win32com stub — for offline (mocked) tests only.
+# Live tests restore the real modules via _restore_win32com().
 # ---------------------------------------------------------------------------
+_real_win32com = sys.modules.get("win32com")
+_real_win32com_client = sys.modules.get("win32com.client")
+
 def _inject_win32com():
     from unittest.mock import MagicMock
     mock_eng = MagicMock()
@@ -44,6 +48,22 @@ def _inject_win32com():
 
 _mock_eng = _inject_win32com()
 from awr2944_dca.viewer_ctrl import ControlledViewer, _validate_format, ViewerExportUnsupportedError
+
+
+def _restore_win32com():
+    """Restore real win32com modules so live tests use actual COM."""
+    if _real_win32com is not None:
+        sys.modules["win32com"] = _real_win32com
+    else:
+        sys.modules.pop("win32com", None)
+    if _real_win32com_client is not None:
+        sys.modules["win32com.client"] = _real_win32com_client
+    else:
+        sys.modules.pop("win32com.client", None)
+    # Force re-import in viewer_ctrl's open_controlled_viewer
+    import importlib
+    import awr2944_dca.viewer_ctrl as vc
+    importlib.reload(vc)
 
 
 # ---------------------------------------------------------------------------
@@ -544,6 +564,7 @@ class TestLiveMatlabViewer:
 
     @pytest.fixture(scope="class")
     def live_viewer(self):
+        _restore_win32com()  # undo module-level mock injection
         from awr2944_dca.lab import RadarProject
         project = RadarProject.open(self.PROJECT_ROOT)
         capture = project.captures.get(self.CAPTURE_ID)
@@ -565,6 +586,7 @@ class TestLiveMatlabViewer:
         """
         Explicitly test the wait_ready lifecycle: launch, wait_ready, get_frame, close.
         """
+        _restore_win32com()  # undo module-level mock injection
         from awr2944_dca.lab import RadarProject
         project = RadarProject.open(self.PROJECT_ROOT)
         capture = project.captures.get(self.CAPTURE_ID)
@@ -613,3 +635,61 @@ class TestLiveMatlabViewer:
         assert not live_viewer._is_closed
         # Second close call after context exits must not raise
         # (context manager will call it once more after this test)
+
+
+# ===========================================================================
+# COM STA and engine lifetime regressions
+# ===========================================================================
+class TestComStaRegression:
+    """Verify that open_controlled_viewer ensures COM STA initialization
+    and retains the COM engine reference for the viewer lifetime."""
+
+    def test_sta_initialized_before_dispatch(self):
+        """open_controlled_viewer must call CoInitializeEx(STA) before
+        DispatchEx so MATLAB's timer callback can fire."""
+        import ast
+        import inspect
+        from awr2944_dca import viewer_ctrl
+
+        source = inspect.getsource(viewer_ctrl.open_controlled_viewer)
+        tree = ast.parse(source)
+
+        coinit_line = None
+        dispatch_line = None
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute):
+                if node.attr == "CoInitializeEx":
+                    coinit_line = node.lineno
+            if isinstance(node, ast.Attribute):
+                if node.attr == "DispatchEx":
+                    dispatch_line = node.lineno
+
+        assert coinit_line is not None, (
+            "open_controlled_viewer must call pythoncom.CoInitializeEx"
+        )
+        assert dispatch_line is not None, (
+            "open_controlled_viewer must call win32com.client.DispatchEx"
+        )
+        assert coinit_line < dispatch_line, (
+            f"CoInitializeEx (line {coinit_line}) must appear before "
+            f"DispatchEx (line {dispatch_line}) to ensure STA is set "
+            f"before MATLAB COM server launch"
+        )
+
+    def test_engine_retained_until_close(self):
+        """ControlledViewer must store self.eng and only Quit during close()."""
+        import ast
+        import inspect
+        from awr2944_dca.viewer_ctrl import ControlledViewer
+
+        # __init__ must store eng
+        init_src = inspect.getsource(ControlledViewer.__init__)
+        assert "self.eng" in init_src, (
+            "ControlledViewer.__init__ must store self.eng"
+        )
+
+        # close() must call self.eng.Quit()
+        close_src = inspect.getsource(ControlledViewer.close)
+        assert "self.eng.Quit()" in close_src, (
+            "ControlledViewer.close must call self.eng.Quit()"
+        )

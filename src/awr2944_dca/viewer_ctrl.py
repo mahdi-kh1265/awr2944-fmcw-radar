@@ -519,6 +519,27 @@ def open_controlled_viewer(
     def _mpath(p: Path) -> str:
         return str(p).replace("\\", "\\\\")
 
+    # Ensure COM is initialised as STA (Single-Threaded Apartment).
+    # MATLAB's fixedSpacing timer callback requires the automation server's
+    # event loop to pump — which only works under STA.  Without this, hosts
+    # that have not pre-initialised COM (e.g. pytest) may default to MTA,
+    # causing MATLAB to exit before processing any dispatcher requests.
+    import pythoncom
+    try:
+        pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
+    except pythoncom.com_error as exc:
+        # RPC_E_CHANGED_MODE (0x80010106) = thread already MTA.
+        # S_FALSE (1) = already STA — safe, pywin32 returns normally.
+        hr = getattr(exc, 'hresult', None)
+        if hr is not None and (hr & 0xFFFFFFFF) == 0x80010106:
+            logger.warning(
+                "COM already initialised as MTA on this thread. "
+                "MATLAB automation requires STA. The viewer may fail. "
+                "Ensure no plugin (e.g. anyio) calls CoInitializeEx(MTA) "
+                "before open_controlled_viewer()."
+            )
+        # Any other com_error: already initialised as STA — acceptable.
+
     # Launch MATLAB COM server
     try:
         eng = win32com.client.DispatchEx("Matlab.Application.Single")
