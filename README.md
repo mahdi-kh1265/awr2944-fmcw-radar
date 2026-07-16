@@ -4,6 +4,27 @@ A Python research toolkit for TI AWR2944EVM + DCA1000EVM raw ADC radar captures.
 
 This package provides a robust, native direct-capture pipeline that is free from mmWave Studio GUI automation and Lua scripts.
 
+## Installation
+
+Install the base package via pip:
+
+```bash
+pip install awr2944-dca-lab
+```
+
+To include the optional MATLAB viewer bridge dependencies (Windows only), install with the `viewer` extra:
+
+```bash
+pip install "awr2944-dca-lab[viewer]"
+```
+
+## Prerequisites
+
+This Python package controls and orchestrates external hardware and software. The following are external prerequisites and must be installed separately:
+- **MATLAB** (Required for the `viewer` component)
+- **TI mmWave SDK tools**
+- **DCA1000 CLI software**
+
 ## Architecture
 
 The production capture chain uses:
