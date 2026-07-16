@@ -13,7 +13,6 @@ import numpy as np
 import pytest
 from awr2944_dca.lab import EthernetManager, RadarCapture, RadarProject
 from awr2944_dca.project import add_capture_note, add_capture_tags, bind_mmws_output, get_defaults, init_project, inspect_capture, new_capture, set_defaults
-from awr2944_dca.dca.workflow import CaptureWorkflowState, RunMeta, save_state, start_workflow, resume_workflow
 from awr2944_dca.eth import EthernetPairing, save_pairing
 
 def _fake_preflight_ready(monkeypatch):
